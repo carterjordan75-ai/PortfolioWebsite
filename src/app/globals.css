@@ -3,25 +3,146 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f5f5f0;
+  --foreground: #1a1a1a;
+  --muted: #6b6b6b;
+  --accent: #e94560;
+  --border: #d4d4d4;
+  --card-bg: #eaeae5;
+  --orb-1: rgba(180, 140, 255, 0.35);
+  --orb-2: rgba(80, 220, 200, 0.3);
+  --orb-3: rgba(255, 180, 100, 0.3);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #0a0a0f;
     --foreground: #ededed;
+    --muted: #888888;
+    --accent: #e94560;
+    --border: #2a2a2a;
+    --card-bg: #141418;
+    --orb-1: rgba(120, 80, 220, 0.4);
+    --orb-2: rgba(40, 200, 180, 0.35);
+    --orb-3: rgba(240, 160, 60, 0.35);
   }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body);
+  overflow-x: hidden;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+::selection {
+  background: var(--accent);
+  color: white;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 3px;
+}
+
+/* Grain overlay */
+.grain-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+}
+
+/* White page nav — gradient fade */
+.archive-nav {
+  background: linear-gradient(to bottom, #ffffff 60%, rgba(255,255,255,0));
+  color: #000000;
+}
+
+/* Dark mode override via body class */
+body.archive-dark .archive-nav {
+  background: linear-gradient(to bottom, #000000 60%, rgba(0,0,0,0));
+  color: #ffffff;
+}
+
+.archive-row {
+  transition: background 0.05s ease, color 0.05s ease;
+}
+
+/* Cover flow */
+.cover-flow-container {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.cover-flow-container::-webkit-scrollbar {
+  display: none;
+}
+
+/* Masonry item */
+.masonry-item {
+  break-inside: avoid;
+  margin-bottom: 1.5rem;
+}
+
+/* Work page animations */
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1.15); }
+  50% { transform: scale(1.35); }
+}
+
+@keyframes heartRipple {
+  0% { width: 0; height: 0; opacity: 1; border-width: 3px; }
+  100% { width: 200vw; height: 200vw; opacity: 0; border-width: 1px; }
+}
+
+.ripple-ring {
+  animation: heartRipple 0.8s ease-out forwards;
+}
+
+@keyframes navAudioBar {
+  0% { height: 2px; }
+  100% { height: 7px; }
+}
+
+/* Work page background orbs */
+@keyframes orbFloat1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(6vw, -4vh) scale(1.05); }
+  50% { transform: translate(3vw, 5vh) scale(0.95); }
+  75% { transform: translate(-4vw, 2vh) scale(1.02); }
+}
+
+@keyframes orbFloat2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-5vw, 3vh) scale(1.04); }
+  50% { transform: translate(-2vw, -6vh) scale(0.97); }
+  75% { transform: translate(4vw, -2vh) scale(1.03); }
+}
+
+@keyframes orbFloat3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(4vw, 5vh) scale(0.96); }
+  50% { transform: translate(-5vw, -3vh) scale(1.06); }
+  75% { transform: translate(2vw, -5vh) scale(0.98); }
 }
