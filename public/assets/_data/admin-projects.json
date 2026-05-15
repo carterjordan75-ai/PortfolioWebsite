@@ -1,0 +1,87 @@
+{
+  "tiffany-holiday-campaign": {
+    "slug": "tiffany-holiday-campaign",
+    "client": "Tiffany & Co.",
+    "title": "T by Tiffany",
+    "year": 2024,
+    "tags": [
+      "Motion",
+      "3D"
+    ],
+    "featured": true,
+    "type": "case-study",
+    "brief": "An elegant holiday campaign film for Tiffany & Co blending hand-drawn illustration with luxury motion design. The animation needed to evoke the warmth of hand-crafted illustration while maintaining the brand's iconic elegance — every frame balanced whimsy with precision. We developed a hybrid pipeline combining traditional frame-by-frame drawing with 3D camera moves and particle effects, giving the film a tangible quality that felt like opening a gift. The campaign launched across global social channels and in-store displays, becoming their most-shared holiday content to date.",
+    "role": "3D Artist & Look Development",
+    "logoPath": "/assets/Logos/Logo_Tiffany_1774845561606.svg",
+    "showLogoOnAbout": true,
+    "logoSize": "400",
+    "credits": "direction: Daisy Chain Studio — design: Studio JC — 3D: Jordan Carter — music: N/A — client: Tiffany & Co. — agency: Direct — production: In-house — year: 2024",
+    "featuredOrder": 2
+  },
+  "nike-air-max-campaign": {
+    "featuredOrder": 0,
+    "slug": "nike-air-max-campaign",
+    "client": "Nike",
+    "title": "Dynamo Go",
+    "year": 2021,
+    "tags": [
+      "Motion",
+      "3D"
+    ],
+    "featured": true,
+    "type": "case-study",
+    "brief": "A cinematic campaign film for Air Max Day combining motion graphics and 3D product visualization. The brief called for something that felt both futuristic and grounded — merging organic textures with precise geometric forms across multiple formats. We developed a visual system from scratch, iterating through styleframes and motion tests over an intensive 8-week sprint. The result bridges commercial storytelling and experimental art direction, built to scale across digital, social and physical touchpoints worldwide.",
+    "role": "3D Artist, Modeller, Textures, Look Dev"
+  },
+  "adidas-originals-generative": {
+    "featuredOrder": 1,
+    "slug": "adidas-originals-generative",
+    "client": "Adidas Originals",
+    "title": "Seriously Jokes",
+    "year": 2022,
+    "tags": [
+      "3D",
+      "Motion"
+    ],
+    "featured": true,
+    "type": "case-study",
+    "brief": "A generative visual system for Adidas Originals creating unique brand patterns through code. Each pattern is algorithmically generated, referencing the three stripes motif through parameters like colour, density and rhythm. The system produces infinite unique compositions for every product drop — no two outputs are ever the same. We built custom tools in TouchDesigner and WebGL to prototype in real-time, allowing the design team to dial in the aesthetic live during reviews. The final toolkit shipped as a self-serve asset generator used across all Originals sub-brands.",
+    "role": "3D Artist, Modeller, Texture Artist, Look Dev"
+  },
+  "adidas-rugby-world-cup": {
+    "featuredOrder": 4
+  },
+  "kfc-bucket-experience": {
+    "featuredOrder": 6
+  },
+  "cat-machinery-visuals": {
+    "featuredOrder": 5
+  },
+  "hunter-boots-campaign": {
+    "featuredOrder": 3,
+    "slug": "hunter-boots-campaign",
+    "client": "Hunter Boots",
+    "title": "Hunter Clog Launch",
+    "year": 2023,
+    "tags": [
+      "Motion",
+      "3D"
+    ],
+    "featured": true,
+    "type": "case-study",
+    "brief": "A dramatic 3D campaign for Hunter Boots celebrating the beauty of harsh weather through cinematic visuals. Using fluid simulations and photorealistic rendering, each scene captured the drama of British weather — from torrential rain to thick fog — with Hunter boots as the constant, iconic presence. We built a custom rain simulation system that reacted to the boot geometry in real-time, creating splashes and pooling effects that felt physically accurate. The final films ran as hero content across e-commerce, social and outdoor placements throughout the autumn/winter season.",
+    "role": "Director, 3D Artist"
+  },
+  "anz-artwork-library-mnk549m3": {
+    "slug": "anz-artwork-library-mnk549m3",
+    "client": "ANZ",
+    "title": "Artwork Library",
+    "year": 2025,
+    "tags": [
+      "3D",
+      "Motion"
+    ],
+    "featured": true,
+    "type": "case-study"
+  }
+}
