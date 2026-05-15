@@ -12,6 +12,27 @@ const nextConfig = {
   experimental: {
     optimizeCss: false,
   },
+  // Keep large public-media folders out of every serverless function bundle.
+  // The files still ship as regular static assets — they just don't get
+  // traced into individual function tarballs (Vercel's hard cap is 250 MB
+  // unzipped per function). Without this, the dynamic path.join in
+  // /api/upload + /api/look + /api/projects causes Next's static tracer to
+  // pull the whole tree into each function.
+  outputFileTracingExcludes: {
+    '*': [
+      'public/assets/Misc/**',
+      'public/assets/audio/**',
+      'public/assets/home-videos/**',
+      'public/assets/info-videos/**',
+      'public/assets/info-profile/**',
+      'public/assets/look/**',
+      'public/assets/work-bg/**',
+      'public/assets/TestMedia/**',
+      'public/assets/Logos/**',
+      'public/uploads/**',
+      'Assets/**',
+    ],
+  },
   headers: async () => [
     {
       source: '/assets/:path*',
