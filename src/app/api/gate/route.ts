@@ -21,7 +21,11 @@ export async function POST(req: NextRequest) {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 30, // 30 days
+    // Session cookie — omitting maxAge / expires means the cookie is cleared
+    // when the browser is closed. Each new visit (new browser session) must
+    // re-enter the passcode. Within a single session, visitors can navigate
+    // freely without being re-prompted. Restore a long maxAge here if you
+    // want the previous 30-day "remember me" behaviour.
     path: '/',
   })
   return res
