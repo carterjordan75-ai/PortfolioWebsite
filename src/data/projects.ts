@@ -17,9 +17,34 @@ export type Project = {
   brief?: string
   role?: string
   content?: ContentBlock[]
+  // Bucket inside the Index hover dropdown — '3d' (default) or 'gen' (generative).
+  // New "GEN" projects should set this to 'gen' so they surface under the GEN tab.
+  category?: '3d' | 'gen'
 }
 
 export const projects: Project[] = [
+  {
+    slug: 'proper-motion-generative',
+    client: 'Proper',
+    title: 'Motion Identity & Generative System',
+    year: 2026,
+    tags: ['Motion', 'Generative'],
+    featured: false,
+    type: 'media-forward',
+    thumbnail: '/placeholder/thumb-1.svg',
+    heroMedia: '/placeholder/hero-1.svg',
+  },
+  {
+    slug: 'kelly-anna-london-02',
+    client: 'Kelly Anna London',
+    title: '3D Motion Campaign',
+    year: 2026,
+    tags: ['3D', 'Motion'],
+    featured: false,
+    type: 'media-forward',
+    thumbnail: '/placeholder/thumb-2.svg',
+    heroMedia: '/placeholder/hero-2.svg',
+  },
   {
     slug: 'nike-air-max-campaign',
     client: 'Nike',

@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 import PageTransition from '@/components/PageTransition'
+import EmailPopup from '@/components/EmailPopup'
+import AdminPortal from '@/components/AdminPortal'
+import { motion, AnimatePresence } from 'framer-motion'
 
 type GalleryItem = {
   src: string
@@ -47,14 +50,42 @@ const galleryItems: GalleryItem[] = [
   { src: '/assets/TestMedia/Image_01.avif', type: 'image', cols: 2, rows: 2, credit: 'Nike — Art of Victory Campaign', source: 'https://nike.com' },
 ]
 
-const allItems = [...galleryItems, ...galleryItems, ...galleryItems]
-
 export default function LookPage() {
-  const { dark } = useDarkMode()
+  const { dark, fg60, borderThick } = useDarkMode()
+  const fg = dark ? '#ededed' : '#1a1a1a'
   const scrollRef = useRef<HTMLDivElement>(null)
   const animRef = useRef<number>(0)
   const speedRef = useRef(0.5)
   const [activeItem, setActiveItem] = useState<number | null>(null)
+  const [uploadedItems, setUploadedItems] = useState<GalleryItem[]>([])
+  const [showEmail, setShowEmail] = useState(false)
+  const [showAdmin, setShowAdmin] = useState(false)
+
+  // Fetch uploaded look items from API
+  useEffect(() => {
+    fetch('/api/look')
+      .then(r => r.json())
+      .then(data => {
+        if (data.items?.length) {
+          const mapped: GalleryItem[] = data.items.map((item: { path: string; originalName: string; credits: string; link: string }) => {
+            const isVideo = /\.(mp4|webm|mov)$/i.test(item.originalName || item.path)
+            return {
+              src: item.path,
+              type: isVideo ? 'video' as const : 'image' as const,
+              cols: 1,
+              rows: 1,
+              credit: item.credits || 'Uploaded',
+              source: item.link || undefined,
+            }
+          })
+          setUploadedItems(mapped)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const combinedItems = [...uploadedItems, ...galleryItems]
+  const allItems = [...combinedItems, ...combinedItems, ...combinedItems]
 
   useEffect(() => {
     const el = scrollRef.current
@@ -139,14 +170,17 @@ export default function LookPage() {
                   el.style.zIndex = '1'
                   el.style.boxShadow = 'none'
                 }}
-                onClick={() => setActiveItem(activeItem === i ? null : i)}
+                onClick={() => {
+                  speedRef.current = 0
+                  setActiveItem(i)
+                }}
               >
                 {item.type === 'image' ? (
                   <Image
                     src={item.src}
                     alt=""
                     fill
-                    className="object-cover"
+                    className="object-contain"
                     sizes="(max-width: 768px) 50vw, 25vw"
                     unoptimized
                   />
@@ -157,39 +191,8 @@ export default function LookPage() {
                     muted
                     loop
                     playsInline
-                    className="absolute inset-0 w-full h-full object-cover"
+                    className="absolute inset-0 w-full h-full object-contain"
                   />
-                )}
-
-                {/* Click overlay — shows credit */}
-                {activeItem === i && (
-                  <div
-                    className="absolute inset-0 flex flex-col items-center justify-center"
-                    style={{
-                      background: 'rgba(0,0,0,0.75)',
-                      backdropFilter: 'blur(4px)',
-                      zIndex: 10,
-                    }}
-                  >
-                    <p className="text-white text-[11px] font-bold uppercase tracking-[0.12em] text-center px-4 mb-2">
-                      {item.credit}
-                    </p>
-                    {item.source && (
-                      <a
-                        href={item.source}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-[9px] uppercase tracking-[0.15em] text-white px-3 py-1 rounded-full transition-all hover:scale-105"
-                        style={{
-                          border: '1px solid rgba(255,255,255,0.3)',
-                          opacity: 0.7,
-                        }}
-                      >
-                        Visit Source ↗
-                      </a>
-                    )}
-                  </div>
                 )}
 
                 <div
@@ -204,28 +207,142 @@ export default function LookPage() {
 
         {/* Fixed bottom text overlay */}
         <div
-          className="fixed bottom-0 left-0 right-0 text-center py-4 px-6 pointer-events-none"
-          style={{
-            zIndex: 50,
-            background: 'linear-gradient(transparent 0%, rgba(0,0,0,0.85) 60%, rgba(0,0,0,0.95) 100%)',
-          }}
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 text-center pointer-events-auto"
+          style={{ zIndex: 50 }}
         >
           <p
-            className="text-[8px] uppercase tracking-[0.2em] leading-[1.8] max-w-md mx-auto"
-            style={{ color: 'rgba(255,255,255,0.35)' }}
+            className="text-[7px] uppercase tracking-[0.18em] leading-[1.8] px-6 py-2.5 rounded-full inline-block cursor-default"
+            style={{
+              color: 'rgba(255,255,255,0.5)',
+              background: 'rgba(0,0,0,0.25)',
+              backdropFilter: 'blur(40px) saturate(1.8)',
+              WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+              transition: 'all 0.3s ease',
+            }}
+            onMouseEnter={(e) => {
+              const el = e.currentTarget
+              el.style.background = 'rgba(0,0,0,0.65)'
+              el.style.color = 'rgba(255,255,255,0.9)'
+              el.style.borderColor = 'rgba(255,255,255,0.2)'
+              el.style.boxShadow = '0 8px 30px rgba(0,0,0,0.4)'
+            }}
+            onMouseLeave={(e) => {
+              const el = e.currentTarget
+              el.style.background = 'rgba(0,0,0,0.25)'
+              el.style.color = 'rgba(255,255,255,0.5)'
+              el.style.borderColor = 'rgba(255,255,255,0.08)'
+              el.style.boxShadow = '0 4px 20px rgba(0,0,0,0.2)'
+            }}
           >
             A living archive of references, obsessions &amp; visual fragments that shape the work. Click any image for credit &amp; source.
           </p>
         </div>
 
-        {/* Dismiss overlay if clicking outside */}
-        {activeItem !== null && (
-          <div
-            className="fixed inset-0 z-[5]"
-            style={{ pointerEvents: 'none' }}
-          />
-        )}
+        {/* Fullscreen lightbox */}
+        <AnimatePresence>
+          {activeItem !== null && activeData && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="fixed inset-0 flex items-center justify-center"
+              style={{ zIndex: 10000, background: 'rgba(0,0,0,0.95)', cursor: 'zoom-out' }}
+              onClick={() => {
+                setActiveItem(null)
+                setTimeout(() => { speedRef.current = 0.5 }, 500)
+              }}
+            >
+              <motion.div
+                initial={{ scale: 0.85, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                className="relative w-[90vw] h-[85vh]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {activeData.type === 'image' ? (
+                  <Image
+                    src={activeData.src}
+                    alt={activeData.credit}
+                    fill
+                    className="object-contain"
+                    unoptimized
+                  />
+                ) : (
+                  <video
+                    src={activeData.src}
+                    autoPlay
+                    loop
+                    playsInline
+                    controls
+                    className="absolute inset-0 w-full h-full object-contain"
+                  />
+                )}
+              </motion.div>
+
+              {/* Credit overlay at bottom */}
+              <motion.div
+                initial={{ y: 30, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 20, opacity: 0 }}
+                transition={{ delay: 0.15, duration: 0.3 }}
+                className="fixed bottom-0 left-0 right-0 py-5 px-8 flex items-center justify-between"
+                style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.8))' }}
+              >
+                <p className="text-white text-[12px] font-bold uppercase tracking-[0.1em]">
+                  {activeData.credit}
+                </p>
+                <div className="flex items-center gap-4">
+                  {activeData.source && (
+                    <a
+                      href={activeData.source}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-[9px] uppercase tracking-[0.15em] text-white/70 px-4 py-1.5 rounded-full hover:text-white hover:scale-105 transition-all"
+                      style={{ border: '1px solid rgba(255,255,255,0.25)' }}
+                    >
+                      Visit Source ↗
+                    </a>
+                  )}
+                  <button
+                    onClick={() => {
+                      setActiveItem(null)
+                      setTimeout(() => { speedRef.current = 0.5 }, 500)
+                    }}
+                    className="text-[9px] uppercase tracking-[0.15em] text-white/50 px-4 py-1.5 rounded-full hover:text-white transition-all"
+                    style={{ border: '1px solid rgba(255,255,255,0.15)' }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Footer */}
+        <footer className="px-6 md:px-10 py-5" style={{ borderTop: `3px solid ${borderThick}`, background: dark ? '#0a0a0a' : '#f5f5f0' }}>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex gap-3 flex-shrink-0">
+              <button onClick={() => setShowEmail(true)} className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}`, color: fg }}>Email</button>
+              <a href="https://instagram.com/jordanscarter" target="_blank" rel="noopener noreferrer" className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}`, color: fg }}>Insta</a>
+            </div>
+            <p className="hidden md:block text-[9px] leading-[1.5] tracking-[0.04em] uppercase max-w-2xl text-center" style={{ color: fg60 }}>
+              A curated gallery of visual references, inspirations, and things that catch the eye. A living moodboard.
+            </p>
+            <div className="flex gap-3 flex-shrink-0">
+              <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="w-14 h-14 rounded-full flex items-center justify-center text-[16px] hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}`, color: fg }} aria-label="Back to top">↑</button>
+              <button onClick={() => setShowAdmin(true)} className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}`, color: fg60 }}>© 2026</button>
+            </div>
+          </div>
+        </footer>
       </div>
+      <EmailPopup show={showEmail} onClose={() => setShowEmail(false)} />
+      <AdminPortal show={showAdmin} onClose={() => setShowAdmin(false)} />
     </PageTransition>
   )
 }

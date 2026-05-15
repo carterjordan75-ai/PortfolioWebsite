@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import Link from 'next/link'
 import { projects } from '@/data/projects'
 import PageTransition from '@/components/PageTransition'
+import FooterBlurb from '@/components/FooterBlurb'
 import PageLoader from '@/components/PageLoader'
 import EmailPopup from '@/components/EmailPopup'
 import AdminPortal from '@/components/AdminPortal'
@@ -27,9 +27,54 @@ export default function ArchivePage() {
   const [showEmail, setShowEmail] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
   const [showLoader, setShowLoader] = useState(false)
+  const [employmentData, setEmploymentData] = useState([
+    { company: 'Meta', role: 'Senior 3D & AI Artist', year: '2026', link: 'https://meta.com' },
+    { company: 'SouthSouthWest', role: 'Senior 3D Artist', year: '2025', link: 'https://southsouthwest.com.au' },
+    { company: 'ANZ', role: 'Senior 3D Designer', year: '2024', link: 'https://anz.com.au' },
+    { company: 'Time Based Arts', role: '3D Artist & Art Director', year: '2022–24', link: 'https://timebasedarts.com' },
+    { company: 'Aardman Animations', role: '3D Modeller & Texture Artist', year: '2021–22', link: 'https://aardman.com' },
+    { company: 'UNIT Film & TV', role: '3D Artist', year: '2019–20', link: '' },
+  ])
   const [loaderTarget, setLoaderTarget] = useState<string | null>(null)
+  const [adminProjects, setAdminProjects] = useState<typeof projects>([])
   const router = useRouter()
   const { dark, fg, fg60, borderThick } = useDarkMode()
+
+  // Fetch merged projects from API (code + admin overrides)
+  useEffect(() => {
+    fetch('/api/projects')
+      .then(r => r.json())
+      .then(data => {
+        if (data.projects?.length) {
+          const mapped = data.projects.map((p: Record<string, unknown>) => ({
+            slug: p.slug as string,
+            client: p.client as string,
+            title: p.title as string,
+            year: p.year as number,
+            tags: (p.tags as string[]) || ['Motion'],
+            featured: p.featured as boolean || false,
+            type: (p.type as string) || 'media-forward',
+            thumbnail: (p.thumbnail as string) || '/placeholder/thumb-1.svg',
+            heroMedia: (p.heroMedia as string) || '/placeholder/hero-1.svg',
+            brief: p.brief as string || undefined,
+            role: p.role as string || undefined,
+          }))
+          setAdminProjects(mapped)
+        }
+      })
+      .catch(() => {})
+
+    // Load employment data
+    fetch('/api/pages')
+      .then(r => r.json())
+      .then(data => {
+        const pages = data.pages || data
+        if (pages['employment']?.jobs) {
+          try { setEmploymentData(JSON.parse(pages['employment'].jobs)) } catch {}
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const handleFeaturedClick = (slug: string) => {
     setLoaderTarget(`/work/${slug}`)
@@ -49,21 +94,28 @@ export default function ArchivePage() {
     }
   }, [loaderTarget, router])
 
-  const allProjects = useMemo(() => {
-    const copy = [...projects]
-    copy.sort((a, b) => {
+  // Featured projects keep their original order — not affected by sorting
+  const featured = useMemo(() => {
+    const source = adminProjects.length > 0 ? adminProjects : projects
+    return source.filter((p) => p.featured)
+  }, [adminProjects])
+
+  // Archive (non-featured) projects get sorted
+  const archive = useMemo(() => {
+    const source = adminProjects.length > 0 ? adminProjects : projects
+    const nonFeatured = source.filter((p) => !p.featured)
+    nonFeatured.sort((a, b) => {
       const yearDiff = sortOrder === 'latest' ? b.year - a.year : a.year - b.year
       if (yearDiff !== 0) return yearDiff
       const clientDiff = a.client.localeCompare(b.client)
       return clientSort === 'az' ? clientDiff : -clientDiff
     })
-    return copy
-  }, [sortOrder, clientSort])
+    return nonFeatured
+  }, [sortOrder, clientSort, adminProjects])
 
-  const featured = allProjects.filter((p) => p.featured)
-  const archive = allProjects.filter((p) => !p.featured)
+  const allProjects = useMemo(() => [...featured, ...archive], [featured, archive])
 
-  const uniqueClients = new Set(projects.map((p) => p.client)).size
+  const uniqueClients = new Set(allProjects.map((p) => p.client)).size
 
   const bg = dark ? '#000000' : '#ffffff'
   const borderColor = dark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)'
@@ -207,19 +259,57 @@ export default function ArchivePage() {
             })}
           </AnimatePresence>
 
+          {/* Employment rows — compact */}
+          <div className="mt-3">
+            {employmentData.map((job, empIdx) => {
+              const isHovered = hoveredRow === `emp-${job.company}`
+              const hoverColor = hoverColors[empIdx % hoverColors.length]
+              return (
+                <div
+                  key={job.company}
+                  className="block md:grid grid-cols-[1.2fr_2fr_1fr_0.4fr] gap-4 px-6 md:px-10 py-[4px] items-baseline"
+                  style={{
+                    borderBottom: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+                    background: isHovered ? hoverColor : 'transparent',
+                    color: isHovered ? '#ffffff' : undefined,
+                    transition: 'background 0.05s ease, color 0.05s ease',
+                  }}
+                  onMouseEnter={() => setHoveredRow(`emp-${job.company}`)}
+                  onMouseLeave={() => setHoveredRow(null)}
+                >
+                  {job.link ? (
+                    <a href={job.link} target="_blank" rel="noopener noreferrer" className="hidden md:block font-bold text-[11px] uppercase tracking-[0.02em] leading-tight hover:underline">{job.company}</a>
+                  ) : (
+                    <span className="hidden md:block font-bold text-[11px] uppercase tracking-[0.02em] leading-tight">{job.company}</span>
+                  )}
+                  <span className="hidden md:block text-[11px] uppercase tracking-[0.02em] font-bold leading-tight" style={{ opacity: 0.5 }}>{job.role}</span>
+                  <span className="hidden md:block" />
+                  <span className="hidden md:block text-right text-[11px] font-bold leading-tight" style={{ opacity: 0.4 }}>{job.year}</span>
+                  <div className="md:hidden">
+                    <div className="flex items-baseline justify-between">
+                      {job.link ? (
+                      <a href={job.link} target="_blank" rel="noopener noreferrer" className="font-bold text-[10px] uppercase hover:underline">{job.company}</a>
+                    ) : (
+                      <span className="font-bold text-[10px] uppercase">{job.company}</span>
+                    )}
+                      <span className="text-[10px] font-bold" style={{ opacity: 0.4 }}>{job.year}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
           {/* Footer */}
           <footer
-            className="mt-0 px-6 md:px-10 py-5"
-            style={{ borderTop: `3px solid ${borderThick}` }}
+            className="mt-2 px-6 md:px-10 py-5 glass-footer"
           >
             <div className="flex items-center justify-between gap-4">
               <div className="flex gap-3 flex-shrink-0">
                 <button onClick={() => setShowEmail(true)} className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}` }}>Email</button>
                 <a href="https://instagram.com/jordanscarter" target="_blank" rel="noopener noreferrer" className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}` }}>Insta</a>
               </div>
-              <p className="hidden md:block text-[9px] leading-[1.5] tracking-[0.04em] uppercase max-w-2xl text-center" style={{ color: fg60 }}>
-                [PLACEHOLDER] — A multidisciplinary creative practice spanning motion design, 3D environments, generative art, and illustration. Every project is an opportunity to merge craft with experimentation — building visual systems that feel alive, intentional, and unmistakably human.
-              </p>
+              <FooterBlurb pageId="archive" className="hidden md:block text-[9px] leading-[1.5] tracking-[0.04em] uppercase max-w-2xl text-center" style={{ color: fg60 }} />
               <div className="flex gap-3 flex-shrink-0">
                 <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="w-14 h-14 rounded-full flex items-center justify-center text-[16px] hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}` }} aria-label="Back to top">↑</button>
                 <button onClick={() => setShowAdmin(true)} className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}`, color: fg60 }}>© 2026</button>

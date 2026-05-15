@@ -2,160 +2,349 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useRouter } from 'next/navigation'
 import { useDarkMode } from '@/contexts/DarkModeContext'
+import { projects } from '@/data/projects'
+
+const hoverColors = [
+  '#e94560', '#ff6b35', '#00b4d8', '#7209b7', '#06d6a0',
+  '#fb5607', '#3a86ff', '#8338ec', '#ff006e', '#38b000',
+]
 
 const navItems = [
   { href: '/archive', label: 'Index' },
   { href: '/experiments', label: 'Misc' },
   { href: '/look', label: 'Look' },
-  { href: '/info', label: 'Info' },
 ]
 
 export default function Navigation() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
   const { dark, setDark, fg } = useDarkMode()
-  const [audioOn, setAudioOn] = useState(true)
-  const [heartCount, setHeartCount] = useState(0)
+  // The toggle's visual state (On/Off + animated bars) reflects the AUDIO ELEMENT'S
+  // actual paused/playing state — not a separate flag — so the button never desyncs
+  // from reality. Starts false: browsers block autoplay until the visitor interacts.
+  const [audioOn, setAudioOn] = useState(false)
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const [indexHover, setIndexHover] = useState(false)
+  // Active bucket inside the Index hover dropdown — '3d' = the current featured
+  // projects, 'gen' = a future bucket for generative projects (currently empty,
+  // will populate once projects with `category: 'gen'` are uploaded).
+  const [indexCategory, setIndexCategory] = useState<'3d' | 'gen'>('3d')
+  // Header minimize state. Only available on the home page. When true, the
+  // header slides off-screen and a small floating pill in the top-center
+  // restores it on click.
+  const [headerMinimized, setHeaderMinimized] = useState(false)
+  const [featuredProjects, setFeaturedProjects] = useState(projects.filter(p => p.featured))
+  const router = useRouter()
+
+  // Fetch latest featured projects from API (includes admin-added ones)
+  useEffect(() => {
+    fetch('/api/projects')
+      .then(r => r.json())
+      .then(data => {
+        if (data.projects) {
+          const featured = data.projects.filter((p: Record<string, unknown>) => p.featured)
+          if (featured.length > 0) setFeaturedProjects(featured)
+        }
+      })
+      .catch(() => {})
+  }, [])
   const [showInfo, setShowInfo] = useState(false)
   const [infoDismissable, setInfoDismissable] = useState(false)
-  const [visitCount] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const stored = parseInt(localStorage.getItem('jc-visits') || '0', 10)
-      const newCount = stored + 1
-      localStorage.setItem('jc-visits', String(newCount))
-      return newCount
-    }
-    return 1
-  })
+  const [infoData, setInfoData] = useState<Record<string, string>>({})
+  // Info popup → "More" expand state. Clicking More extends the popup down
+  // and reveals the client list. Resets to collapsed whenever the popup closes.
+  const [infoExpanded, setInfoExpanded] = useState(false)
+  const [clientList, setClientList] = useState<string[]>([])
+
+  // Load info popup data + client list from API
+  useEffect(() => {
+    // Skip on the passcode gate (no cookie there → middleware would redirect
+    // the fetch back to /gate, returning HTML the JSON parser chokes on).
+    // After auth, the path changes off /gate and this effect re-runs.
+    if (pathname === '/gate') return
+    // Don't re-fetch once we have the data
+    if (Object.keys(infoData).length > 0 && clientList.length > 0) return
+
+    fetch('/api/pages')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (!data) return
+        if (data.pages?.['info-popup']) setInfoData(data.pages['info-popup'])
+        const raw = data.pages?.['info-page']?.logoOrder
+        if (typeof raw === 'string') {
+          try {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed)) setClientList(parsed)
+          } catch {}
+        }
+      })
+      .catch(() => {})
+  }, [pathname, infoData, clientList.length])
+  // Increment the local-storage visit counter on every mount. The counter
+  // value isn't displayed anywhere yet, but the increment keeps the data fresh
+  // for any future "Nth visit" features.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const stored = parseInt(localStorage.getItem('jc-visits') || '0', 10)
+    localStorage.setItem('jc-visits', String(stored + 1))
+  }, [])
   const isArchive = pathname === '/archive'
-  const isWork = pathname === '/work'
+  const isWork = pathname === '/'
   const isProjectPage = pathname.startsWith('/work/') && pathname !== '/work'
   const isExperiments = pathname === '/experiments'
-  const isAbout = pathname === '/info'
   const isLook = pathname === '/look'
-  const isWhitePage = isArchive || isWork || isExperiments || isProjectPage || isAbout || isLook
+  const isWhitePage = isArchive || isWork || isExperiments || isProjectPage || isLook
 
-  // Dispatch audio toggle event to work page
+  // Keep audioOn synced with the actual audio element's state — listen to
+  // play/pause events so external changes (e.g. browser pausing on tab change)
+  // are reflected in the toggle UI.
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('ambient-audio', { detail: audioOn }))
-  }, [audioOn])
-
-  // Listen for heart count from work page
-  useEffect(() => {
-    const handler = (e: Event) => {
-      setHeartCount((e as CustomEvent).detail)
+    const a = audioRef.current
+    if (!a) return
+    const onPlay = () => setAudioOn(true)
+    const onPause = () => setAudioOn(false)
+    a.addEventListener('play', onPlay)
+    a.addEventListener('pause', onPause)
+    return () => {
+      a.removeEventListener('play', onPlay)
+      a.removeEventListener('pause', onPause)
     }
-    window.addEventListener('heart-count', handler)
-    return () => window.removeEventListener('heart-count', handler)
-  }, [])
+  }, [isWork])
 
-  // Sync audio state with work page
+  // Reset Info popup's expanded state whenever it closes
   useEffect(() => {
-    if (isWork) {
-      setAudioOn(true)
-    } else {
-      setAudioOn(false)
+    if (!showInfo) setInfoExpanded(false)
+  }, [showInfo])
+
+  // ESC key closes the Info popup. Listener is only active while the popup
+  // is open + dismissable, then cleaned up on close.
+  useEffect(() => {
+    if (!showInfo || !infoDismissable) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowInfo(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showInfo, infoDismissable])
+
+  // Auto-restore the header when leaving the home page — otherwise a visitor
+  // who minimized at `/` and navigated to `/info` would land with no header.
+  useEffect(() => {
+    if (!isWork && headerMinimized) setHeaderMinimized(false)
+  }, [isWork, headerMinimized])
+
+  // Try to start the ambient drone on mount of the home page. Browsers block
+  // autoplay without a user gesture, so we also wire a one-time interaction
+  // handler that fires on the first click/keypress anywhere — including the
+  // audio toggle itself — to start playback as soon as possible.
+  useEffect(() => {
+    if (!isWork) return
+    const a = audioRef.current
+    if (!a) return
+
+    let firstInteractListener: ((e: Event) => void) | null = null
+
+    const tryPlay = () => a.play().catch(() => {})
+
+    // Initial attempt — succeeds in browsers/contexts that allow muted autoplay
+    // or where the visitor has previously granted autoplay permission.
+    tryPlay()
+
+    // Backup: any user interaction unlocks playback. SKIP if the first interaction
+    // is the audio toggle itself — the toggle's own onClick will then handle the
+    // play (since audio is paused, it'll start). If we didn't skip, this listener
+    // would race the toggle: play() here, immediately pause() in the toggle's
+    // onClick (since by then audio is already playing).
+    firstInteractListener = (e: Event) => {
+      const target = e.target as HTMLElement | null
+      const isAudioToggle = !!target?.closest('[aria-label="Toggle ambient audio"]')
+      if (!isAudioToggle) tryPlay()
+      if (firstInteractListener) {
+        document.removeEventListener('pointerdown', firstInteractListener, true)
+        document.removeEventListener('keydown', firstInteractListener, true)
+        firstInteractListener = null
+      }
+    }
+    document.addEventListener('pointerdown', firstInteractListener, true)
+    document.addEventListener('keydown', firstInteractListener, true)
+
+    return () => {
+      if (firstInteractListener) {
+        document.removeEventListener('pointerdown', firstInteractListener, true)
+        document.removeEventListener('keydown', firstInteractListener, true)
+      }
+      a.pause()
     }
   }, [isWork])
 
 
+  // No header on the passcode gate — clean, focused screen. (Check is here at
+  // the very end so all hooks above always run, preserving React's rules of hooks.)
+  if (pathname === '/gate') return null
+
   return (
     <>
-      <header
-        className={`fixed top-0 left-0 right-0 z-50 px-6 py-4 md:px-10 md:py-5 ${isWhitePage ? 'archive-nav' : 'mix-blend-difference'}`}
+      <motion.header
+        animate={{
+          y: headerMinimized ? '-130%' : '0%',
+          opacity: headerMinimized ? 0 : 1,
+        }}
+        transition={{ duration: 0.55, ease: [0.32, 0.72, 0, 1] }}
+        className={`fixed left-0 right-0 px-6 py-4 md:px-10 md:py-5 ${isWhitePage ? 'archive-nav top-2 mx-2' : 'mix-blend-difference top-0'}`}
+        style={{ zIndex: 10000 }}
       >
-        {/* Toggle — centered in header, archive + work pages */}
+        {/* Centered cluster — info / audio toggles on top, minimize control underneath */}
         {isWhitePage && (
-          <div id="archive-toggle-mount" className="hidden md:flex items-center justify-center gap-5 absolute top-6" style={{ left: '50%', transform: 'translateX(-50%)' }}>
-            {/* Dark mode switch */}
-            <button
-              onClick={() => setDark(!dark)}
-              className="w-12 h-6 rounded-full relative transition-colors flex-shrink-0"
-              style={{ background: dark ? '#333' : '#e0e0e0' }}
-              aria-label="Toggle light/dark mode"
-            >
-              <span
-                className="absolute top-[2px] w-5 h-5 rounded-full transition-all duration-200"
-                style={{
-                  background: fg,
-                  left: dark ? '26px' : '2px',
-                }}
-              />
-            </button>
-
-            {/* Info button — classic circled i */}
+          <div className="hidden md:flex flex-col items-center gap-2 absolute top-6" style={{ left: '50%', transform: 'translateX(-50%)' }}>
+          <div id="archive-toggle-mount" className="flex items-center justify-center gap-5">
+            {/* Info button — classic circled i. Always first / leftmost.
+                Matches the Index/Misc/Look nav-link opacity scale (50% → 70% on hover). */}
             <button
               onClick={(e) => { e.stopPropagation(); setShowInfo(true); setInfoDismissable(false); setTimeout(() => setInfoDismissable(true), 300) }}
-              className="flex items-center justify-center rounded-full transition-all duration-300 flex-shrink-0 hover:scale-110 active:scale-95"
+              className="flex items-center justify-center rounded-full flex-shrink-0 opacity-50 hover:opacity-70 hover:scale-110"
               style={{
-                width: '22px',
-                height: '22px',
-                border: `1.5px solid ${dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)'}`,
+                width: '30px',
+                height: '30px',
+                border: `1.5px solid ${fg}`,
                 color: fg,
-                fontSize: '12px',
+                fontSize: '16px',
+                lineHeight: 1,
                 fontStyle: 'italic',
                 fontFamily: 'Georgia, "Times New Roman", serif',
                 fontWeight: 400,
-                opacity: 0.5,
+                transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out',
               }}
               aria-label="About"
             >
               i
             </button>
 
-            {/* Audio toggle — only on work page */}
+            {/* Dark mode toggle — Index + Misc pages. Outer ring + inner filled disc
+                with a 3px gap. Matches the nav-link opacity scale (50% → 70% on hover). */}
+            {(isArchive || isExperiments) && (
+              <button
+                onClick={() => setDark(!dark)}
+                className="rounded-full flex-shrink-0 opacity-50 hover:opacity-70 hover:scale-110 flex items-center justify-center"
+                style={{
+                  width: '30px',
+                  height: '30px',
+                  border: `1.5px solid ${fg}`,
+                  background: 'transparent',
+                  padding: '3px',
+                  cursor: 'pointer',
+                  transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out',
+                }}
+                aria-label="Toggle light/dark mode"
+              >
+                <span
+                  className="block w-full h-full rounded-full"
+                  style={{ background: fg }}
+                />
+              </button>
+            )}
+
+            {/* Audio toggle — home page only. Matches the nav-link opacity scale. */}
             {isWork && (
               <button
-                onClick={() => setAudioOn(!audioOn)}
-                className="flex items-center gap-1.5 px-2 py-0.5 rounded-full transition-all duration-300 flex-shrink-0"
+                onClick={() => {
+                  const a = audioRef.current
+                  if (!a) return
+                  if (a.paused) {
+                    a.play().catch(() => {})
+                  } else {
+                    a.pause()
+                  }
+                }}
+                className="flex items-center justify-center rounded-full flex-shrink-0 opacity-50 hover:opacity-70 hover:scale-110"
                 style={{
-                  background: dark
-                    ? audioOn ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)'
-                    : audioOn ? 'rgba(0,0,0,0.06)' : 'rgba(0,0,0,0.02)',
-                  border: `1px solid ${dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}`,
+                  width: '30px',
+                  height: '30px',
+                  border: `1.5px solid ${fg}`,
+                  color: fg,
+                  transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out',
                 }}
                 aria-label="Toggle ambient audio"
               >
-                <span style={{ fontSize: '10px', opacity: audioOn ? 0.8 : 0.35 }}>♪</span>
-                <span
-                  className="text-[7px] uppercase tracking-widest font-bold"
-                  style={{ color: fg, opacity: audioOn ? 0.5 : 0.3 }}
-                >
-                  {audioOn ? 'On' : 'Off'}
-                </span>
-                {audioOn && (
-                  <span className="flex gap-[1px] items-end h-2">
+                {audioOn ? (
+                  <span className="flex gap-[2px] items-center" style={{ height: '12px' }}>
                     {[0, 1, 2].map(i => (
                       <span
                         key={i}
-                        className="w-[1.5px] rounded-full"
+                        className="w-[2px] rounded-full"
                         style={{
-                          background: dark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)',
-                          animationName: 'navAudioBar', animationDuration: '0.7s', animationTimingFunction: 'ease-in-out', animationDelay: `${i * 0.12}s`, animationIterationCount: 'infinite', animationDirection: 'alternate',
-                          height: '2px',
+                          background: fg,
+                          animationName: 'navAudioBar',
+                          animationDuration: '0.7s',
+                          animationTimingFunction: 'ease-in-out',
+                          animationDelay: `${i * 0.12}s`,
+                          animationIterationCount: 'infinite',
+                          animationDirection: 'alternate',
+                          height: '4px',
                         }}
                       />
                     ))}
                   </span>
+                ) : (
+                  <span style={{ fontSize: '14px', lineHeight: 1 }}>♪</span>
                 )}
               </button>
             )}
+          </div>
+          {/* Minimize control — HOME PAGE ONLY. Sits below the info/audio cluster.
+              Just a dash line, no circle. */}
+          {isWork && (
+            <button
+              onClick={() => setHeaderMinimized(true)}
+              aria-label="Minimize header"
+              className="flex items-center justify-center flex-shrink-0 opacity-50 hover:opacity-70 hover:scale-110"
+              style={{
+                width: '30px',
+                height: '20px',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out',
+              }}
+            >
+              <span
+                className="block rounded-full"
+                style={{ width: '14px', height: '1.5px', background: fg }}
+              />
+            </button>
+          )}
           </div>
         )}
 
         <div className="flex items-start justify-between">
           {/* Left: Name */}
           {isWhitePage ? (
-            <Link href="/work" className="hover:opacity-70 transition-opacity inline-block">
-              <span className="font-black text-[clamp(1.4rem,3vw,2.4rem)] uppercase leading-[0.9] tracking-tight block whitespace-nowrap">
-                Jordan Carter
-              </span>
+            <Link
+              href="/"
+              className="hover:opacity-70 hover:scale-105 inline-block origin-left"
+              style={{ transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out' }}
+            >
+              {/* XOXO wordmark logo. Sized via height (clamp for responsive scale)
+                  while keeping the original aspect ratio. Inverts to light fill on dark mode. */}
+              <img
+                src="/assets/Logos/xoxo_Logo_001.png"
+                alt="xoxo studio"
+                className="block w-auto"
+                style={{
+                  height: 'clamp(1.4rem, 3vw, 2.4rem)',
+                  filter: dark ? 'invert(1)' : 'none',
+                }}
+              />
             </Link>
           ) : (
-            <Link href="/work" className="hover:opacity-70 transition-opacity text-white">
+            <Link
+              href="/"
+              className="hover:opacity-70 hover:scale-105 text-white origin-left inline-block"
+              style={{ transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out' }}
+            >
               <span className="text-sm font-black tracking-wider uppercase block">
                 JC©
               </span>
@@ -172,22 +361,223 @@ export default function Navigation() {
             {/* Desktop nav */}
             <nav className={`hidden md:flex items-center gap-8 ${isWhitePage ? '' : 'text-white'}`}>
               {navItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`text-sm font-bold uppercase tracking-wider hover:opacity-70 transition-opacity ${
-                    pathname.startsWith(item.href) ? 'opacity-100' : 'opacity-50'
-                  }`}
-                >
-                  {item.label}
-                </Link>
+                item.href === '/archive' ? (
+                  <div
+                    key={item.href}
+                    className="relative"
+                    style={{ zIndex: 10000 }}
+                    onMouseEnter={() => setIndexHover(true)}
+                    onMouseLeave={() => setIndexHover(false)}
+                  >
+                    {/* Index link — visually stays in its hover state (scale + opacity)
+                        for as long as the dropdown is open. On hover, the label also
+                        slides DOWN ~22px to align with the bottom edge of the header,
+                        so the dropdown reads as "dropping out of" the title. */}
+                    <Link
+                      href={item.href}
+                      className={`text-sm font-bold uppercase tracking-wider inline-block ${
+                        pathname.startsWith(item.href) ? 'opacity-100' : 'opacity-50'
+                      }`}
+                      style={{
+                        // position+zIndex keeps the INDEX label clickable when its
+                        // translated position visually overlaps the hover-bridge.
+                        position: 'relative',
+                        zIndex: 10000,
+                        transition: 'transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.22s ease-out',
+                        transform: indexHover ? 'translateY(22px) scale(1.1)' : 'translateY(0) scale(1)',
+                        opacity: indexHover
+                          ? 0.85
+                          : (pathname.startsWith(item.href) ? 1 : 0.5),
+                      }}
+                    >
+                      {item.label}
+                    </Link>
+                    {/* Invisible hover-bridge — fills the visual gap between the
+                        translated INDEX label and the dropdown so the cursor can
+                        travel down without exiting the wrapper's mouse hit-area.
+                        As a child of the wrapper, it counts as "inside" for the
+                        parent's onMouseLeave detection. */}
+                    {indexHover && (
+                      <div
+                        aria-hidden
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          width: '240px',
+                          height: '60px',
+                          zIndex: 9998,
+                        }}
+                      />
+                    )}
+                    <AnimatePresence>
+                      {indexHover && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                          // Push the dropdown down past the header's bottom edge so
+                          // it doesn't overlap the glass. ~38px gap clears the header's
+                          // bottom padding + leaves a small visual breath.
+                          className="absolute top-full left-0 mt-[38px] rounded-xl min-w-[220px] overflow-hidden"
+                          style={{
+                            zIndex: 9999,
+                            // Lower fill opacity + a soft top→bottom gradient = real glass
+                            // refraction. The strong saturate(2.2) boosts whatever colors
+                            // sit behind the dropdown so the panel picks up tinted hue
+                            // rather than reading as flat white.
+                            background: dark
+                              ? 'linear-gradient(180deg, rgba(20,20,20,0.42), rgba(0,0,0,0.32))'
+                              : 'linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0.22))',
+                            backdropFilter: 'blur(48px) saturate(2.2)',
+                            WebkitBackdropFilter: 'blur(48px) saturate(2.2)',
+                            border: `1px solid ${dark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.55)'}`,
+                            boxShadow: dark
+                              ? 'inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 36px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.18)'
+                              : 'inset 0 1px 0 rgba(255,255,255,0.65), 0 12px 36px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.04)',
+                            transformOrigin: 'top left',
+                          }}
+                        >
+                          <div className="py-2 px-1">
+                            {/* 3D / GEN toggle pill — switches which bucket of featured
+                                projects the dropdown lists. Active segment gets a fill;
+                                inactive segment is dimmed. */}
+                            <div className="flex items-center gap-1 px-3 py-1 mb-1">
+                              {(['3d', 'gen'] as const).map(cat => {
+                                const active = indexCategory === cat
+                                return (
+                                  <button
+                                    key={cat}
+                                    onClick={() => setIndexCategory(cat)}
+                                    // Hover affordance: pop up via scale + brighten the
+                                    // inactive segment so it's obvious you can click it.
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.transform = 'scale(1.18)'
+                                      if (!active) {
+                                        e.currentTarget.style.opacity = '0.85'
+                                        e.currentTarget.style.background = dark
+                                          ? 'rgba(255,255,255,0.06)'
+                                          : 'rgba(0,0,0,0.04)'
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.transform = 'scale(1)'
+                                      if (!active) {
+                                        e.currentTarget.style.opacity = '0.3'
+                                        e.currentTarget.style.background = 'transparent'
+                                      }
+                                    }}
+                                    className="text-[8px] uppercase tracking-[0.18em] font-bold px-2 py-0.5 rounded-md cursor-pointer"
+                                    style={{
+                                      color: dark ? '#fff' : '#000',
+                                      opacity: active ? 1 : 0.3,
+                                      background: active
+                                        ? (dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)')
+                                        : 'transparent',
+                                      transform: 'scale(1)',
+                                      transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out, background 0.18s ease-out',
+                                      transformOrigin: 'center',
+                                    }}
+                                  >
+                                    {cat.toUpperCase()}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                            {(() => {
+                              // Filter featured projects by the active category. Projects
+                              // without a `category` field default to '3d' so existing
+                              // data continues to show under the 3D bucket.
+                              // Clients explicitly hidden from this dropdown
+                              const HIDDEN_CLIENTS = new Set(['KFC', 'CAT'])
+                              const visible = featuredProjects.filter((p) => {
+                                if (HIDDEN_CLIENTS.has(p.client)) return false
+                                const cat = ((p as Record<string, unknown>).category as string | undefined) || '3d'
+                                return cat === indexCategory
+                              })
+                              if (visible.length === 0) {
+                                return (
+                                  <div className="px-3 py-3 text-center">
+                                    <p className="text-[8px] uppercase tracking-[0.15em] font-bold" style={{ opacity: 0.35, color: dark ? '#fff' : '#000' }}>
+                                      Coming soon
+                                    </p>
+                                  </div>
+                                )
+                              }
+                              return visible.map((p, i) => (
+                                <motion.button
+                                  key={`${indexCategory}-${p.slug}`}
+                                  initial={{ opacity: 0, x: -8 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ duration: 0.25, delay: 0.08 + i * 0.04, ease: [0.16, 1, 0.3, 1] }}
+                                  onClick={() => { setIndexHover(false); router.push(`/work/${p.slug}`) }}
+                                  className="w-full text-left px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-[0.02em]"
+                                  style={{
+                                    color: dark ? '#fff' : '#000',
+                                    transformOrigin: 'left center',
+                                    transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.18s ease-out, color 0.18s ease-out',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    const color = hoverColors[i % hoverColors.length]
+                                    e.currentTarget.style.background = color
+                                    e.currentTarget.style.color = '#ffffff'
+                                    e.currentTarget.style.transform = 'scale(1.04)'
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'transparent'
+                                    e.currentTarget.style.color = dark ? '#fff' : '#000'
+                                    e.currentTarget.style.transform = 'scale(1)'
+                                  }}
+                                >
+                                  {p.client}
+                                  <span className="text-[8px] font-normal ml-2" style={{ opacity: 0.4 }}>{p.year}</span>
+                                </motion.button>
+                              ))
+                            })()}
+                            <div className="mt-1 px-3 pt-1.5 pb-1" style={{ borderTop: `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}` }}>
+                              <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.2 }}
+                              >
+                                <Link
+                                  href="/archive"
+                                  onClick={() => setIndexHover(false)}
+                                  className="text-[8px] uppercase tracking-[0.12em] font-bold hover:opacity-80 hover:scale-110 inline-block origin-left"
+                                  style={{
+                                    opacity: 0.35,
+                                    transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out',
+                                  }}
+                                >
+                                  See all projects →
+                                </Link>
+                              </motion.div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                ) : (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`text-sm font-bold uppercase tracking-wider hover:opacity-70 hover:scale-110 inline-block ${
+                      pathname.startsWith(item.href) ? 'opacity-100' : 'opacity-50'
+                    }`}
+                    style={{ transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out' }}
+                  >
+                    {item.label}
+                  </Link>
+                )
               ))}
             </nav>
 
 
-            {/* Mobile hamburger */}
+            {/* Mobile hamburger — visible below md, hidden on desktop */}
             <button
-              className={`md:hidden z-50 relative ${isWhitePage ? '' : 'text-white'}`}
+              className={`flex md:hidden z-50 relative ${isWhitePage ? '' : 'text-white'}`}
               onClick={() => setMobileOpen(!mobileOpen)}
               aria-label="Toggle menu"
             >
@@ -209,7 +599,57 @@ export default function Navigation() {
           </div>
         </div>
 
-      </header>
+      </motion.header>
+
+      {/* Ambient drone — only mounted on the home page. The toggle in the header
+          drives this element directly via the audioRef. */}
+      {isWork && (
+        <audio
+          ref={audioRef}
+          src="/assets/audio/ambient-drone.m4a"
+          loop
+          preload="auto"
+        />
+      )}
+
+      {/* Floating "+" pill — appears at the TOP CENTER when the header is minimized.
+          Wrapped in a flex-center row so the centering is independent of the
+          motion.button's own animated transform (y / scale). */}
+      <AnimatePresence>
+        {headerMinimized && (
+          <div
+            className="fixed top-3 left-0 right-0 flex justify-center pointer-events-none"
+            style={{ zIndex: 10001 }}
+          >
+            <motion.button
+              initial={{ opacity: 0, y: -10, scale: 0.85 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.85 }}
+              transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+              onClick={() => setHeaderMinimized(false)}
+              aria-label="Restore header"
+              className="pointer-events-auto w-9 h-9 flex items-center justify-center hover:scale-110 transition-transform cursor-pointer"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+              }}
+            >
+              {/* Hamburger icon — `mix-blend-mode: difference` paints the white bars
+                  as the inverse of whatever's behind, so they read on any background
+                  without needing a pill / glass backing. */}
+              <span
+                className="flex flex-col items-center justify-center gap-[4px]"
+                style={{ mixBlendMode: 'difference' }}
+              >
+                <span className="block w-[20px] h-[2px] rounded-full bg-white" />
+                <span className="block w-[20px] h-[2px] rounded-full bg-white" />
+                <span className="block w-[20px] h-[2px] rounded-full bg-white" />
+              </span>
+            </motion.button>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Mobile overlay */}
       <AnimatePresence>
@@ -274,11 +714,11 @@ export default function Navigation() {
               {/* Top row — location | time + email */}
               <div className="flex justify-between items-start mb-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
                 <div className="flex items-center gap-2 text-[9px] tracking-[0.12em] uppercase">
-                  <span>Melbourne, Aus</span>
+                  <span>{infoData.location || 'Melbourne, Aus'}</span>
                   <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
                   <span className="font-mono">{new Date().toLocaleTimeString('en-AU', { timeZone: 'Australia/Melbourne', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
                 </div>
-                <p className="text-[9px] tracking-[0.12em]">carterjordan75@gmail.com</p>
+                <p className="text-[9px] tracking-[0.12em]">{infoData.email || 'carterjordan75@gmail.com'}</p>
               </div>
 
               {/* Experimental type — small label */}
@@ -286,7 +726,7 @@ export default function Navigation() {
                 className="text-center text-[9px] tracking-[0.2em] uppercase font-bold mb-2"
                 style={{ color: 'rgba(255,255,255,0.5)' }}
               >
-                3D Motion &amp; Generative
+                {infoData.subtitle || 'Generative & 3D Motion'}
               </p>
 
               {/* Large name — experimental mixed weights */}
@@ -298,19 +738,33 @@ export default function Navigation() {
                 <span className="font-light text-[clamp(1.8rem,5.5vw,3.8rem)] leading-[1] tracking-[-0.01em]">)</span>
               </div>
 
+              {/* XOXO wordmark — same logo image as the top-left, inverted to white
+                  for the dark popup background. */}
+              <div className="flex flex-col items-center mb-5 mt-1">
+                <img
+                  src="/assets/Logos/xoxo_Logo_001.png"
+                  alt="XOXO"
+                  className="block w-auto"
+                  style={{
+                    height: 'clamp(2.4rem, 5.5vw, 3.6rem)',
+                    filter: 'invert(1)',
+                  }}
+                />
+              </div>
+
               {/* Blurb — centred, experimental */}
               <p
                 className="text-center text-[9px] leading-[1.7] tracking-[0.06em] uppercase font-bold max-w-[420px] mx-auto mb-5"
                 style={{ color: 'rgba(255,255,255,0.45)' }}
               >
-                A multidisciplinary creative working at the intersection of technology and craft. Building visual systems that feel alive, intentional, and unmistakably human.
+                {infoData.blurb || 'A multidisciplinary creative working at the intersection of technology and craft. Building visual systems that feel alive, intentional, and unmistakably human.'}
               </p>
 
-              {/* More button — pill, navigates to /info */}
+              {/* More button — pill toggle. Expands the popup down to reveal
+                  the client list. Click again (now "Less") to collapse. */}
               <div className="flex justify-center mb-5">
-                <Link
-                  href="/info"
-                  onClick={() => setShowInfo(false)}
+                <button
+                  onClick={() => setInfoExpanded(v => !v)}
                   className="px-5 py-1.5 rounded-full text-[8px] uppercase tracking-[0.15em] font-bold transition-all duration-200 hover:scale-105 active:scale-95"
                   style={{
                     border: '1px solid rgba(255,255,255,0.25)',
@@ -318,15 +772,65 @@ export default function Navigation() {
                     background: 'rgba(255,255,255,0.05)',
                   }}
                 >
-                  More
-                </Link>
+                  {infoExpanded ? 'Less' : 'More'}
+                </button>
               </div>
+
+              {/* Expandable client list — slides down when "More" is clicked.
+                  Uses height: auto via AnimatePresence so the popup grows down
+                  smoothly. The list is taken from info-page.logoOrder. */}
+              <AnimatePresence initial={false}>
+                {infoExpanded && clientList.length > 0 && (
+                  <motion.div
+                    key="client-list"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                    className="overflow-hidden"
+                  >
+                    <div className="pt-1 pb-4">
+                      <p
+                        className="text-[7px] uppercase tracking-[0.22em] font-bold text-center mb-3"
+                        style={{ color: 'rgba(255,255,255,0.4)' }}
+                      >
+                        Selected Clients
+                      </p>
+                      {(() => {
+                        // Clients hidden from the popup's Selected Clients list.
+                        const HIDDEN = new Set(['MERRELL', 'UMG', 'HUMANRACE', 'FENTY', 'SAMSUNG', 'META'])
+                        const visibleClients = clientList.filter(c => !HIDDEN.has(c.toUpperCase()))
+                        return (
+                          <div className="flex flex-wrap justify-center items-center gap-x-3 gap-y-2 max-w-[560px] mx-auto">
+                            {visibleClients.map((client, i) => (
+                              <span
+                                key={`${client}-${i}`}
+                                className="text-[10px] uppercase tracking-[0.18em] font-medium inline-flex items-center"
+                                style={{ color: 'rgba(255,255,255,0.7)' }}
+                              >
+                                {client}
+                                {i < visibleClients.length - 1 && (
+                                  <span
+                                    aria-hidden
+                                    className="ml-3"
+                                    style={{ color: 'rgba(255,255,255,0.3)' }}
+                                  >·</span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Bottom row — Meta + copyright */}
               <div className="flex justify-between items-center" style={{ color: 'rgba(255,255,255,0.5)', borderTop: '1px solid rgba(255,255,255,0.12)', paddingTop: '0.75rem' }}>
                 <div className="flex items-center gap-2">
                   <p className="text-[9px] tracking-[0.1em] uppercase">Currently working at</p>
-                  <span className="font-black text-[11px] tracking-[0.08em] uppercase" style={{ color: '#ffffff' }}>META</span>
+                  <span className="font-black text-[11px] tracking-[0.08em] uppercase" style={{ color: '#ffffff' }}>{infoData.currentlyAt || 'META'}</span>
                 </div>
                 <p className="text-[9px] tracking-[0.1em] uppercase" style={{ color: 'rgba(255,255,255,0.35)' }}>2026©</p>
               </div>

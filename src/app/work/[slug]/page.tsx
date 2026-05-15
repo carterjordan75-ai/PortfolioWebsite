@@ -7,18 +7,20 @@ import { projects } from '@/data/projects'
 import PageTransition from '@/components/PageTransition'
 import EmailPopup from '@/components/EmailPopup'
 import AdminPortal from '@/components/AdminPortal'
+import FooterBlurb from '@/components/FooterBlurb'
 import { useDarkMode } from '@/contexts/DarkModeContext'
-import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRef } from 'react'
+import EditableText from '@/components/EditableText'
+import { useEditMode } from '@/contexts/EditModeContext'
 
 const featuredProjects = projects.filter(p => p.featured)
 
 // Client logo mapping
 const clientLogos: Record<string, { src: string; width: number; height: number }> = {
   'Nike': { src: '/assets/Logos/Logo_NIKE.svg', width: 220, height: 80 },
-  'Adidas Originals': { src: '/assets/Logos/Logo_ADIDAS_ORIGINALS.png', width: 200, height: 80 },
-  'Adidas Rugby': { src: '/assets/Logos/Logo_ADIDAS.png', width: 200, height: 80 },
+  'Adidas Originals': { src: '/assets/Logos/Logo_ADIDAS_ORIGINALS.webp', width: 200, height: 80 },
+  'Adidas Rugby': { src: '/assets/Logos/Logo_ADIDAS.webp', width: 200, height: 80 },
 }
 
 // Media pool — videos and images from TestMedia folder
@@ -44,8 +46,7 @@ function getProjectMedia(slug: string) {
 }
 
 export default function ProjectPage({ params }: { params: { slug: string } }) {
-  const project = projects.find((p) => p.slug === params.slug)
-  if (!project) return notFound()
+  const codeProject = projects.find((p) => p.slug === params.slug)
 
   const { dark, fg, fg60, borderThick } = useDarkMode()
   const [showEmail, setShowEmail] = useState(false)
@@ -54,6 +55,71 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   const [viewCount, setViewCount] = useState(0)
   const [downloading, setDownloading] = useState(false)
   const leftPanelRef = useRef<HTMLDivElement>(null)
+  const [adminProject, setAdminProject] = useState<Record<string, unknown> | null>(null)
+  const [adminLoading, setAdminLoading] = useState(!codeProject)
+  const { editMode, addChange } = useEditMode()
+  const [logoScale, setLogoScale] = useState(100)
+
+  // Always fetch admin data — for code projects it may have overrides (logo, brief, etc.)
+  useEffect(() => {
+    fetch('/api/projects')
+      .then(r => r.json())
+      .then(data => {
+        const found = (data.projects || []).find((p: Record<string, unknown>) => p.slug === params.slug)
+        setAdminProject(found || null)
+        if (found?.logoSize) setLogoScale(Number(found.logoSize))
+        setAdminLoading(false)
+      })
+      .catch(() => setAdminLoading(false))
+  }, [params.slug])
+
+  // Track page views per project in localStorage
+  useEffect(() => {
+    const key = `jc-views-${params.slug}`
+    const current = parseInt(localStorage.getItem(key) || '0', 10) + 1
+    localStorage.setItem(key, String(current))
+    setViewCount(current)
+  }, [params.slug])
+
+  // Merge: code project as base, admin data as overrides
+  const baseProject = codeProject || (adminProject ? {
+    slug: String(adminProject.slug || ''),
+    client: String(adminProject.client || 'Untitled'),
+    title: String(adminProject.title || ''),
+    year: Number(adminProject.year || 2026),
+    tags: (adminProject.tags as string[]) || ['Motion'],
+    featured: Boolean(adminProject.featured),
+    type: String(adminProject.type || 'case-study') as 'case-study' | 'media-forward',
+    thumbnail: String(adminProject.thumbnail || ''),
+    heroMedia: String(adminProject.heroMedia || ''),
+    brief: adminProject.brief ? String(adminProject.brief) : undefined,
+    role: adminProject.role ? String(adminProject.role) : undefined,
+    content: [],
+  } : null)
+
+  // Apply ALL admin overrides on top of code project
+  const project = baseProject ? {
+    ...baseProject,
+    ...(adminProject ? {
+      ...(adminProject.client ? { client: String(adminProject.client) } : {}),
+      ...(adminProject.title ? { title: String(adminProject.title) } : {}),
+      ...(adminProject.year ? { year: Number(adminProject.year) } : {}),
+      ...(adminProject.tags ? { tags: adminProject.tags as string[] } : {}),
+      ...(adminProject.featured !== undefined ? { featured: Boolean(adminProject.featured) } : {}),
+      ...(adminProject.brief ? { brief: String(adminProject.brief) } : {}),
+      ...(adminProject.role ? { role: String(adminProject.role) } : {}),
+      ...(adminProject.logoPath ? { logoPath: String(adminProject.logoPath) } : {}),
+      ...(adminProject.media ? { adminMedia: adminProject.media } : {}),
+      ...(adminProject.credits ? { credits: String(adminProject.credits) } : {}),
+      ...(adminProject.toolbox ? { toolbox: String(adminProject.toolbox) } : {}),
+    } : {}),
+  } : null
+
+  if (adminLoading) {
+    return <div className="min-h-screen flex items-center justify-center" style={{ background: dark ? '#0a0a0a' : '#f5f5f0' }}><span style={{ color: fg, opacity: 0.3 }} className="text-sm">Loading...</span></div>
+  }
+
+  if (!project) return notFound()
 
   const handleDownload = async () => {
     setDownloading(true)
@@ -176,14 +242,6 @@ For licensing inquiries: carterjordan75@gmail.com
     }
   }
 
-  // Track page views per project in localStorage
-  useEffect(() => {
-    const key = `jc-views-${params.slug}`
-    const current = parseInt(localStorage.getItem(key) || '0', 10) + 1
-    localStorage.setItem(key, String(current))
-    setViewCount(current)
-  }, [params.slug])
-
   const featIdx = featuredProjects.findIndex(p => p.slug === params.slug)
   const prev = featIdx > 0 ? featuredProjects[featIdx - 1] : featuredProjects[featuredProjects.length - 1]
   const next = featIdx < featuredProjects.length - 1 ? featuredProjects[featIdx + 1] : featuredProjects[0]
@@ -254,8 +312,20 @@ For licensing inquiries: carterjordan75@gmail.com
                 <span className="text-[10px] tracking-[0.15em] uppercase">featured</span>
               </div>
 
-              {/* Client — MASSIVE */}
-              <h1 className="font-black lowercase leading-[0.85] tracking-[-0.04em] mb-2" style={{ fontSize: 'clamp(2.8rem, 10vw, 5.5rem)' }}>
+              {/* Client — MASSIVE, single line, auto-shrinks to fit */}
+              <h1
+                ref={(el) => {
+                  if (!el) return
+                  // Auto-shrink to fit on one line
+                  let size = 80
+                  el.style.fontSize = `${size}px`
+                  while (el.scrollWidth > el.clientWidth && size > 20) {
+                    size -= 2
+                    el.style.fontSize = `${size}px`
+                  }
+                }}
+                className="font-black leading-[1] tracking-[-0.04em] mb-2 whitespace-nowrap overflow-visible"
+              >
                 {project.client}
               </h1>
 
@@ -286,43 +356,90 @@ For licensing inquiries: carterjordan75@gmail.com
               </div>
 
               {/* Brief — medium blurb */}
-              <p className="text-[12px] leading-[1.6] tracking-[0.005em] mb-4">
-                {project.brief || `A collaborative project exploring the intersection of digital craft and physical form — pushing visual language into new territory through motion and generative systems. The brief called for something that felt both futuristic and grounded, merging organic textures with precise geometric forms across multiple formats. We developed a visual system from scratch, iterating through styleframes and motion tests over an intensive 8-week sprint. The result is a body of work that bridges the gap between commercial storytelling and experimental art direction, built to scale across digital, social and physical touchpoints.`}
-              </p>
+              <EditableText
+                slug={project.slug}
+                field="brief"
+                defaultValue={project.brief || `A collaborative project exploring the intersection of digital craft and physical form — pushing visual language into new territory through motion and generative systems. The brief called for something that felt both futuristic and grounded, merging organic textures with precise geometric forms across multiple formats. We developed a visual system from scratch, iterating through styleframes and motion tests over an intensive 8-week sprint. The result is a body of work that bridges the gap between commercial storytelling and experimental art direction, built to scale across digital, social and physical touchpoints.`}
+                tag="p"
+                className="text-[12px] leading-[1.6] tracking-[0.005em] mb-4"
+              />
 
               {/* Thin rule */}
               <div style={{ borderTop: `1px solid ${rule}`, marginBottom: '1rem' }} />
 
-              {/* The Toolbox */}
+              {/* The Toolbox — editable */}
               <div className="mb-4">
                 <span className="font-black text-[8px] tracking-[0.25em] uppercase">The Toolbox</span>
                 <span className="text-[8px] ml-2" style={{ opacity: 0.3 }}>005</span>
-                <p className="text-[10px] leading-[1.6] mt-1" style={{ opacity: 0.55 }}>
-                  Cinema 4D · Redshift · After Effects · TouchDesigner · Custom WebGL prototypes · Figma · Resolve
-                </p>
+                <EditableText
+                  slug={project.slug}
+                  field="toolbox"
+                  defaultValue={(project as Record<string, unknown>).toolbox as string || "Cinema 4D · Redshift · After Effects · TouchDesigner · Custom WebGL prototypes · Figma · Resolve"}
+                  tag="p"
+                  className="text-[10px] leading-[1.6] mt-1"
+                  style={{ opacity: 0.55 }}
+                />
               </div>
 
-              {/* Client logo — uses correct logo per client, inverts in dark mode */}
-              <div className="mb-6 flex justify-center py-4">
-                {(() => {
-                  const logo = clientLogos[project.client] || clientLogos['Nike']
-                  return (
-                    <Image
-                      src={logo.src}
-                      alt={`${project.client} logo`}
-                      width={logo.width}
-                      height={logo.height}
-                      className="object-contain"
-                      style={{ filter: dark ? 'invert(1)' : 'none', opacity: 0.85 }}
-                    />
-                  )
-                })()}
-              </div>
+              {/* Client logo with size control in edit mode */}
+              {(() => {
+                const adminLogoPath = adminProject?.logoPath ? String(adminProject.logoPath) : null
+                const logo = adminLogoPath
+                  ? { src: adminLogoPath, width: 200, height: 80 }
+                  : (clientLogos[project.client] || clientLogos['Nike'])
+                return (
+                  <div className="mb-6">
+                    {/* Fixed-size container that clips the logo */}
+                    <div
+                      className="flex items-center justify-center py-4 overflow-hidden"
+                      style={{ height: '120px', position: 'relative' }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={logo.src}
+                        alt={`${project.client} logo`}
+                        className="object-contain"
+                        style={{
+                          filter: dark ? 'invert(1)' : 'none',
+                          opacity: 0.85,
+                          width: `${logo.width * (logoScale / 100)}px`,
+                          height: 'auto',
+                          maxHeight: `${80 * (logoScale / 100)}px`,
+                        }}
+                      />
+                    </div>
+                    {editMode && (
+                      <div className="flex items-center justify-center gap-3 mt-1 px-3 py-2 rounded-lg" style={{ background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', border: `1px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}` }}>
+                        <span className="text-[8px] uppercase tracking-wider" style={{ opacity: 0.4 }}>Logo Size</span>
+                        <input
+                          type="range"
+                          min={30}
+                          max={400}
+                          value={logoScale}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value)
+                            setLogoScale(val)
+                            addChange(project.slug, 'logoSize', String(val))
+                          }}
+                          className="w-24 accent-pink-400"
+                          style={{ height: '2px' }}
+                        />
+                        <span className="text-[8px] font-mono" style={{ opacity: 0.4 }}>{logoScale}%</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
-              {/* Credits — flowing text */}
-              <div className="text-[9px] leading-[1.6] mb-5 py-3" style={{ borderTop: `1px solid ${rule}`, borderBottom: `1px solid ${rule}` }}>
-                <span className="font-bold">direction:</span> Jordan Carter — <span className="font-bold">design:</span> Studio JC — <span className="font-bold">3D:</span> Jordan Carter — <span className="font-bold">music:</span> TBC — <span className="font-bold">client:</span> {project.client} — <span className="font-bold">agency:</span> Direct — <span className="font-bold">production:</span> In-house — <span className="font-bold">year:</span> {project.year}
-              </div>
+              {/* Credits — editable */}
+              <EditableText
+                slug={project.slug}
+                field="credits"
+                defaultValue={(project as Record<string, unknown>).credits as string || `direction: Jordan Carter — design: Studio JC — 3D: Jordan Carter — music: TBC — client: ${project.client} — agency: Direct — production: In-house — year: ${project.year}`}
+                tag="div"
+                className="text-[9px] leading-[1.6] mb-5 py-3"
+                style={{ borderTop: `1px solid ${rule}`, borderBottom: `1px solid ${rule}` }}
+              />
 
               {/* Bottom — copyright right-aligned */}
               <div className="flex justify-end mb-4">
@@ -391,15 +508,13 @@ For licensing inquiries: carterjordan75@gmail.com
         </div>
 
         {/* Footer */}
-        <footer className="px-6 md:px-10 py-5" style={{ borderTop: `3px solid ${borderThick}` }}>
+        <footer className="px-6 md:px-10 py-5 glass-footer mt-2">
           <div className="flex items-center justify-between gap-4">
             <div className="flex gap-3 flex-shrink-0">
               <button onClick={() => setShowEmail(true)} className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}` }}>Email</button>
               <a href="https://instagram.com/jordanscarter" target="_blank" rel="noopener noreferrer" className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}` }}>Insta</a>
             </div>
-            <p className="hidden md:block text-[9px] leading-[1.5] tracking-[0.04em] uppercase max-w-2xl text-center" style={{ color: fg60 }}>
-              A multidisciplinary creative practice spanning motion design, 3D environments, generative art, and illustration. Every project merges craft with experimentation.
-            </p>
+            <FooterBlurb pageId="project" className="hidden md:block text-[9px] leading-[1.5] tracking-[0.04em] uppercase max-w-2xl text-center" style={{ color: fg60 }} />
             <div className="flex gap-3 flex-shrink-0">
               <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="w-14 h-14 rounded-full flex items-center justify-center text-[16px] hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}` }} aria-label="Back to top">↑</button>
               <button onClick={() => setShowAdmin(true)} className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}`, color: fg60 }}>© 2026</button>
@@ -472,8 +587,11 @@ For licensing inquiries: carterjordan75@gmail.com
   )
 }
 
-// Reusable media block with expand button
-function MediaBlock({ idx, aspect, label, onExpand, dark, mediaSrc, mediaType }: {
+// Reusable media block with expand button.
+// `idx` and `dark` are part of the public API for call sites that pass them
+// (handy for future hover states / theming), but not currently consumed inside —
+// underscore-prefix keeps ESLint happy.
+function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType }: {
   idx: number; aspect: string; label: string; onExpand: () => void; dark: boolean;
   mediaSrc?: string; mediaType?: 'video' | 'image';
 }) {

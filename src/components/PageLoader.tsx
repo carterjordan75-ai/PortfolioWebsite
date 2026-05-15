@@ -70,7 +70,7 @@ export default function PageLoader({ show, onComplete }: PageLoaderProps) {
 
   return (
     <AnimatePresence>
-      {(phase !== 'idle' && phase !== 'done') && (
+      {phase !== 'done' && (
         <motion.div
           key="loader"
           initial={{ opacity: 1 }}

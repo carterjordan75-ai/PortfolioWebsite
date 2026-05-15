@@ -34,3 +34,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Raw source assets (not deployed) — keep these out of the repo; only
+# files inside public/assets are shipped to production.
+/Assets/

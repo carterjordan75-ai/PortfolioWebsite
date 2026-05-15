@@ -10,6 +10,8 @@ interface EmailPopupProps {
 
 const EMAIL = 'carterjordan75@gmail.com'
 
+// Burst particles — each is either an X or an O (the "xoxo" signoff). Kept the
+// `Heart` name for minimal diff; could rename to `Particle` later.
 interface Heart {
   id: number
   x: number
@@ -20,12 +22,12 @@ interface Heart {
   opacity: number
   rotation: number
   rotSpeed: number
+  char: 'X' | 'O'
 }
 
 export default function EmailPopup({ show, onClose }: EmailPopupProps) {
   const [copied, setCopied] = useState(false)
   const [hovered, setHovered] = useState(false)
-  const [hearts, setHearts] = useState<Heart[]>([])
   const [showHearts, setShowHearts] = useState(false)
   const heartIdRef = useRef(0)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -34,19 +36,21 @@ export default function EmailPopup({ show, onClose }: EmailPopupProps) {
 
   const spawnHearts = useCallback((cx: number, cy: number) => {
     const newHearts: Heart[] = []
-    for (let i = 0; i < 30; i++) {
+    // Loads of X and O — burst count bumped up so it reads as a confetti shower
+    for (let i = 0; i < 70; i++) {
       const angle = Math.random() * Math.PI * 2
-      const speed = 3 + Math.random() * 8
+      const speed = 3 + Math.random() * 9
       newHearts.push({
         id: heartIdRef.current++,
         x: cx,
         y: cy,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed - 4,
-        size: 10 + Math.random() * 12,
+        size: 16 + Math.random() * 18,
         opacity: 1,
         rotation: Math.random() * 360,
-        rotSpeed: (Math.random() - 0.5) * 10,
+        rotSpeed: (Math.random() - 0.5) * 12,
+        char: Math.random() < 0.5 ? 'X' : 'O',
       })
     }
     heartsRef.current = [...heartsRef.current, ...newHearts]
@@ -83,10 +87,13 @@ export default function EmailPopup({ show, onClose }: EmailPopupProps) {
         ctx.translate(h.x, h.y)
         ctx.rotate((h.rotation * Math.PI) / 180)
         ctx.globalAlpha = Math.max(0, h.opacity)
-        ctx.font = `${h.size}px serif`
+        // Bold sans for the X/O so they read as crisp typographic confetti
+        ctx.font = `900 ${h.size}px ui-sans-serif, -apple-system, "Segoe UI", sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText('❤️', 0, 0)
+        // Subtle color variance — X's a touch pink, O's pure white
+        ctx.fillStyle = h.char === 'X' ? '#ff69b4' : '#ffffff'
+        ctx.fillText(h.char, 0, 0)
         ctx.restore()
       }
 
@@ -161,15 +168,17 @@ export default function EmailPopup({ show, onClose }: EmailPopupProps) {
             style={{ cursor: 'pointer' }}
           >
             <span
-              className="font-black tracking-tight"
+              className="uppercase font-bold"
               style={{
-                fontSize: 'clamp(0.9rem, 2.5vw, 1.8rem)',
+                fontSize: 'clamp(0.9rem, 2.6vw, 1.8rem)',
+                letterSpacing: '0.04em',
+                lineHeight: 1.5,
                 color: copied ? '#ff69b4' : hovered ? '#ff69b4' : '#ffffff',
                 transition: 'color 0.15s ease',
                 userSelect: 'none',
               }}
             >
-              {copied ? 'Copied! ❤️' : EMAIL}
+              {copied ? 'Copied — XOXO' : EMAIL}
             </span>
           </motion.div>
 
