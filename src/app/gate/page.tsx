@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import { startAmbientAudio } from '@/lib/ambientAudio'
 
 export default function GatePage() {
   const [passcode, setPasscode] = useState('')
@@ -20,6 +21,11 @@ export default function GatePage() {
         body: JSON.stringify({ passcode }),
       })
       if (res.ok) {
+        // Kick off the ambient drone while the click gesture is still "live"
+        // in the browser's activation tracking — this is the only window where
+        // unmuted autoplay is allowed. The home page then adopts the same
+        // singleton audio element instead of creating a fresh one.
+        startAmbientAudio()
         router.push('/')
         router.refresh()
       } else {

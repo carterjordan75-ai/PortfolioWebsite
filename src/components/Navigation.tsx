@@ -2,11 +2,17 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 import { projects } from '@/data/projects'
+import {
+  getAmbientAudio,
+  startAmbientAudio,
+  pauseAmbientAudio,
+  isAmbientPlaying,
+} from '@/lib/ambientAudio'
 
 const hoverColors = [
   '#e94560', '#ff6b35', '#00b4d8', '#7209b7', '#06d6a0',
@@ -25,9 +31,10 @@ export default function Navigation() {
   const { dark, setDark, fg } = useDarkMode()
   // The toggle's visual state (On/Off + animated bars) reflects the AUDIO ELEMENT'S
   // actual paused/playing state — not a separate flag — so the button never desyncs
-  // from reality. Starts false: browsers block autoplay until the visitor interacts.
+  // from reality. The audio itself lives in src/lib/ambientAudio.ts as a module
+  // singleton so it survives navigation between pages (and crucially, the user's
+  // click gesture on the gate's submit button — see startAmbientAudio call there).
   const [audioOn, setAudioOn] = useState(false)
-  const audioRef = useRef<HTMLAudioElement>(null)
   const [indexHover, setIndexHover] = useState(false)
   // Active bucket inside the Index hover dropdown — '3d' = the current featured
   // projects, 'gen' = a future bucket for generative projects (currently empty,
@@ -99,12 +106,13 @@ export default function Navigation() {
   const isLook = pathname === '/look'
   const isWhitePage = isArchive || isWork || isExperiments || isProjectPage || isLook
 
-  // Keep audioOn synced with the actual audio element's state — listen to
-  // play/pause events so external changes (e.g. browser pausing on tab change)
-  // are reflected in the toggle UI.
+  // Keep audioOn synced with the singleton audio element's state — listen to
+  // play/pause events so external changes (e.g. browser pausing on tab change,
+  // or another component pausing) are reflected in the toggle UI.
   useEffect(() => {
-    const a = audioRef.current
+    const a = getAmbientAudio()
     if (!a) return
+    setAudioOn(isAmbientPlaying())
     const onPlay = () => setAudioOn(true)
     const onPause = () => setAudioOn(false)
     a.addEventListener('play', onPlay)
@@ -137,32 +145,30 @@ export default function Navigation() {
     if (!isWork && headerMinimized) setHeaderMinimized(false)
   }, [isWork, headerMinimized])
 
-  // Try to start the ambient drone on mount of the home page. Browsers block
-  // autoplay without a user gesture, so we also wire a one-time interaction
-  // handler that fires on the first click/keypress anywhere — including the
-  // audio toggle itself — to start playback as soon as possible.
+  // Audio lifecycle for the home page:
+  // - On entry: ensure the singleton ambient drone is playing. If a fresh
+  //   visitor came through the gate, startAmbientAudio() was already called
+  //   inside the submit handler's click gesture — so the audio is playing and
+  //   this call is a no-op. For direct visits (cookie still valid, no gate),
+  //   browsers block unmuted autoplay, so we fall back to "play on first
+  //   interaction" the same way the previous implementation did.
+  // - On leave: pause the singleton.
   useEffect(() => {
-    if (!isWork) return
-    const a = audioRef.current
-    if (!a) return
+    if (!isWork) {
+      pauseAmbientAudio()
+      return
+    }
 
     let firstInteractListener: ((e: Event) => void) | null = null
 
-    const tryPlay = () => a.play().catch(() => {})
+    startAmbientAudio()
 
-    // Initial attempt — succeeds in browsers/contexts that allow muted autoplay
-    // or where the visitor has previously granted autoplay permission.
-    tryPlay()
-
-    // Backup: any user interaction unlocks playback. SKIP if the first interaction
-    // is the audio toggle itself — the toggle's own onClick will then handle the
-    // play (since audio is paused, it'll start). If we didn't skip, this listener
-    // would race the toggle: play() here, immediately pause() in the toggle's
-    // onClick (since by then audio is already playing).
     firstInteractListener = (e: Event) => {
       const target = e.target as HTMLElement | null
+      // Skip if the audio toggle itself is the first interaction — its own
+      // onClick will handle the play, and we don't want to race it.
       const isAudioToggle = !!target?.closest('[aria-label="Toggle ambient audio"]')
-      if (!isAudioToggle) tryPlay()
+      if (!isAudioToggle) startAmbientAudio()
       if (firstInteractListener) {
         document.removeEventListener('pointerdown', firstInteractListener, true)
         document.removeEventListener('keydown', firstInteractListener, true)
@@ -177,7 +183,7 @@ export default function Navigation() {
         document.removeEventListener('pointerdown', firstInteractListener, true)
         document.removeEventListener('keydown', firstInteractListener, true)
       }
-      a.pause()
+      pauseAmbientAudio()
     }
   }, [isWork])
 
@@ -251,12 +257,10 @@ export default function Navigation() {
             {isWork && (
               <button
                 onClick={() => {
-                  const a = audioRef.current
-                  if (!a) return
-                  if (a.paused) {
-                    a.play().catch(() => {})
+                  if (isAmbientPlaying()) {
+                    pauseAmbientAudio()
                   } else {
-                    a.pause()
+                    startAmbientAudio()
                   }
                 }}
                 className="flex items-center justify-center rounded-full flex-shrink-0 opacity-50 hover:opacity-70 hover:scale-110"
@@ -601,16 +605,10 @@ export default function Navigation() {
 
       </motion.header>
 
-      {/* Ambient drone — only mounted on the home page. The toggle in the header
-          drives this element directly via the audioRef. */}
-      {isWork && (
-        <audio
-          ref={audioRef}
-          src="/assets/audio/ambient-drone.m4a"
-          loop
-          preload="auto"
-        />
-      )}
+      {/* (Ambient drone audio now lives as a module singleton in
+          src/lib/ambientAudio.ts so it survives client-side navigation and can
+          be started from the gate's submit handler while the click gesture is
+          still active.) */}
 
       {/* Floating "+" pill — appears at the TOP CENTER when the header is minimized.
           Wrapped in a flex-center row so the centering is independent of the

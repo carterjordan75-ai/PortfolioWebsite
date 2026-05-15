@@ -7,14 +7,6 @@ import EmailPopup from '@/components/EmailPopup'
 import AdminPortal from '@/components/AdminPortal'
 import FooterBlurb from '@/components/FooterBlurb'
 import { useDarkMode } from '@/contexts/DarkModeContext'
-import { projects as initialProjects } from '@/data/projects'
-
-type Project = {
-  slug: string
-  client: string
-  featured?: boolean
-  heroMedia?: string
-}
 
 type HomeVideo = {
   src: string
@@ -24,34 +16,14 @@ type HomeVideo = {
   label?: string  // legacy fallback
 }
 
-// Test video fallbacks for projects whose heroMedia isn't a real video
-const TEST_VIDEOS = [
-  '/assets/TestMedia/video_01.mp4',
-  '/assets/TestMedia/video_02.mp4',
-  '/assets/TestMedia/video_03.mp4',
-]
-
-function deterministicHash(s: string): number {
-  let h = 0
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xffff
-  return h
-}
-
-function resolveProjectVideo(p: Project): string {
-  if (p.heroMedia && /\.(mp4|webm|mov)$/i.test(p.heroMedia)) return p.heroMedia
-  return TEST_VIDEOS[deterministicHash(p.slug) % TEST_VIDEOS.length]
-}
-
 export default function Home() {
   const { fg, borderThick } = useDarkMode()
 
-  // Custom home-page video list managed in the admin (pages.json → home-page.videos).
-  // When this is non-empty it OVERRIDES the project fallback below.
+  // Home-page video playlist. Source-of-truth is the admin panel
+  // (pages.json → home-page.videos). Starts empty so nothing flashes from
+  // local test data while the fetch is in flight — the viewport stays black
+  // until the admin list resolves.
   const [homeVideos, setHomeVideos] = useState<HomeVideo[]>([])
-  // Featured projects fallback — used when no custom home videos are configured.
-  const [projects, setProjects] = useState<Project[]>(
-    (initialProjects as Project[]).filter(p => p.featured)
-  )
   const [idx, setIdx] = useState(0)
   const [showEmail, setShowEmail] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
@@ -75,7 +47,9 @@ export default function Home() {
   }
 
   useEffect(() => {
-    // Load admin-managed home video list
+    // Load admin-managed home video list. The home page intentionally has no
+    // other fallback — if the admin list is empty (or the fetch fails), the
+    // viewport stays black rather than showing stale test footage.
     fetch('/api/pages')
       .then(r => r.json())
       .then(data => {
@@ -83,22 +57,10 @@ export default function Home() {
         if (Array.isArray(d.videos)) setHomeVideos(d.videos as HomeVideo[])
       })
       .catch(() => {})
-    // Load project list as fallback
-    fetch('/api/projects')
-      .then(r => r.json())
-      .then(data => {
-        if (data.projects) {
-          const featured = (data.projects as Project[]).filter(p => p.featured)
-          if (featured.length > 0) setProjects(featured)
-        }
-      })
-      .catch(() => {})
   }, [])
 
-  // Build the playlist — custom home videos take priority, else featured-project hero media.
-  const playlist: HomeVideo[] = homeVideos.length > 0
-    ? homeVideos
-    : projects.map(p => ({ src: resolveProjectVideo(p), title: p.client }))
+  // Admin home-page list is the only playlist source.
+  const playlist: HomeVideo[] = homeVideos
 
   const next = () => setIdx(i => (playlist.length === 0 ? 0 : (i + 1) % playlist.length))
   const prev = () => setIdx(i => (playlist.length === 0 ? 0 : (i - 1 + playlist.length) % playlist.length))
