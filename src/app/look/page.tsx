@@ -17,38 +17,8 @@ type GalleryItem = {
   source?: string
 }
 
-const galleryItems: GalleryItem[] = [
-  { src: '/assets/TestMedia/Image_01.avif', type: 'image', cols: 2, rows: 2, credit: 'Nike Running — Brand Campaign', source: 'https://nike.com' },
-  { src: '/assets/TestMedia/video_01.mp4', type: 'video', cols: 1, rows: 1, credit: 'Reel — Motion Study 001' },
-  { src: '/assets/TestMedia/Image_02.avif', type: 'image', cols: 1, rows: 1, credit: 'Helmut Newton — Fashion Editorial', source: 'https://helmut-newton.com' },
-  { src: '/assets/TestMedia/video_02.mp4', type: 'video', cols: 1, rows: 2, credit: 'Onesal Studio — Type in Motion', source: 'https://onesal.com' },
-  { src: '/assets/TestMedia/Image_03.avif', type: 'image', cols: 1, rows: 1, credit: 'Peter Saville — Album Artwork', source: 'https://petersaville.info' },
-  { src: '/assets/TestMedia/PolaroidTest.webp', type: 'image', cols: 1, rows: 1, credit: 'Andy Warhol — Polaroid Series' },
-  { src: '/assets/TestMedia/video_03.mp4', type: 'video', cols: 2, rows: 1, credit: 'Builders Club — Motion Reel', source: 'https://builders-club.com' },
-  { src: '/assets/TestMedia/Image_01.avif', type: 'image', cols: 1, rows: 1, credit: 'Virgil Abloh — Off-White SS20' },
-  { src: '/assets/TestMedia/Image_02.avif', type: 'image', cols: 1, rows: 2, credit: 'Irving Penn — Still Life', source: 'https://irvingpenn.org' },
-  { src: '/assets/TestMedia/video_01.mp4', type: 'video', cols: 1, rows: 1, credit: 'Gmunk — Oblivion Title Sequence', source: 'https://gmunk.com' },
-  { src: '/assets/TestMedia/Image_03.avif', type: 'image', cols: 2, rows: 1, credit: 'Neville Brody — Typography', source: 'https://brodyassociates.com' },
-  { src: '/assets/TestMedia/video_02.mp4', type: 'video', cols: 1, rows: 1, credit: 'ManvsMachine — Nike Air Max', source: 'https://manvsmachine.co.uk' },
-  { src: '/assets/TestMedia/PolaroidTest.webp', type: 'image', cols: 1, rows: 1, credit: 'Juergen Teller — Portrait Study' },
-  { src: '/assets/TestMedia/Image_01.avif', type: 'image', cols: 1, rows: 1, credit: 'Comme des Garcons — Campaign' },
-  { src: '/assets/TestMedia/video_03.mp4', type: 'video', cols: 2, rows: 2, credit: 'Buck Design — Branded Content', source: 'https://buck.co' },
-  { src: '/assets/TestMedia/Image_02.avif', type: 'image', cols: 1, rows: 1, credit: 'David Carson — Ray Gun Magazine' },
-  { src: '/assets/TestMedia/Image_03.avif', type: 'image', cols: 1, rows: 1, credit: 'Josef Muller-Brockmann — Grid Systems' },
-  { src: '/assets/TestMedia/video_01.mp4', type: 'video', cols: 1, rows: 1, credit: 'Ash Thorp — Ghost in the Shell', source: 'https://ashthorp.com' },
-  { src: '/assets/TestMedia/Image_01.avif', type: 'image', cols: 2, rows: 1, credit: 'Massimo Vignelli — NYC Subway Map' },
-  { src: '/assets/TestMedia/video_02.mp4', type: 'video', cols: 1, rows: 2, credit: 'Territory Studio — UI Concepts', source: 'https://territorystudio.com' },
-  { src: '/assets/TestMedia/Image_02.avif', type: 'image', cols: 1, rows: 1, credit: 'Wolfgang Tillmans — Exhibitions' },
-  { src: '/assets/TestMedia/Image_03.avif', type: 'image', cols: 1, rows: 1, credit: 'Sagmeister & Walsh — Beauty' },
-  { src: '/assets/TestMedia/video_03.mp4', type: 'video', cols: 1, rows: 1, credit: 'Tendril — Experimental 3D', source: 'https://tendril.ca' },
-  { src: '/assets/TestMedia/PolaroidTest.webp', type: 'image', cols: 1, rows: 1, credit: 'Nan Goldin — The Ballad' },
-  { src: '/assets/TestMedia/Image_01.avif', type: 'image', cols: 1, rows: 1, credit: 'Tadao Ando — Light & Concrete' },
-  { src: '/assets/TestMedia/video_01.mp4', type: 'video', cols: 2, rows: 1, credit: 'Beeple — Everydays', source: 'https://beeple-crap.com' },
-  { src: '/assets/TestMedia/Image_02.avif', type: 'image', cols: 1, rows: 2, credit: 'Richard Avedon — Portraits' },
-  { src: '/assets/TestMedia/Image_03.avif', type: 'image', cols: 1, rows: 1, credit: 'Dieter Rams — Braun Products' },
-  { src: '/assets/TestMedia/video_02.mp4', type: 'video', cols: 1, rows: 1, credit: 'Romain Laurent — Loop Series', source: 'https://romainlaurent.com' },
-  { src: '/assets/TestMedia/Image_01.avif', type: 'image', cols: 2, rows: 2, credit: 'Nike — Art of Victory Campaign', source: 'https://nike.com' },
-]
+// Look gallery is admin-only — there is no default / fallback list. Items come
+// from /api/look, which reads per-file metadata stored in Vercel Blob.
 
 export default function LookPage() {
   const { dark, fg60, borderThick } = useDarkMode()
@@ -84,8 +54,12 @@ export default function LookPage() {
       .catch(() => {})
   }, [])
 
-  const combinedItems = [...uploadedItems, ...galleryItems]
-  const allItems = [...combinedItems, ...combinedItems, ...combinedItems]
+  // Only render what the admin has uploaded. Triple the array so the
+  // infinite-scroll animation has enough content to loop seamlessly when
+  // there's a small number of items. If empty, allItems stays empty too.
+  const allItems = uploadedItems.length > 0
+    ? [...uploadedItems, ...uploadedItems, ...uploadedItems]
+    : []
 
   useEffect(() => {
     const el = scrollRef.current

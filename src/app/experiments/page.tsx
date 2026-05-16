@@ -10,37 +10,13 @@ import { useDarkMode } from '@/contexts/DarkModeContext'
 
 type MediaItem = { src: string; type: 'video' | 'image'; title: string; year: number; medium?: string | string[] }
 
-// Test data — all currently non-generative. Real generative work, when uploaded,
-// should set `medium: 'Generative'` (or include it in the array) so it routes
-// to the right-hand panel automatically.
-const defaultMedia: MediaItem[] = [
-  { src: '/assets/TestMedia/video_01.mp4', type: 'video', title: 'Particle Drift Study', year: 2024, medium: '3D' },
-  { src: '/assets/TestMedia/Image_01.avif', type: 'image', title: 'Texture Exploration 01', year: 2023, medium: 'Mixed' },
-  { src: '/assets/TestMedia/video_02.mp4', type: 'video', title: 'Fluid Morph Test', year: 2024, medium: 'Motion' },
-  { src: '/assets/TestMedia/Image_02.avif', type: 'image', title: 'Gradient Fields', year: 2023, medium: 'Mixed' },
-  { src: '/assets/TestMedia/video_03.mp4', type: 'video', title: 'Recursive Form Generator', year: 2025, medium: '3D' },
-  { src: '/assets/TestMedia/Image_03.avif', type: 'image', title: 'Noise Pattern Series', year: 2022, medium: 'Mixed' },
-]
-
-// Placeholder shown on the right panel until real generative media exists.
-const PLACEHOLDER_GENERATIVE: MediaItem = {
-  src: '/assets/TestMedia/Image_03.avif',
-  type: 'image',
-  title: 'Generative — Coming Soon',
-  year: 2026,
-  medium: 'Generative',
-}
-
-// Split by medium: anything tagged "Generative" → LEFT panel; everything else → right.
-// Order is preserved (no shuffling) so both the slideshow and the gallery view
-// reflect the exact order set in the admin panel.
+// Split rule: anything tagged "Generative" → LEFT panel; everything else → right.
+// Order is whatever the admin panel produced (no shuffling) so both the
+// slideshow and the gallery view reflect the exact admin sequence.
 const isGenerative = (m: MediaItem) => {
   const mediums = Array.isArray(m.medium) ? m.medium : [m.medium ?? '']
   return mediums.includes('Generative')
 }
-const generativeMedia = defaultMedia.filter(isGenerative)
-const leftMedia = generativeMedia.length > 0 ? generativeMedia : [PLACEHOLDER_GENERATIVE]
-const rightMedia = defaultMedia.filter(m => !isGenerative(m))
 
 function MediaPanel({
   media,
@@ -219,6 +195,31 @@ function MediaPanel({
         className={`absolute inset-0 w-full h-full ${objectFit} ${extraClass}`}
         style={blurStyle}
       />
+    )
+  }
+
+  // Empty-state panel: when the admin has uploaded no media for this side,
+  // render a clean black panel with a soft "no content yet" label rather than
+  // crashing on `current.year` etc. (We accept this is the right behaviour —
+  // the user explicitly does not want any default / placeholder media here.)
+  if (media.length === 0 || !current) {
+    return (
+      <div
+        className="relative h-full overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] flex items-center justify-center"
+        style={{
+          width: expanded ? '100%' : otherExpanded ? '0%' : '50%',
+          opacity: otherExpanded ? 0 : 1,
+          background: '#000',
+          borderRight: side === 'left' && !expanded ? `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}` : 'none',
+        }}
+      >
+        <span
+          className="text-[9px] font-bold uppercase tracking-[0.2em]"
+          style={{ color: 'rgba(255,255,255,0.25)' }}
+        >
+          {side === 'left' ? 'Generative — coming soon' : 'Misc — coming soon'}
+        </span>
+      </div>
     )
   }
 
@@ -626,24 +627,23 @@ export default function ExperimentsPage() {
   const [expandedSide, setExpandedSide] = useState<'left' | 'right' | null>(null)
   const [showEmail, setShowEmail] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
-  const [left, setLeft] = useState<MediaItem[]>(leftMedia)
-  const [right, setRight] = useState<MediaItem[]>(rightMedia)
+  // Admin-managed items only — no static fallbacks. Empty arrays until the
+  // API responds; if the admin has nothing in a given panel, that side stays
+  // blank rather than showing test footage.
+  const [left, setLeft] = useState<MediaItem[]>([])
+  const [right, setRight] = useState<MediaItem[]>([])
 
-  // Load admin-uploaded misc items and merge, KEEPING the medium-based split:
-  //   left  = Generative items only (or placeholder if none yet)
-  //   right = everything else, in admin order
-  // Order is preserved exactly as it appears in the admin panel so the
-  // slideshow and gallery views both match the admin sequence.
   useEffect(() => {
     fetch('/api/misc')
       .then(r => r.json())
       .then(data => {
         if (data.items?.length) {
-          const merged = [...defaultMedia, ...data.items]
-          const gen = merged.filter(isGenerative)
-          const nonGen = merged.filter(m => !isGenerative(m))
-          setLeft(gen.length > 0 ? gen : [PLACEHOLDER_GENERATIVE])
-          setRight(nonGen.length > 0 ? nonGen : [PLACEHOLDER_GENERATIVE])
+          const items = data.items as MediaItem[]
+          // KEEPING the medium-based split: left = Generative, right = everything else.
+          // Order is preserved exactly as it appears in the admin panel so the
+          // slideshow and gallery views both match the admin sequence.
+          setLeft(items.filter(isGenerative))
+          setRight(items.filter(m => !isGenerative(m)))
         }
       })
       .catch(() => {})
