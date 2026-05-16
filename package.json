@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@vercel/blob": "^2.3.3",
     "framer-motion": "^12.38.0",
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",

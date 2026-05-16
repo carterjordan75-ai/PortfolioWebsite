@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile, mkdir, unlink, readFile } from 'fs/promises'
 import path from 'path'
 import sharp from 'sharp'
+import { putMediaBlob, deleteBlob, blobConfigured } from '@/lib/blobStore'
 
 const IMAGE_EXTS = /\.(jpg|jpeg|png|gif|bmp|tiff|tif|avif|heic|heif|webp)$/i
 const VIDEO_EXTS = /\.(mp4|webm|mov|avi|mkv)$/i
@@ -13,7 +13,6 @@ function generateSeoFileName(originalName: string, credits: string, section: str
 
   const parts: string[] = []
 
-  // Add credits/title as primary descriptor
   if (credits) {
     parts.push(credits.toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
@@ -22,7 +21,6 @@ function generateSeoFileName(originalName: string, credits: string, section: str
       .slice(0, 40))
   }
 
-  // Add cleaned original filename
   const cleanBase = rawBase.toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
@@ -32,7 +30,6 @@ function generateSeoFileName(originalName: string, credits: string, section: str
     parts.push(cleanBase)
   }
 
-  // Add section context for SEO
   const sectionSlug = section.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')
   if (sectionSlug && sectionSlug !== 'look' && sectionSlug !== 'misc') {
     parts.unshift(`jordan-carter-${sectionSlug}`)
@@ -40,14 +37,12 @@ function generateSeoFileName(originalName: string, credits: string, section: str
     parts.unshift('jordan-carter')
   }
 
-  // Short timestamp for uniqueness
   const ts = Date.now().toString(36)
   parts.push(ts)
 
   return parts.filter(Boolean).join('-') + ext
 }
 
-// Generate SEO metadata
 function generateSeoMetadata(fileName: string, credits: string, section: string, originalName: string, width?: number, height?: number) {
   const title = credits || originalName.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ')
   const altText = `${title} — Jordan Carter ${section} portfolio`
@@ -67,6 +62,13 @@ function generateSeoMetadata(fileName: string, credits: string, section: string,
 }
 
 export async function POST(request: NextRequest) {
+  if (!blobConfigured()) {
+    return NextResponse.json(
+      { error: 'BLOB_READ_WRITE_TOKEN not configured on the server. Cannot upload.' },
+      { status: 503 },
+    )
+  }
+
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -85,9 +87,6 @@ export async function POST(request: NextRequest) {
     const isAlreadyWebp = file.name.toLowerCase().endsWith('.webp')
     const isGif = file.name.toLowerCase().endsWith('.gif')
 
-    // Type cast to Buffer<ArrayBuffer> — sharp's pipeline.toBuffer() returns this
-    // specific subtype which differs from the wider Buffer<ArrayBufferLike> that
-    // Buffer.from() returns by default. Both are runtime-identical Buffers.
     let finalBuffer: Buffer = buffer
     let width: number | undefined
     let height: number | undefined
@@ -101,13 +100,11 @@ export async function POST(request: NextRequest) {
         width = meta.width
         height = meta.height
 
-        // Resize if very large (max 2400px on longest edge)
         let pipeline = sharp(buffer)
         if ((width && width > 2400) || (height && height > 2400)) {
           pipeline = pipeline.resize(2400, 2400, { fit: 'inside', withoutEnlargement: true })
         }
 
-        // Auto-convert logos to pure black & white (threshold, not grey)
         if (isLogoUpload) {
           pipeline = pipeline.grayscale().threshold(240)
         }
@@ -116,17 +113,14 @@ export async function POST(request: NextRequest) {
           .webp({ quality: 82, effort: 4 })
           .toBuffer()
 
-        // Get final dimensions
         const finalMeta = await sharp(finalBuffer).metadata()
         width = finalMeta.width
         height = finalMeta.height
       } catch (convErr) {
         console.warn('WebP conversion failed, storing original:', convErr)
-        // Fall back to original buffer
         finalBuffer = buffer
       }
     } else if (isAlreadyWebp) {
-      // Already WebP — get dimensions, grayscale if logo
       try {
         const meta = await sharp(buffer).metadata()
         width = meta.width
@@ -137,24 +131,34 @@ export async function POST(request: NextRequest) {
       } catch {}
     }
 
-    // Generate SEO filename (force .webp for images)
+    // Generate SEO filename
     const fileName = generateSeoFileName(file.name, credits, section, convertToWebp)
     const seo = generateSeoMetadata(fileName, credits, section, file.name, width, height)
 
-    // 1. Write to public/assets/{section}/
-    const publicDir = path.join(process.cwd(), 'public', 'assets', section)
-    await mkdir(publicDir, { recursive: true })
-    await writeFile(path.join(publicDir, fileName), finalBuffer)
+    // Determine MIME type for the upload
+    const ext = path.extname(fileName).toLowerCase()
+    const mimeMap: Record<string, string> = {
+      '.webp': 'image/webp',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.avif': 'image/avif',
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.mov': 'video/quicktime',
+    }
+    const contentType = mimeMap[ext] || file.type || 'application/octet-stream'
 
-    // 2. Write backup to Assets/{section}/
-    const assetsDir = path.join(process.cwd(), 'Assets', section)
-    await mkdir(assetsDir, { recursive: true })
-    await writeFile(path.join(assetsDir, fileName), finalBuffer)
+    // Upload the media file to Blob
+    const mediaResult = await putMediaBlob(
+      `media/${section}/${fileName}`,
+      finalBuffer,
+      contentType,
+    )
 
-    // 3. Save SEO metadata JSON
-    const metaDir = path.join(publicDir, '_meta')
-    await mkdir(metaDir, { recursive: true })
-    const metaFileName = fileName.replace(/\.[^.]+$/, '') + '.json'
+    // Save per-file metadata to Blob too. The pages/sections endpoints read
+    // this for things like dimensions, credits, alt text.
     const metadata = {
       fileName,
       originalName: file.name,
@@ -162,19 +166,29 @@ export async function POST(request: NextRequest) {
       link,
       section,
       uploadedAt: new Date().toISOString(),
-      path: `/assets/${section}/${fileName}`,
+      url: mediaResult.url,
+      // Legacy field — kept for compat with code that still expects /assets/...
+      // Components should prefer `url` (the absolute Blob URL).
+      path: mediaResult.url,
       seo,
       converted: convertToWebp,
       originalSize: buffer.length,
       finalSize: finalBuffer.length,
       compressionRatio: convertToWebp ? `${Math.round((1 - finalBuffer.length / buffer.length) * 100)}% smaller` : 'n/a',
     }
-    await writeFile(path.join(metaDir, metaFileName), JSON.stringify(metadata, null, 2))
+
+    const metaFileName = fileName.replace(/\.[^.]+$/, '') + '.json'
+    await putMediaBlob(
+      `meta/${section}/${metaFileName}`,
+      Buffer.from(JSON.stringify(metadata, null, 2)),
+      'application/json',
+    )
 
     return NextResponse.json({
       success: true,
       fileName,
-      path: `/assets/${section}/${fileName}`,
+      path: mediaResult.url,
+      url: mediaResult.url,
       metadata,
       seo,
     })
@@ -185,50 +199,33 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  if (!blobConfigured()) {
+    return NextResponse.json(
+      { error: 'BLOB_READ_WRITE_TOKEN not configured on the server.' },
+      { status: 503 },
+    )
+  }
+
   try {
-    const { section, fileName } = await request.json()
-    if (!section || !fileName) return NextResponse.json({ error: 'section and fileName required' }, { status: 400 })
+    const { section, fileName, url } = await request.json()
+    if (!section || !fileName) {
+      return NextResponse.json({ error: 'section and fileName required' }, { status: 400 })
+    }
 
-    const filePath = path.join(process.cwd(), 'public', 'assets', section, fileName)
-    try { await unlink(filePath) } catch {}
+    // Prefer deleting by URL if provided (more reliable for blob lookups);
+    // otherwise reconstruct the pathname.
+    if (url) {
+      await deleteBlob(url)
+    } else {
+      await deleteBlob(`media/${section}/${fileName}`)
+    }
 
-    // Remove metadata
-    const metaDir = path.join(process.cwd(), 'public', 'assets', section, '_meta')
-    const metaPath = path.join(metaDir, `${fileName}.json`)
-    try { await unlink(metaPath) } catch {}
-
-    // Also remove from Assets source folder
-    const srcPath = path.join(process.cwd(), 'Assets', section.charAt(0).toUpperCase() + section.slice(1), fileName)
-    try { await unlink(srcPath) } catch {}
+    const metaFileName = fileName.replace(/\.[^.]+$/, '') + '.json'
+    await deleteBlob(`meta/${section}/${metaFileName}`)
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
-  }
-}
-
-export async function PATCH(request: NextRequest) {
-  try {
-    const { section, fileName, credits, link } = await request.json()
-    if (!section || !fileName) return NextResponse.json({ error: 'section and fileName required' }, { status: 400 })
-
-    const metaDir = path.join(process.cwd(), 'public', 'assets', section, '_meta')
-    const metaPath = path.join(metaDir, `${fileName}.json`)
-
-    let meta: Record<string, string> = {}
-    try {
-      const existing = await readFile(metaPath, 'utf8')
-      meta = JSON.parse(existing)
-    } catch {}
-
-    if (credits !== undefined) meta.credits = credits
-    if (link !== undefined) meta.link = link
-
-    await mkdir(metaDir, { recursive: true })
-    await writeFile(metaPath, JSON.stringify(meta, null, 2))
-
-    return NextResponse.json({ success: true, meta })
-  } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    console.error('Delete error:', error)
+    return NextResponse.json({ error: 'Delete failed: ' + String(error) }, { status: 500 })
   }
 }

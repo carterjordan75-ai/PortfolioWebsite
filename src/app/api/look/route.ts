@@ -1,37 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readdir, readFile, writeFile, mkdir, unlink } from 'fs/promises'
-import path from 'path'
+import {
+  listBlobs,
+  readJsonBlob,
+  writeJsonBlob,
+  deleteBlob,
+} from '@/lib/blobStore'
 
-const META_DIR = path.join(process.cwd(), 'public', 'assets', 'look', '_meta')
-const ORDER_PATH = path.join(META_DIR, '_order.json')
+/**
+ * Look gallery items live as one blob per file in `meta/look/`. Their display
+ * order is stored separately at `state/look-order.json` (an array of fileNames).
+ *
+ * Migrating from the previous filesystem layout:
+ *   meta/look/<fileName>.json   (was public/assets/look/_meta/<fileName>.json)
+ *   state/look-order.json       (was public/assets/look/_meta/_order.json)
+ *   media/look/<fileName>       (was public/assets/look/<fileName>)
+ */
+
+const META_PREFIX = 'meta/look/'
+const ORDER_KEY = 'state/look-order.json'
+
+type MetaItem = {
+  fileName: string
+  uploadedAt?: string
+  [key: string]: unknown
+}
+
+async function fetchJsonBlob(url: string): Promise<MetaItem | null> {
+  try {
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return null
+    return (await res.json()) as MetaItem
+  } catch {
+    return null
+  }
+}
 
 export async function GET() {
   try {
-    let files: string[] = []
-    try {
-      files = await readdir(META_DIR)
-    } catch {
-      return NextResponse.json({ items: [] })
+    const blobs = await listBlobs(META_PREFIX)
+    const items: MetaItem[] = []
+    for (const b of blobs) {
+      if (!b.pathname.endsWith('.json')) continue
+      const data = await fetchJsonBlob(b.url)
+      if (data) items.push(data)
     }
 
-    const items = await Promise.all(
-      files
-        .filter(f => f.endsWith('.json') && f !== '_order.json')
-        .map(async (f) => {
-          const content = await readFile(path.join(META_DIR, f), 'utf-8')
-          return JSON.parse(content)
-        })
-    )
-
-    // Check for custom order
-    let order: string[] | null = null
-    try {
-      const raw = await readFile(ORDER_PATH, 'utf-8')
-      order = JSON.parse(raw)
-    } catch {}
+    const order = await readJsonBlob<string[] | null>(ORDER_KEY, null, null)
 
     if (order && Array.isArray(order)) {
-      // Sort by custom order, unordered items go to end
       const orderMap = new Map(order.map((fname, i) => [fname, i]))
       items.sort((a, b) => {
         const ai = orderMap.get(a.fileName) ?? 9999
@@ -39,7 +55,11 @@ export async function GET() {
         return ai - bi
       })
     } else {
-      items.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())
+      items.sort((a, b) => {
+        const at = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0
+        const bt = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0
+        return bt - at
+      })
     }
 
     return NextResponse.json({ items })
@@ -54,30 +74,26 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     if (body.action === 'reorder' && Array.isArray(body.order)) {
-      await mkdir(META_DIR, { recursive: true })
-      await writeFile(ORDER_PATH, JSON.stringify(body.order, null, 2))
+      await writeJsonBlob(ORDER_KEY, body.order)
       return NextResponse.json({ success: true })
     }
 
     if (body.action === 'sync' && Array.isArray(body.items)) {
-      await mkdir(META_DIR, { recursive: true })
       const keepSet = new Set(body.items as string[])
-      // Remove metadata for deleted files
-      try {
-        const metaFiles = await readdir(META_DIR)
-        for (const f of metaFiles) {
-          if (f === '_order.json' || !f.endsWith('.json')) continue
-          const fileName = f.replace('.json', '')
-          if (!keepSet.has(fileName)) {
-            await unlink(path.join(META_DIR, f)).catch(() => {})
-            // Also remove the actual file
-            const LOOK_DIR = path.join(process.cwd(), 'public', 'assets', 'look')
-            await unlink(path.join(LOOK_DIR, fileName)).catch(() => {})
-          }
+      // Enumerate every meta blob; if its fileName is no longer in the keep
+      // set, delete both the meta blob and the corresponding media blob.
+      const blobs = await listBlobs(META_PREFIX)
+      for (const b of blobs) {
+        if (!b.pathname.endsWith('.json')) continue
+        // pathname looks like "meta/look/some-file.webp.json"; strip prefix + .json
+        const metaName = b.pathname.slice(META_PREFIX.length)
+        const fileName = metaName.replace(/\.json$/, '')
+        if (!keepSet.has(fileName)) {
+          await deleteBlob(b.pathname)
+          await deleteBlob(`media/look/${fileName}`)
         }
-      } catch {}
-      // Update order
-      await writeFile(ORDER_PATH, JSON.stringify(body.items, null, 2))
+      }
+      await writeJsonBlob(ORDER_KEY, body.items)
       return NextResponse.json({ success: true })
     }
 

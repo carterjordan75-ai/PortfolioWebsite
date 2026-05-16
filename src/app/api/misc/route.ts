@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import path from 'path'
+import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
 
-const DATA_PATH = path.join(process.cwd(), 'data', 'misc.json')
+const BLOB_KEY = 'state/misc.json'
+const FALLBACK_FILE = 'data/misc.json'
 
 type MiscItem = Record<string, unknown>
 
 async function getData(): Promise<{ items: MiscItem[] }> {
-  try {
-    const raw = await readFile(DATA_PATH, 'utf-8')
-    return JSON.parse(raw)
-  } catch {
-    return { items: [] }
-  }
+  return readJsonBlob<{ items: MiscItem[] }>(BLOB_KEY, FALLBACK_FILE, { items: [] })
 }
 
 export async function GET() {
@@ -24,9 +19,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { items } = body
-
-    await mkdir(path.dirname(DATA_PATH), { recursive: true })
-    await writeFile(DATA_PATH, JSON.stringify({ items }, null, 2))
+    await writeJsonBlob(BLOB_KEY, { items })
     return NextResponse.json({ success: true, items })
   } catch (err) {
     console.error('Misc API error:', err)

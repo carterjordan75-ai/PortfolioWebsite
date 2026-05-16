@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import path from 'path'
+import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
 
-const PAGES_PATH = path.join(process.cwd(), 'data', 'pages.json')
+/**
+ * On-disk shape (legacy data/pages.json): { [pageId]: { ...fields } }
+ * API surface:
+ *   GET  → { pages: { [pageId]: { ...fields } } }
+ *   POST { pageId, fields } → merges fields into pages[pageId]
+ */
 
-async function getPagesData(): Promise<Record<string, Record<string, string>>> {
-  try {
-    const raw = await readFile(PAGES_PATH, 'utf-8')
-    return JSON.parse(raw)
-  } catch {
-    return {}
-  }
+const BLOB_KEY = 'state/pages.json'
+const FALLBACK_FILE = 'data/pages.json'
+
+type PagesData = Record<string, Record<string, unknown>>
+
+async function getPagesData(): Promise<PagesData> {
+  return readJsonBlob<PagesData>(BLOB_KEY, FALLBACK_FILE, {})
 }
 
 export async function GET() {
@@ -30,8 +34,7 @@ export async function POST(request: NextRequest) {
     const data = await getPagesData()
     data[pageId] = { ...(data[pageId] || {}), ...fields }
 
-    await mkdir(path.dirname(PAGES_PATH), { recursive: true })
-    await writeFile(PAGES_PATH, JSON.stringify(data, null, 2))
+    await writeJsonBlob(BLOB_KEY, data)
 
     return NextResponse.json({ success: true, pages: data })
   } catch (err) {

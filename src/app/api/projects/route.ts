@@ -1,50 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import path from 'path'
 import { projects as codeProjects } from '@/data/projects'
+import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
 
-const PROJECTS_PATH = path.join(process.cwd(), 'public', 'assets', '_data', 'admin-projects.json')
+/**
+ * Project admin data — slug-keyed overrides + additions + tombstones.
+ *
+ *   { "slug":           { ...field overrides },
+ *     "__added__slug":  { ...new project },
+ *     "slug":           { "__deleted": true } }
+ *
+ * Migrated from disk (public/assets/_data/admin-projects.json) to Vercel Blob
+ * at state/admin-projects.json. The legacy file is still committed and acts as
+ * the first-read fallback until the first POST lands in Blob.
+ */
 
-async function ensureFile() {
-  try {
-    await readFile(PROJECTS_PATH, 'utf-8')
-  } catch {
-    await mkdir(path.dirname(PROJECTS_PATH), { recursive: true })
-    await writeFile(PROJECTS_PATH, '{}')
-  }
-}
+const BLOB_KEY = 'state/admin-projects.json'
+const FALLBACK_FILE = 'public/assets/_data/admin-projects.json'
 
-// Admin JSON stores overrides/additions keyed by slug:
-// { "slug": { ...fields }, "__added__slug": { ...newProject } }
-// Deleted slugs: { "slug": { "__deleted": true } }
+type AdminData = Record<string, Record<string, unknown>>
 
-async function getAdminData(): Promise<Record<string, Record<string, unknown>>> {
-  await ensureFile()
-  const raw = await readFile(PROJECTS_PATH, 'utf-8')
-  try {
-    const parsed = JSON.parse(raw)
-    // Migrate from old array format
-    if (Array.isArray(parsed)) {
-      const obj: Record<string, Record<string, unknown>> = {}
-      for (const p of parsed) obj[p.slug] = p
-      await writeFile(PROJECTS_PATH, JSON.stringify(obj, null, 2))
-      return obj
+async function getAdminData(): Promise<AdminData> {
+  const data = await readJsonBlob<AdminData | Record<string, unknown>[]>(
+    BLOB_KEY,
+    FALLBACK_FILE,
+    {},
+  )
+
+  // Migrate legacy array format on the fly
+  if (Array.isArray(data)) {
+    const obj: AdminData = {}
+    for (const p of data) {
+      const slug = (p as Record<string, unknown>).slug as string | undefined
+      if (slug) obj[slug] = p as Record<string, unknown>
     }
-    return parsed
-  } catch {
-    return {}
+    return obj
   }
+  return data as AdminData
 }
 
-function getMergedProjects(adminData: Record<string, Record<string, unknown>>) {
-  // Start with code projects, apply overrides/deletions
+function getMergedProjects(adminData: AdminData) {
   const result: Record<string, unknown>[] = []
 
   for (const p of codeProjects) {
     const override = adminData[p.slug]
-    if (override && (override as Record<string, unknown>).__deleted) continue // deleted
+    if (override && (override as Record<string, unknown>).__deleted) continue
     if (override) {
-      // Filter out empty strings/arrays so they don't overwrite code project data
       const cleaned: Record<string, unknown> = {}
       for (const [k, v] of Object.entries(override)) {
         if (v === '' || (Array.isArray(v) && v.length === 0)) continue
@@ -56,7 +56,7 @@ function getMergedProjects(adminData: Record<string, Record<string, unknown>>) {
     }
   }
 
-  // Add admin-only projects (slugs not in code)
+  // Admin-only projects (slugs not in code)
   const codeSlugs = new Set(codeProjects.map(p => p.slug))
   for (const [slug, data] of Object.entries(adminData)) {
     if (codeSlugs.has(slug)) continue
@@ -64,7 +64,7 @@ function getMergedProjects(adminData: Record<string, Record<string, unknown>>) {
     result.push({ ...data, slug, _source: 'admin' })
   }
 
-  // Sort featured projects by featuredOrder if set
+  // Featured order
   const featured = result.filter(p => p.featured)
   const nonFeatured = result.filter(p => !p.featured)
   featured.sort((a, b) => {
@@ -83,16 +83,15 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const adminData = await getAdminData()
-  const body = await request.json()
-  const { action, project, slug } = body
-
   try {
+    const adminData = await getAdminData()
+    const body = await request.json()
+    const { action, project, slug } = body
+
     if (action === 'add') {
       const newSlug = project.slug || `${(project.client || 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`
       adminData[newSlug] = { ...project, slug: newSlug }
-      await mkdir(path.dirname(PROJECTS_PATH), { recursive: true })
-      await writeFile(PROJECTS_PATH, JSON.stringify(adminData, null, 2))
+      await writeJsonBlob(BLOB_KEY, adminData)
       return NextResponse.json({ success: true, projects: getMergedProjects(adminData) })
     }
 
@@ -100,20 +99,17 @@ export async function POST(request: NextRequest) {
       const targetSlug = slug || project?.slug
       if (!targetSlug) return NextResponse.json({ error: 'No slug provided' }, { status: 400 })
       adminData[targetSlug] = { ...(adminData[targetSlug] || {}), ...project, slug: targetSlug }
-      await mkdir(path.dirname(PROJECTS_PATH), { recursive: true })
-      await writeFile(PROJECTS_PATH, JSON.stringify(adminData, null, 2))
+      await writeJsonBlob(BLOB_KEY, adminData)
       return NextResponse.json({ success: true, projects: getMergedProjects(adminData) })
     }
 
     if (action === 'reorder-featured') {
       const { slugs } = body
       if (!slugs || !Array.isArray(slugs)) return NextResponse.json({ error: 'slugs array required' }, { status: 400 })
-      // Store the featured order — each slug gets a featuredOrder number
       slugs.forEach((s: string, i: number) => {
         adminData[s] = { ...(adminData[s] || {}), featuredOrder: i }
       })
-      await mkdir(path.dirname(PROJECTS_PATH), { recursive: true })
-      await writeFile(PROJECTS_PATH, JSON.stringify(adminData, null, 2))
+      await writeJsonBlob(BLOB_KEY, adminData)
       return NextResponse.json({ success: true, projects: getMergedProjects(adminData) })
     }
 
@@ -124,8 +120,7 @@ export async function POST(request: NextRequest) {
       } else {
         delete adminData[slug]
       }
-      await mkdir(path.dirname(PROJECTS_PATH), { recursive: true })
-      await writeFile(PROJECTS_PATH, JSON.stringify(adminData, null, 2))
+      await writeJsonBlob(BLOB_KEY, adminData)
       return NextResponse.json({ success: true, projects: getMergedProjects(adminData) })
     }
 
