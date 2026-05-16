@@ -624,7 +624,7 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
         <div>
           <div className="flex items-center gap-3">
             <h2 className="text-white text-[14px] font-bold uppercase tracking-[0.1em] mb-1">Index / Archive</h2>
-            <EditOnPageButton path="/archive" onClose={onClose} />
+            <EditOnPageButton path="/indexx" onClose={onClose} />
           </div>
           <p className="text-white/30 text-[9px]">
             {projects.length} projects

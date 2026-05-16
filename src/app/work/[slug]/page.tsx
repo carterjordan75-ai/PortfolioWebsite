@@ -449,7 +449,7 @@ For licensing inquiries: carterjordan75@gmail.com
               {/* Nav */}
               <div className="flex justify-between items-center pt-3" style={{ borderTop: `1px solid ${rule}` }}>
                 <Link href={`/work/${prev.slug}`} className="text-[10px] uppercase tracking-[0.1em] hover:opacity-70 transition-opacity">← {prev.client}</Link>
-                <Link href="/archive" className="text-[10px] uppercase tracking-[0.1em] font-bold hover:opacity-70 transition-opacity" style={{ opacity: 0.5 }}>Index</Link>
+                <Link href="/indexx" className="text-[10px] uppercase tracking-[0.1em] font-bold hover:opacity-70 transition-opacity" style={{ opacity: 0.5 }}>Index</Link>
                 <Link href={`/work/${next.slug}`} className="text-[10px] uppercase tracking-[0.1em] hover:opacity-70 transition-opacity">{next.client} →</Link>
               </div>
             </div>

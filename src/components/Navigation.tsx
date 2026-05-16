@@ -20,7 +20,7 @@ const hoverColors = [
 ]
 
 const navItems = [
-  { href: '/archive', label: 'Index' },
+  { href: '/indexx', label: 'Index' },
   { href: '/misc', label: 'Misc' },
   { href: '/look', label: 'Look' },
 ]
@@ -99,7 +99,7 @@ export default function Navigation() {
     const stored = parseInt(localStorage.getItem('jc-visits') || '0', 10)
     localStorage.setItem('jc-visits', String(stored + 1))
   }, [])
-  const isArchive = pathname === '/archive'
+  const isArchive = pathname === '/indexx'
   const isWork = pathname === '/'
   const isProjectPage = pathname.startsWith('/work/') && pathname !== '/work'
   const isExperiments = pathname === '/misc'
@@ -365,7 +365,7 @@ export default function Navigation() {
             {/* Desktop nav */}
             <nav className={`hidden md:flex items-center gap-8 ${isWhitePage ? '' : 'text-white'}`}>
               {navItems.map((item) => (
-                item.href === '/archive' ? (
+                item.href === '/indexx' ? (
                   <div
                     key={item.href}
                     className="relative"
@@ -546,7 +546,7 @@ export default function Navigation() {
                                 transition={{ delay: 0.2 }}
                               >
                                 <Link
-                                  href="/archive"
+                                  href="/indexx"
                                   onClick={() => setIndexHover(false)}
                                   className="text-[8px] uppercase tracking-[0.12em] font-bold hover:opacity-80 hover:scale-110 inline-block origin-left"
                                   style={{
