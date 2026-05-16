@@ -1406,12 +1406,23 @@ function MiscUploadPanel() {
   const [items, setItems] = useState<MiscItem[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [newTitle, setNewTitle] = useState('')
   const [newYear, setNewYear] = useState(new Date().getFullYear())
   const [newMedium, setNewMedium] = useState<string[]>(['3D'])
   const [editIdx, setEditIdx] = useState<number | null>(null)
+  const [dragOver, setDragOver] = useState(false)
   const miscFileRef = useRef<HTMLInputElement>(null)
+
+  // Derive a clean human title from a filename when the user hasn't supplied
+  // one — strip the extension, swap separators for spaces, collapse repeats.
+  const titleFromFilename = (name: string): string =>
+    name
+      .replace(/\.[^.]+$/, '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
 
   const mediumOptions = ['3D', 'Generative', 'Motion', 'Illustration', 'Photography', 'Mixed']
 
@@ -1438,31 +1449,38 @@ function MiscUploadPanel() {
     }
   }
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files?.length) return
-    if (!newTitle) { setStatus('✗ Title required'); return }
+  // Core bulk upload — accepts a FileList from either the picker or a drop
+  // event. Title is optional: when blank, each file's title is derived from
+  // its filename (so dragging in 20 files at once just works). Year + medium
+  // selections always apply to all files in the batch — to give files
+  // different mediums, edit them individually in the list afterwards.
+  const uploadBatch = async (files: FileList | File[]) => {
+    const list = Array.from(files)
+    if (!list.length) return
     setUploading(true)
+    setUploadProgress({ done: 0, total: list.length })
     setStatus(null)
 
     let currentItems = [...items]
     let uploadCount = 0
 
-    for (const file of Array.from(files)) {
+    for (let i = 0; i < list.length; i++) {
+      const file = list[i]
+      const titleForFile = newTitle.trim() || titleFromFilename(file.name)
       const formData = new FormData()
       formData.append('file', file)
       formData.append('section', 'Misc')
-      formData.append('credits', newTitle)
+      formData.append('credits', titleForFile)
 
       try {
         const res = await fetch('/api/upload', { method: 'POST', body: formData })
         const data = await res.json()
         if (data.success) {
-          const isVideo = file.type.startsWith('video') || file.name.match(/\.(mp4|webm|mov)$/i)
+          const isVideo = file.type.startsWith('video') || /\.(mp4|webm|mov)$/i.test(file.name)
           const newItem: MiscItem = {
             src: data.path,
             type: isVideo ? 'video' : 'image',
-            title: newTitle,
+            title: titleForFile,
             year: newYear,
             medium: newMedium.length ? newMedium : ['3D'],
             fileName: data.fileName,
@@ -1471,18 +1489,36 @@ function MiscUploadPanel() {
           uploadCount++
         }
       } catch {}
+
+      // Persist after each file so a network blip mid-batch doesn't lose
+      // already-uploaded files; the UI also stays responsive.
+      setItems(currentItems)
+      setUploadProgress({ done: i + 1, total: list.length })
     }
 
-    if (uploadCount > 0) {
-      setItems(currentItems)
-      await saveItems(currentItems)
-    }
+    if (uploadCount > 0) await saveItems(currentItems)
 
     setUploading(false)
+    setUploadProgress(null)
     setNewTitle('')
-    setStatus(`✓ Uploaded ${uploadCount} file${uploadCount !== 1 ? 's' : ''}`)
+    const failed = list.length - uploadCount
+    setStatus(
+      failed === 0
+        ? `✓ Uploaded ${uploadCount} file${uploadCount !== 1 ? 's' : ''}`
+        : `✓ ${uploadCount} uploaded · ✗ ${failed} failed`,
+    )
     if (miscFileRef.current) miscFileRef.current.value = ''
-    setTimeout(() => setStatus(null), 2000)
+    setTimeout(() => setStatus(null), 3000)
+  }
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) await uploadBatch(e.target.files)
+  }
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDragOver(false)
+    if (e.dataTransfer.files?.length) await uploadBatch(e.dataTransfer.files)
   }
 
   const handleDelete = async (idx: number) => {
@@ -1525,14 +1561,29 @@ function MiscUploadPanel() {
         <p className={`text-[9px] mb-3 ${status.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>{status}</p>
       )}
 
-      {/* Upload new */}
-      <div className="mb-5 p-4 rounded-lg border border-white/10 bg-white/3 space-y-3">
-        <p className="text-white/60 text-[9px] font-bold uppercase tracking-[0.1em]">Add New Piece</p>
+      {/* Upload new — supports drag & drop OR file picker, single OR many.
+          When Title is blank, each uploaded file gets a title derived from
+          its filename (so dragging 20 files in just works). */}
+      <div
+        className="mb-5 p-4 rounded-lg border border-white/10 bg-white/3 space-y-3 transition-colors"
+        style={dragOver ? { borderColor: 'rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.06)' } : {}}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragEnter={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={(e) => {
+          // Only un-highlight if we're leaving the container itself, not a child
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return
+          setDragOver(false)
+        }}
+        onDrop={handleDrop}
+      >
+        <p className="text-white/60 text-[9px] font-bold uppercase tracking-[0.1em]">
+          Add Pieces <span className="text-white/30 font-normal normal-case tracking-normal">— drop files here or pick below</span>
+        </p>
 
         <div className="grid grid-cols-3 gap-3">
           <div>
-            <label className={labelStyle}>Title</label>
-            <input type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} className={inputStyle} placeholder="e.g. Particle Study" />
+            <label className={labelStyle}>Title <span className="text-white/25">(optional — filename used otherwise)</span></label>
+            <input type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} className={inputStyle} placeholder="Leave blank for filename" />
           </div>
           <div>
             <label className={labelStyle}>Year</label>
@@ -1567,17 +1618,31 @@ function MiscUploadPanel() {
           multiple
           onChange={handleUpload}
         />
-        <button
-          onClick={() => {
-            if (!newTitle) { setStatus('✗ Enter a title first'); return }
-            if (uploading) return
-            miscFileRef.current?.click()
-          }}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold cursor-pointer transition-all hover:scale-105 ${!newTitle ? 'opacity-50' : 'text-white/70'}`}
-          style={{ border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)' }}
-        >
-          {uploading ? '⏳ Uploading...' : '+ Choose File'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              if (uploading) return
+              miscFileRef.current?.click()
+            }}
+            disabled={uploading}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold cursor-pointer transition-all hover:scale-105 text-white/70 disabled:opacity-50 disabled:cursor-wait disabled:hover:scale-100"
+            style={{ border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)' }}
+          >
+            {uploading
+              ? uploadProgress
+                ? `⏳ ${uploadProgress.done} of ${uploadProgress.total}`
+                : '⏳ Uploading…'
+              : '+ Choose files (multi-select OK)'}
+          </button>
+          {uploadProgress && uploadProgress.total > 0 && (
+            <div className="flex-1 h-1 rounded-full bg-white/8 overflow-hidden">
+              <div
+                className="h-full bg-white/60 transition-all duration-200 ease-out"
+                style={{ width: `${(uploadProgress.done / uploadProgress.total) * 100}%` }}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Existing items */}
