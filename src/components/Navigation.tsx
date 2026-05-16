@@ -21,7 +21,7 @@ const hoverColors = [
 
 const navItems = [
   { href: '/archive', label: 'Index' },
-  { href: '/experiments', label: 'Misc' },
+  { href: '/misc', label: 'Misc' },
   { href: '/look', label: 'Look' },
 ]
 
@@ -102,7 +102,7 @@ export default function Navigation() {
   const isArchive = pathname === '/archive'
   const isWork = pathname === '/'
   const isProjectPage = pathname.startsWith('/work/') && pathname !== '/work'
-  const isExperiments = pathname === '/experiments'
+  const isExperiments = pathname === '/misc'
   const isLook = pathname === '/look'
   const isWhitePage = isArchive || isWork || isExperiments || isProjectPage || isLook
 
