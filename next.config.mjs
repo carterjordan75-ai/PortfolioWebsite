@@ -40,6 +40,17 @@ const nextConfig = {
       'Assets/**',
     ],
   },
+  // Force-include legacy seed JSON. The /api/pages, /api/misc, /api/projects
+  // routes read these on first run (before anything has been written to Blob)
+  // via path.join(process.cwd(), '...'). Static analysis can't see that
+  // dynamic path, so without this Next leaves the JSON files out of the
+  // function bundle and the fallback returns `{}` — which would then get
+  // saved back to Blob on the next write, wiping all the existing data.
+  outputFileTracingIncludes: {
+    '/api/pages': ['data/pages.json'],
+    '/api/misc': ['data/misc.json'],
+    '/api/projects': ['public/assets/_data/admin-projects.json'],
+  },
   headers: async () => [
     {
       source: '/assets/:path*',
