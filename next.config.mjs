@@ -9,14 +9,15 @@ const nextConfig = {
   compress: true,
   poweredByHeader: false,
   reactStrictMode: true,
-  // Keep sharp as an external (loaded from node_modules at runtime) so it
-  // doesn't get bundled into the /api/upload serverless function. Sharp's
-  // native binaries are ~30 MB and would push us back over Vercel's 250 MB
-  // function-size cap. On Vercel the runtime ships its own sharp for image
-  // optimization anyway.
-  serverComponentsExternalPackages: ['sharp'],
   experimental: {
     optimizeCss: false,
+    // Keep sharp as an external (loaded from node_modules at runtime) so it
+    // doesn't get bundled into the /api/upload serverless function. Sharp's
+    // native binaries are ~30 MB and would push us back over Vercel's 250 MB
+    // function-size cap. On Vercel the runtime ships its own sharp for image
+    // optimization anyway. Sits under `experimental` in Next 14.2; moved to
+    // top-level `serverExternalPackages` in Next 15+.
+    serverComponentsExternalPackages: ['sharp'],
   },
   // Keep large public-media folders out of every serverless function bundle.
   // The files still ship as regular static assets — they just don't get
