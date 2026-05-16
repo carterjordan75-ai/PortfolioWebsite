@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { projects as codeProjects } from '@/data/projects'
 import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
+import seedAdminProjects from '../../../../public/assets/_data/admin-projects.json'
 
 /**
  * Project admin data — slug-keyed overrides + additions + tombstones.
@@ -10,20 +11,18 @@ import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
  *     "slug":           { "__deleted": true } }
  *
  * Migrated from disk (public/assets/_data/admin-projects.json) to Vercel Blob
- * at state/admin-projects.json. The legacy file is still committed and acts as
- * the first-read fallback until the first POST lands in Blob.
+ * at state/admin-projects.json. The committed JSON is statically imported
+ * above and acts as the first-read fallback until the first POST lands in Blob.
  */
 
 const BLOB_KEY = 'state/admin-projects.json'
-const FALLBACK_FILE = 'public/assets/_data/admin-projects.json'
 
 type AdminData = Record<string, Record<string, unknown>>
 
 async function getAdminData(): Promise<AdminData> {
   const data = await readJsonBlob<AdminData | Record<string, unknown>[]>(
     BLOB_KEY,
-    FALLBACK_FILE,
-    {},
+    seedAdminProjects as AdminData | Record<string, unknown>[],
   )
 
   // Migrate legacy array format on the fly

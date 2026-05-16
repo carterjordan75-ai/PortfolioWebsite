@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
+import seedMisc from '../../../../data/misc.json'
 
 const BLOB_KEY = 'state/misc.json'
-const FALLBACK_FILE = 'data/misc.json'
 
 type MiscItem = Record<string, unknown>
 
 async function getData(): Promise<{ items: MiscItem[] }> {
-  return readJsonBlob<{ items: MiscItem[] }>(BLOB_KEY, FALLBACK_FILE, { items: [] })
+  return readJsonBlob<{ items: MiscItem[] }>(BLOB_KEY, seedMisc as { items: MiscItem[] })
 }
 
 export async function GET() {

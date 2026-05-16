@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
+// Static import of the committed seed data so Next bundles it into the
+// function. The first read on a fresh deploy (when nothing has been written
+// to Blob yet) returns this; subsequent writes go to Blob and reads come back
+// from there.
+import seedPages from '../../../../data/pages.json'
 
 /**
  * On-disk shape (legacy data/pages.json): { [pageId]: { ...fields } }
@@ -9,12 +14,11 @@ import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
  */
 
 const BLOB_KEY = 'state/pages.json'
-const FALLBACK_FILE = 'data/pages.json'
 
 type PagesData = Record<string, Record<string, unknown>>
 
 async function getPagesData(): Promise<PagesData> {
-  return readJsonBlob<PagesData>(BLOB_KEY, FALLBACK_FILE, {})
+  return readJsonBlob<PagesData>(BLOB_KEY, seedPages as PagesData)
 }
 
 export async function GET() {

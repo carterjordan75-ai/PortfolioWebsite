@@ -45,7 +45,7 @@ export async function GET() {
       if (data) items.push(data)
     }
 
-    const order = await readJsonBlob<string[] | null>(ORDER_KEY, null, null)
+    const order = await readJsonBlob<string[] | null>(ORDER_KEY, null)
 
     if (order && Array.isArray(order)) {
       const orderMap = new Map(order.map((fname, i) => [fname, i]))

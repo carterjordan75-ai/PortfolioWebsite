@@ -23,8 +23,6 @@
  */
 
 import { put, list, del } from '@vercel/blob'
-import { readFile } from 'fs/promises'
-import path from 'path'
 
 const HAS_TOKEN = !!process.env.BLOB_READ_WRITE_TOKEN
 
@@ -49,16 +47,20 @@ async function findBlobUrl(pathname: string): Promise<string | null> {
 
 /**
  * Read a JSON blob by key (e.g. "state/pages.json"). If the blob doesn't
- * exist, fall back to reading from `fallbackFilesystemPath` (usually the
- * legacy data/*.json committed in the repo). If neither works, return
- * `fallbackValue`.
+ * exist or the fetch fails, return `fallbackValue` — which callers should
+ * supply as the legacy seed data (imported statically at the top of each
+ * route so Next.js bundles it).
+ *
+ * (Earlier versions of this helper tried to read a fallback file from disk
+ * via path.join(process.cwd(), '...'). That works in dev but on Vercel the
+ * static tracer can't follow that dynamic path, so the seed JSON wasn't in
+ * the function bundle and the fallback silently became `{}`. Static imports
+ * sidestep the entire tracing question.)
  */
 export async function readJsonBlob<T>(
   key: string,
-  fallbackFilesystemPath: string | null,
   fallbackValue: T,
 ): Promise<T> {
-  // 1. Try Blob
   const url = await findBlobUrl(key)
   if (url) {
     try {
@@ -68,21 +70,6 @@ export async function readJsonBlob<T>(
       /* fall through */
     }
   }
-
-  // 2. Try local filesystem (legacy / dev seed)
-  if (fallbackFilesystemPath) {
-    try {
-      const raw = await readFile(
-        path.join(process.cwd(), fallbackFilesystemPath),
-        'utf-8',
-      )
-      return JSON.parse(raw) as T
-    } catch {
-      /* fall through */
-    }
-  }
-
-  // 3. Final fallback value
   return fallbackValue
 }
 
