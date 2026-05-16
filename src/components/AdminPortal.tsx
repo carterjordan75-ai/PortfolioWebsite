@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
+import { upload } from '@vercel/blob/client'
 import { useEditMode } from '@/contexts/EditModeContext'
 
 const ADMIN_PASSWORD = '3432'
@@ -1414,6 +1415,15 @@ function MiscUploadPanel() {
   const [editIdx, setEditIdx] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const miscFileRef = useRef<HTMLInputElement>(null)
+  // Drag-to-reorder state
+  const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null)
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
+  // Multi-select for batch operations
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  // Bulk-edit panel inputs (kept separate from the new-upload form's state)
+  const [bulkYear, setBulkYear] = useState<string>('')
+  const [bulkMedium, setBulkMedium] = useState<string[]>([])
+  const [bulkApplyMedium, setBulkApplyMedium] = useState(false)
 
   // Derive a clean human title from a filename when the user hasn't supplied
   // one — strip the extension, swap separators for spaces, collapse repeats.
@@ -1449,11 +1459,21 @@ function MiscUploadPanel() {
     }
   }
 
+  // Slugify a string for use as part of a Blob pathname. Lowercase,
+  // alphanumerics + hyphens only, length-capped.
+  const slugify = (s: string, max = 50): string =>
+    s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, max) || 'file'
+
   // Core bulk upload — accepts a FileList from either the picker or a drop
   // event. Title is optional: when blank, each file's title is derived from
   // its filename (so dragging in 20 files at once just works). Year + medium
   // selections always apply to all files in the batch — to give files
   // different mediums, edit them individually in the list afterwards.
+  //
+  // Uploads go DIRECTLY from the browser to Vercel Blob via
+  // @vercel/blob/client's `upload()` — the file bytes never pass through our
+  // serverless function, sidestepping Vercel Hobby's 4.5 MB function-payload
+  // cap. Our /api/upload-token route only mints short-lived upload tokens.
   const uploadBatch = async (files: FileList | File[]) => {
     const list = Array.from(files)
     if (!list.length) return
@@ -1467,28 +1487,31 @@ function MiscUploadPanel() {
     for (let i = 0; i < list.length; i++) {
       const file = list[i]
       const titleForFile = newTitle.trim() || titleFromFilename(file.name)
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('section', 'Misc')
-      formData.append('credits', titleForFile)
+
+      // Build a stable Blob pathname: media/Misc/<slug>-<timestamp><ext>
+      const extMatch = file.name.match(/\.[^.]+$/)
+      const ext = extMatch ? extMatch[0].toLowerCase() : ''
+      const pathname = `media/Misc/${slugify(titleForFile)}-${Date.now().toString(36)}${i}${ext}`
 
       try {
-        const res = await fetch('/api/upload', { method: 'POST', body: formData })
-        const data = await res.json()
-        if (data.success) {
-          const isVideo = file.type.startsWith('video') || /\.(mp4|webm|mov)$/i.test(file.name)
-          const newItem: MiscItem = {
-            src: data.path,
-            type: isVideo ? 'video' : 'image',
-            title: titleForFile,
-            year: newYear,
-            medium: newMedium.length ? newMedium : ['3D'],
-            fileName: data.fileName,
-          }
-          currentItems = [...currentItems, newItem]
-          uploadCount++
+        const blob = await upload(pathname, file, {
+          access: 'public',
+          handleUploadUrl: '/api/upload-token',
+        })
+        const isVideo = file.type.startsWith('video') || /\.(mp4|webm|mov)$/i.test(file.name)
+        const newItem: MiscItem = {
+          src: blob.url,
+          type: isVideo ? 'video' : 'image',
+          title: titleForFile,
+          year: newYear,
+          medium: newMedium.length ? newMedium : ['3D'],
+          fileName: blob.pathname.split('/').pop() || pathname.split('/').pop() || file.name,
         }
-      } catch {}
+        currentItems = [...currentItems, newItem]
+        uploadCount++
+      } catch (err) {
+        console.error('Upload failed for', file.name, err)
+      }
 
       // Persist after each file so a network blip mid-batch doesn't lose
       // already-uploaded files; the UI also stays responsive.
@@ -1529,13 +1552,59 @@ function MiscUploadPanel() {
     setTimeout(() => setStatus(null), 1500)
   }
 
-  const moveItem = async (idx: number, dir: -1 | 1) => {
+  // Drag-and-drop reorder: splice the dragged item out at `from` and insert
+  // at `to` (so dragging item 5 onto item 2 puts it before item 2, original
+  // item 2 shifts to position 3). Persists to the API.
+  const reorderItem = async (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return
     const updated = [...items]
-    const target = idx + dir
-    if (target < 0 || target >= updated.length) return
-    ;[updated[idx], updated[target]] = [updated[target], updated[idx]]
+    const [moved] = updated.splice(from, 1)
+    updated.splice(to, 0, moved)
     setItems(updated)
     await saveItems(updated)
+  }
+
+  const toggleSelected = (idx: number) =>
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  const toggleSelectAll = () =>
+    setSelected(prev => (prev.size === items.length ? new Set() : new Set(items.map((_, i) => i))))
+  const clearSelected = () => setSelected(new Set())
+
+  // Apply year and/or medium to every selected item. Year only updates if
+  // bulkYear is non-empty; medium only updates if `bulkApplyMedium` is on
+  // (otherwise medium changes might unintentionally erase existing tags when
+  // the user only meant to update the year).
+  const applyBulkEdit = async () => {
+    if (selected.size === 0) return
+    const yearNum = bulkYear.trim() ? parseInt(bulkYear, 10) : null
+    const updated = items.map((item, i) => {
+      if (!selected.has(i)) return item
+      const next = { ...item }
+      if (yearNum !== null && !isNaN(yearNum)) next.year = yearNum
+      if (bulkApplyMedium) next.medium = bulkMedium.length ? bulkMedium : ['3D']
+      return next
+    })
+    setItems(updated)
+    await saveItems(updated)
+    setStatus(`✓ Updated ${selected.size} item${selected.size !== 1 ? 's' : ''}`)
+    setBulkYear('')
+    setBulkApplyMedium(false)
+    setTimeout(() => setStatus(null), 2000)
+  }
+
+  const bulkDelete = async () => {
+    if (selected.size === 0) return
+    const updated = items.filter((_, i) => !selected.has(i))
+    setItems(updated)
+    await saveItems(updated)
+    setStatus(`✓ Deleted ${selected.size} item${selected.size !== 1 ? 's' : ''}`)
+    clearSelected()
+    setTimeout(() => setStatus(null), 2000)
   }
 
   const handleEditSave = async (idx: number) => {
@@ -1645,33 +1714,159 @@ function MiscUploadPanel() {
         </div>
       </div>
 
+      {/* Bulk-edit toolbar — appears whenever rows are selected */}
+      {selected.size > 0 && (
+        <div className="mb-3 p-3 rounded-lg border border-white/15 bg-white/5 flex flex-wrap items-center gap-3">
+          <span className="text-white/80 text-[9px] font-bold uppercase tracking-[0.1em]">
+            {selected.size} selected
+          </span>
+          <button onClick={clearSelected} className="text-white/40 text-[8px] uppercase tracking-[0.1em] hover:text-white">
+            Clear
+          </button>
+          <div className="h-3 w-px bg-white/15" />
+          <label className="text-white/40 text-[7px] uppercase tracking-[0.12em]">Set year:</label>
+          <input
+            type="number"
+            value={bulkYear}
+            onChange={e => setBulkYear(e.target.value)}
+            placeholder="—"
+            className="w-16 px-2 py-1 rounded text-[10px] bg-white/5 border border-white/10 text-white outline-none focus:border-white/25"
+          />
+          <div className="h-3 w-px bg-white/15" />
+          <label className="flex items-center gap-1.5 text-white/40 text-[7px] uppercase tracking-[0.12em] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={bulkApplyMedium}
+              onChange={e => setBulkApplyMedium(e.target.checked)}
+              className="accent-white"
+            />
+            Set medium:
+          </label>
+          <div className={`flex gap-1 ${bulkApplyMedium ? '' : 'opacity-40 pointer-events-none'}`}>
+            {mediumOptions.map(m => (
+              <button
+                key={m}
+                onClick={() => setBulkMedium(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m])}
+                className="px-2 py-0.5 rounded-full text-[6px] uppercase tracking-[0.08em] font-bold transition-all"
+                style={{
+                  background: bulkMedium.includes(m) ? 'rgba(255,255,255,0.15)' : 'transparent',
+                  border: `1px solid ${bulkMedium.includes(m) ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                  color: bulkMedium.includes(m) ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.3)',
+                }}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1" />
+          <button
+            onClick={applyBulkEdit}
+            disabled={!bulkYear.trim() && !bulkApplyMedium}
+            className="px-3 py-1 rounded text-[8px] font-bold text-green-400 border border-green-400/30 hover:bg-green-400/10 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            Apply
+          </button>
+          <button
+            onClick={bulkDelete}
+            className="px-3 py-1 rounded text-[8px] font-bold text-red-400/80 border border-red-400/30 hover:bg-red-400/10"
+          >
+            Delete
+          </button>
+        </div>
+      )}
+
       {/* Existing items */}
       <div className="space-y-0">
         <div className="flex items-center text-[7px] uppercase tracking-[0.15em] text-white/25 pb-2 border-b border-white/8 mb-1">
-          <span className="w-[5%]">#</span>
-          <span className="w-[8%]">Type</span>
-          <span className="w-[30%]">Title</span>
-          <span className="w-[10%]">Year</span>
-          <span className="w-[15%]">Medium</span>
-          <span className="w-[20%]">File</span>
-          <span className="w-[12%] text-right">Actions</span>
+          <span className="w-[3%]"></span>
+          <span className="w-[4%] flex items-center">
+            <input
+              type="checkbox"
+              checked={items.length > 0 && selected.size === items.length}
+              onChange={toggleSelectAll}
+              className="accent-white cursor-pointer"
+            />
+          </span>
+          <span className="w-[4%]">#</span>
+          <span className="w-[6%]">Type</span>
+          <span className="w-[27%]">Title</span>
+          <span className="w-[8%]">Year</span>
+          <span className="w-[14%]">Medium</span>
+          <span className="w-[18%]">File</span>
+          <span className="w-[16%] text-right">Actions</span>
         </div>
 
         {loading && <p className="text-white/20 text-[9px] py-4 text-center">Loading...</p>}
         {!loading && items.length === 0 && <p className="text-white/15 text-[9px] py-4 text-center">No pieces yet. Upload above.</p>}
 
-        {items.map((item, i) => (
+        {items.map((item, i) => {
+          const isDraggedOver = dragOverIdx === i && dragSrcIdx !== null && dragSrcIdx !== i
+          // Drop indicator on the top edge when dragging downward, bottom edge upward
+          const indicatorAbove = isDraggedOver && (dragSrcIdx as number) > i
+          const indicatorBelow = isDraggedOver && (dragSrcIdx as number) < i
+          return (
           <div key={i}>
-            <div className="flex items-center py-2 border-b border-white/5 hover:bg-white/3 transition-colors group">
-              <span className="w-[5%] text-white/30 text-[8px] font-mono">{String(i + 1).padStart(2, '0')}</span>
-              <span className="w-[8%] text-white/40 text-[8px]">{item.type === 'video' ? '🎬' : '🖼'}</span>
-              <span className="w-[30%] text-white/80 text-[10px] font-bold truncate pr-2">{item.title}</span>
-              <span className="w-[10%] text-white/40 text-[9px] font-mono">{item.year}</span>
-              <span className="w-[15%] text-white/40 text-[8px]">{Array.isArray(item.medium) ? item.medium.join(' · ') : item.medium}</span>
-              <span className="w-[20%] text-white/20 text-[7px] font-mono truncate">{item.fileName}</span>
-              <div className="w-[12%] flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                {i > 0 && <button onClick={() => moveItem(i, -1)} className="text-white/30 text-[9px] hover:text-white">↑</button>}
-                {i < items.length - 1 && <button onClick={() => moveItem(i, 1)} className="text-white/30 text-[9px] hover:text-white">↓</button>}
+            <div
+              draggable
+              onDragStart={(e) => {
+                setDragSrcIdx(i)
+                e.dataTransfer.effectAllowed = 'move'
+                // Some browsers require data to be set or the drag is rejected
+                try { e.dataTransfer.setData('text/plain', String(i)) } catch {}
+              }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                if (dragSrcIdx !== null && dragSrcIdx !== i) setDragOverIdx(i)
+              }}
+              onDragLeave={(e) => {
+                // Only clear if we actually left the row (not a child)
+                if (e.currentTarget.contains(e.relatedTarget as Node)) return
+                setDragOverIdx(prev => prev === i ? null : prev)
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (dragSrcIdx !== null && dragSrcIdx !== i) reorderItem(dragSrcIdx, i)
+                setDragSrcIdx(null)
+                setDragOverIdx(null)
+              }}
+              onDragEnd={() => {
+                setDragSrcIdx(null)
+                setDragOverIdx(null)
+              }}
+              className="flex items-center py-2 border-b border-white/5 hover:bg-white/3 transition-colors group"
+              style={{
+                opacity: dragSrcIdx === i ? 0.4 : 1,
+                borderTop: indicatorAbove ? '2px solid rgba(255,255,255,0.7)' : undefined,
+                borderBottom: indicatorBelow ? '2px solid rgba(255,255,255,0.7)' : '1px solid rgba(255,255,255,0.05)',
+                cursor: dragSrcIdx === i ? 'grabbing' : 'default',
+              }}
+            >
+              {/* Drag handle column */}
+              <span
+                className="w-[3%] text-white/20 group-hover:text-white/60 text-[12px] flex items-center justify-center"
+                style={{ cursor: 'grab', lineHeight: 1 }}
+                aria-label="Drag to reorder"
+                title="Drag to reorder"
+              >
+                ⋮⋮
+              </span>
+              {/* Selection checkbox */}
+              <span className="w-[4%] flex items-center">
+                <input
+                  type="checkbox"
+                  checked={selected.has(i)}
+                  onChange={() => toggleSelected(i)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="accent-white cursor-pointer"
+                />
+              </span>
+              <span className="w-[4%] text-white/30 text-[8px] font-mono">{String(i + 1).padStart(2, '0')}</span>
+              <span className="w-[6%] text-white/40 text-[8px]">{item.type === 'video' ? '🎬' : '🖼'}</span>
+              <span className="w-[27%] text-white/80 text-[10px] font-bold truncate pr-2">{item.title}</span>
+              <span className="w-[8%] text-white/40 text-[9px] font-mono">{item.year}</span>
+              <span className="w-[14%] text-white/40 text-[8px]">{Array.isArray(item.medium) ? item.medium.join(' · ') : item.medium}</span>
+              <span className="w-[18%] text-white/20 text-[7px] font-mono truncate">{item.fileName}</span>
+              <div className="w-[16%] flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button onClick={() => { setEditIdx(editIdx === i ? null : i); setNewTitle(item.title); setNewYear(item.year); setNewMedium(Array.isArray(item.medium) ? item.medium : [item.medium]) }} className="text-blue-400/50 text-[8px] hover:text-blue-400 ml-1">Edit</button>
                 <button onClick={() => handleDelete(i)} className="text-red-400/40 text-[8px] hover:text-red-400 ml-1">✕</button>
               </div>
@@ -1702,7 +1897,8 @@ function MiscUploadPanel() {
               </div>
             )}
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
