@@ -7,6 +7,7 @@ import { upload } from '@vercel/blob/client'
 import { useEditMode } from '@/contexts/EditModeContext'
 import { downloadAssetsZip } from '@/lib/downloadZip'
 import { prepareForUpload, isMp4 } from '@/lib/convertVideo'
+import { deleteBlobUrls } from '@/lib/blobClient'
 
 const ADMIN_PASSWORD = '3432'
 
@@ -410,7 +411,11 @@ function HomePagePanel() {
     setUploading(false)
   }
 
-  const remove = (i: number) => persist(videos.filter((_, idx) => idx !== i))
+  const remove = (i: number) => {
+    const removedSrc = videos[i]?.src
+    persist(videos.filter((_, idx) => idx !== i))
+    void deleteBlobUrls([removedSrc])
+  }
 
   const move = (i: number, dir: -1 | 1) => {
     const target = i + dir
@@ -624,6 +629,13 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
   const [mediaFiles, setMediaFiles] = useState<{ name: string; path: string }[]>([])
   const [uploadingMedia, setUploadingMedia] = useState(false)
   const formRef = useRef<HTMLDivElement>(null)
+  // Snapshot of the project's media + logo URLs as they were when the user
+  // opened the editor. On save we diff against current state to find URLs
+  // that are no longer referenced and free those Blobs.
+  const originalAssetsRef = useRef<{ mediaPaths: string[]; logoPath: string }>({
+    mediaPaths: [],
+    logoPath: '',
+  })
 
   // Form fields
   const [client, setClient] = useState('')
@@ -691,6 +703,17 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
       if (data.success) {
         setProjects(data.projects)
         setStatus(`✓ Project ${action === 'add' ? 'added' : 'updated'}`)
+        // Diff vs originals to find media + logo Blobs that are no longer
+        // referenced and free them. (Only runs on an edit since `add` has
+        // empty originals.)
+        const orig = originalAssetsRef.current
+        const keptPaths = new Set(mediaFiles.map(m => m.path))
+        const orphans: string[] = []
+        for (const p of orig.mediaPaths) {
+          if (!keptPaths.has(p)) orphans.push(p)
+        }
+        if (orig.logoPath && orig.logoPath !== logoPath) orphans.push(orig.logoPath)
+        void deleteBlobUrls(orphans)
         resetForm()
       } else {
         setStatus(`✗ ${data.error || 'Unknown error'}`)
@@ -701,6 +724,18 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
   }
 
   const handleDelete = async (slug: string) => {
+    // Collect every Blob URL the project references — media items + logo +
+    // thumbnail + hero — so we can free them after the project record is
+    // removed.
+    const target = projects.find(p => p.slug === slug) as Record<string, unknown> | undefined
+    const blobs: Array<string | undefined> = []
+    if (target) {
+      const media = (target.media as Array<{ path?: string }> | undefined) || []
+      for (const m of media) blobs.push(m?.path)
+      blobs.push(target.logoPath as string | undefined)
+      blobs.push(target.thumbnail as string | undefined)
+      blobs.push(target.heroMedia as string | undefined)
+    }
     const res = await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -710,6 +745,7 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
     if (data.success) {
       setProjects(data.projects)
       setStatus('✓ Project removed')
+      void deleteBlobUrls(blobs)
     }
   }
 
@@ -721,6 +757,10 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
     setMediaFiles(p.media || [])
     setLogoPath((p as Record<string, unknown>).logoPath as string || '')
     setShowLogoOnAbout((p as Record<string, unknown>).showLogoOnAbout !== false)
+    originalAssetsRef.current = {
+      mediaPaths: (p.media || []).map(m => m.path).filter(Boolean),
+      logoPath: ((p as Record<string, unknown>).logoPath as string) || '',
+    }
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
   }
 
@@ -1650,9 +1690,11 @@ function MiscUploadPanel() {
   }
 
   const handleDelete = async (idx: number) => {
+    const removedSrc = items[idx]?.src
     const updated = items.filter((_, i) => i !== idx)
     setItems(updated)
     await saveItems(updated)
+    void deleteBlobUrls([removedSrc])
     setStatus('✓ Removed')
     setTimeout(() => setStatus(null), 1500)
   }
@@ -2234,10 +2276,23 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
         if (infoPage.figCaption) setFigCaption(infoPage.figCaption)
         if (infoPage.profileLight) setProfileLight(infoPage.profileLight)
         if (infoPage.profileDark) setProfileDark(infoPage.profileDark)
+        // Snapshot the originals so on Save we can detect which media URLs
+        // were removed or replaced and free their Blobs.
+        originalMediaRef.current = {
+          lightVid: infoPage.lightVideoSrc || '',
+          darkVid: infoPage.darkVideoSrc || '',
+          profileLight: infoPage.profileLight || '',
+          profileDark: infoPage.profileDark || '',
+        }
         setLoading(false)
       })
       .catch(() => setLoading(false))
   }, [])
+
+  // Originals snapshot used on save to diff vs current state for blob cleanup.
+  const originalMediaRef = useRef<{ lightVid: string; darkVid: string; profileLight: string; profileDark: string }>({
+    lightVid: '', darkVid: '', profileLight: '', profileDark: '',
+  })
 
   const handleSave = async () => {
     try {
@@ -2249,14 +2304,25 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
           fields: { blurb, subtitle, currentlyAt, location, email, footerBlurb },
         }),
       })
-      // Save video panel paths to info-page
-      if (lightVid || darkVid) {
-        await fetch('/api/pages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pageId: 'info-page', fields: { lightVideoSrc: lightVid, darkVideoSrc: darkVid, figCaption, profileLight, profileDark } }),
-        })
-      }
+      // Save video panel paths to info-page (always, so clearing a video
+      // also persists — the previous `if (lightVid || darkVid)` guard meant
+      // clearing both didn't actually save the empty state).
+      await fetch('/api/pages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageId: 'info-page', fields: { lightVideoSrc: lightVid, darkVideoSrc: darkVid, figCaption, profileLight, profileDark } }),
+      })
+      // Diff against originals to find media that's no longer referenced and
+      // free those Blobs.
+      const orig = originalMediaRef.current
+      const orphans: string[] = []
+      if (orig.lightVid && orig.lightVid !== lightVid) orphans.push(orig.lightVid)
+      if (orig.darkVid && orig.darkVid !== darkVid) orphans.push(orig.darkVid)
+      if (orig.profileLight && orig.profileLight !== profileLight) orphans.push(orig.profileLight)
+      if (orig.profileDark && orig.profileDark !== profileDark) orphans.push(orig.profileDark)
+      void deleteBlobUrls(orphans)
+      // Update originals so a second save in the same session doesn't re-delete.
+      originalMediaRef.current = { lightVid, darkVid, profileLight, profileDark }
       // Save per-page footer blurbs
       for (const [pid, text] of Object.entries(pageFooters)) {
         if (text.trim()) {

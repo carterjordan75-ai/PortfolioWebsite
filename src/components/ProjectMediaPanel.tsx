@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { upload } from '@vercel/blob/client'
 import { downloadAssetsZip } from '@/lib/downloadZip'
 import { prepareForUpload } from '@/lib/convertVideo'
+import { deleteBlobUrls } from '@/lib/blobClient'
 
 /**
  * In-page media manager for a single featured project.
@@ -246,24 +247,6 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     if (count > 0) {
       setStatus(`✓ Added ${count}${count < total ? ` (${total - count} failed)` : ''}`)
       setTimeout(() => setStatus(null), 1800)
-    }
-  }
-
-  // Best-effort: delete the underlying Blob so removed / replaced files don't
-  // accumulate in storage forever. Fire-and-forget — the user's action
-  // (replace, delete) already succeeded against the project state; this is
-  // pure cleanup. A failure here is logged but never surfaced as an error.
-  const deleteBlobUrls = async (urls: Array<string | undefined>) => {
-    const targets = urls.filter((u): u is string => !!u && /^https?:\/\//.test(u))
-    if (targets.length === 0) return
-    try {
-      await fetch('/api/blob-delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls: targets }),
-      })
-    } catch (err) {
-      console.warn('Blob cleanup failed (not fatal):', err)
     }
   }
 
