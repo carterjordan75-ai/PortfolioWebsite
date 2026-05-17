@@ -547,6 +547,93 @@ function HomePagePanel() {
   )
 }
 
+/**
+ * Admin-only "download all assets" pill. Fetches every media file for a
+ * project from its public URL (works for both Vercel Blob URLs and local
+ * /assets/* paths), zips them with jszip, and triggers a browser download.
+ *
+ * The filename pattern preserves the upload order so the receiver can see
+ * which file was which slot on the page ("01-<name>", "02-<name>", …).
+ *
+ * Unlike the per-project page's "Download" button (which generates
+ * watermarked low-res placeholders for the public), this pulls the actual
+ * source files — admin-only because it's behind the AdminPortal gate.
+ */
+function DownloadAssetsButton({
+  mediaFiles,
+  projectSlug,
+  projectName,
+}: {
+  mediaFiles: { name: string; path: string }[]
+  projectSlug: string
+  projectName: string
+}) {
+  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+
+  const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9.-]+/g, '_').replace(/^_+|_+$/g, '')
+
+  const handleDownload = async () => {
+    if (!mediaFiles.length || busy) return
+    setBusy(true)
+    setProgress({ done: 0, total: mediaFiles.length })
+
+    try {
+      const { default: JSZip } = await import('jszip')
+      const zip = new JSZip()
+      const folder = zip.folder(sanitize(`${projectName}_${projectSlug}_assets`)) ?? zip
+
+      for (let i = 0; i < mediaFiles.length; i++) {
+        const f = mediaFiles[i]
+        try {
+          const res = await fetch(f.path)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const blob = await res.blob()
+          // Pad to 2 digits for sort, preserve extension from original name
+          const seq = String(i + 1).padStart(2, '0')
+          const rawName = f.name || f.path.split('/').pop() || `file_${seq}`
+          folder.file(`${seq}_${sanitize(rawName)}`, blob)
+        } catch (err) {
+          console.error(`Failed to fetch ${f.path}:`, err)
+          // Drop a small note in the zip so the user knows something was missed
+          folder.file(`__missing_${i + 1}.txt`, `Failed to fetch: ${f.path}\nError: ${String(err)}\n`)
+        }
+        setProgress({ done: i + 1, total: mediaFiles.length })
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(zipBlob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = sanitize(`${projectName}_${projectSlug}_assets`) + '.zip'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Download all failed:', err)
+      // eslint-disable-next-line no-alert
+      alert('Download failed — see console for details.')
+    } finally {
+      setBusy(false)
+      setProgress(null)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleDownload}
+      disabled={busy || mediaFiles.length === 0}
+      className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold text-white/70 border border-white/15 hover:border-white/30 hover:text-white/90 hover:bg-white/5 transition-all disabled:opacity-40 disabled:cursor-wait"
+      title="Download every project file as a ZIP (admin only)"
+    >
+      {busy
+        ? (progress ? `⏳ ${progress.done}/${progress.total}` : '⏳ Zipping…')
+        : `↓ Download all (${mediaFiles.length})`}
+    </button>
+  )
+}
+
 function IndexAdminPanel({ onClose }: { onClose: () => void }) {
   const [projects, setProjects] = useState<AdminProject[]>([])
   const [loading, setLoading] = useState(true)
@@ -904,6 +991,13 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
                     />
                   </label>
                   <span className="text-white/20 text-[8px]">{mediaFiles.length} file{mediaFiles.length !== 1 ? 's' : ''}</span>
+                  {mediaFiles.length > 0 && (
+                    <DownloadAssetsButton
+                      mediaFiles={mediaFiles}
+                      projectSlug={editingSlug || client.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'project'}
+                      projectName={client || 'project'}
+                    />
+                  )}
                 </div>
 
                 {/* Media grid with drag-drop reorder */}
