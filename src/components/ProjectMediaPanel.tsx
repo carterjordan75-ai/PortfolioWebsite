@@ -260,16 +260,18 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-[9998]"
+            className="fixed inset-0 z-[10010]"
             style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)' }}
           />
-          {/* Drawer */}
+          {/* Drawer — z-index sits above the site header (10000) and the
+              minimized-header restore pill (10001) so admin status messages
+              are never obscured. */}
           <motion.aside
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-            className="fixed top-0 right-0 bottom-0 z-[9999] flex flex-col"
+            className="fixed top-0 right-0 bottom-0 z-[10011] flex flex-col"
             style={{
               width: 'min(520px, 94vw)',
               background: '#111',

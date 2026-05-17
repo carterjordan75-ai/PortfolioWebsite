@@ -112,7 +112,9 @@ export default function AdminPortal({ show, onClose }: { show: boolean; onClose:
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 10001,
+            // Above the site header (10000) and minimize-restore pill (10001)
+            // so admin overlays are never obscured by chrome.
+            zIndex: 10010,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
