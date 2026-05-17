@@ -25,17 +25,32 @@
 // Cached promise so we only load the core once per session.
 let ffmpegPromise: Promise<unknown> | null = null
 
-async function getFFmpeg(): Promise<unknown> {
+async function getFFmpeg(onStatus?: (msg: string) => void): Promise<unknown> {
   if (!ffmpegPromise) {
     ffmpegPromise = (async () => {
+      onStatus?.('Loading converter…')
       const { FFmpeg } = await import('@ffmpeg/ffmpeg')
       const { toBlobURL } = await import('@ffmpeg/util')
       const ffmpeg = new FFmpeg()
-      // Single-threaded core — no SharedArrayBuffer / COOP-COEP needed.
-      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
+      // Surface ffmpeg's own stderr (codec messages, errors) to the console.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ffmpeg.on('log', (e: any) => {
+        if (typeof e?.message === 'string') console.log('[ffmpeg]', e.message)
+      })
+      // Single-threaded build — no SharedArrayBuffer / COOP-COEP needed.
+      // We pin exact versions so the unpkg URLs are stable.
+      const ffVer = '0.12.15'
+      const coreVer = '0.12.6'
+      const baseFFMPEG = `https://unpkg.com/@ffmpeg/ffmpeg@${ffVer}/dist/umd`
+      const baseCore = `https://unpkg.com/@ffmpeg/core@${coreVer}/dist/umd`
+      // classWorkerURL: the bundled UMD worker (NOT the ESM one — that has
+      // relative imports that won't resolve from a Blob URL). All three URLs
+      // are turned into same-origin Blob URLs to dodge cross-origin Worker
+      // restrictions in production.
       await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        classWorkerURL: await toBlobURL(`${baseFFMPEG}/814.ffmpeg.js`, 'text/javascript'),
+        coreURL: await toBlobURL(`${baseCore}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseCore}/ffmpeg-core.wasm`, 'application/wasm'),
       })
       return ffmpeg
     })().catch((err) => {
@@ -58,10 +73,11 @@ export function isMp4(file: File): boolean {
 export async function convertMp4ToWebm(
   file: File,
   onProgress?: (ratio: number) => void,
+  onStatus?: (msg: string) => void,
 ): Promise<File> {
   const { fetchFile } = await import('@ffmpeg/util')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ffmpeg = (await getFFmpeg()) as any
+  const ffmpeg = (await getFFmpeg(onStatus)) as any
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const progressHandler = (event: any) => {
@@ -116,16 +132,19 @@ export async function prepareForUpload(
   onStatus?: (msg: string) => void,
 ): Promise<File> {
   if (!isMp4(file)) return file
-  onStatus?.(`Converting ${file.name} to WebM…`)
+  onStatus?.(`Preparing ${file.name}…`)
   try {
-    const converted = await convertMp4ToWebm(file, (ratio) => {
-      onStatus?.(`Converting ${file.name} — ${Math.round(ratio * 100)}%`)
-    })
+    const converted = await convertMp4ToWebm(
+      file,
+      (ratio) => onStatus?.(`Converting ${file.name} — ${Math.round(ratio * 100)}%`),
+      onStatus,
+    )
     onStatus?.(`✓ Converted ${file.name} → ${converted.name}`)
     return converted
   } catch (err) {
     console.error('MP4 → WebM conversion failed, uploading original:', err)
-    onStatus?.(`Conversion failed — uploading original ${file.name}`)
+    const msg = err instanceof Error ? err.message : String(err)
+    onStatus?.(`Conversion failed (${msg}) — uploading original`)
     return file
   }
 }
