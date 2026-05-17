@@ -334,26 +334,30 @@ function HomePagePanel() {
     if (!pendingFile) return
     setUploading(true)
     setStatus(null)
-    const fd = new FormData()
-    fd.append('file', pendingFile)
-    fd.append('section', 'home-videos')
-    fd.append('credits', pendingTitle || pendingFile.name)
+
+    // Direct-to-Blob upload (browser PUTs straight to Vercel Blob, bypassing
+    // the 4.5 MB Vercel-Hobby function-payload cap that was rejecting the
+    // larger home videos through /api/upload).
+    const slugify = (s: string) =>
+      s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'video'
+    const extMatch = pendingFile.name.match(/\.[^.]+$/)
+    const ext = extMatch ? extMatch[0].toLowerCase() : ''
+    const pathname = `media/home-videos/${slugify(pendingTitle || pendingFile.name)}-${Date.now().toString(36)}${ext}`
+
     try {
-      const res = await fetch('/api/upload', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (data.success && data.path) {
-        const next: HomeVideo[] = [
-          ...videos,
-          { src: data.path, title: pendingTitle, category: pendingCategory, year: pendingYear },
-        ]
-        await persistRaw(next)
-        setVideos(next)
-        cancelUpload()
-      } else {
-        setStatus('✗ Upload failed')
-        setTimeout(() => setStatus(null), 1500)
-      }
-    } catch {
+      const blob = await upload(pathname, pendingFile, {
+        access: 'public',
+        handleUploadUrl: '/api/upload-token',
+      })
+      const next: HomeVideo[] = [
+        ...videos,
+        { src: blob.url, title: pendingTitle, category: pendingCategory, year: pendingYear },
+      ]
+      await persistRaw(next)
+      setVideos(next)
+      cancelUpload()
+    } catch (err) {
+      console.error('Home video upload failed:', err)
       setStatus('✗ Upload failed')
       setTimeout(() => setStatus(null), 1500)
     }
