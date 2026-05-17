@@ -22,7 +22,20 @@ import { upload } from '@vercel/blob/client'
  * straight to Vercel Blob, sidestepping the 4.5MB Vercel-Hobby payload cap).
  */
 
-export type ProjectMediaItem = { name?: string; path?: string }
+export type ProjectMediaItem = { name?: string; path?: string; aspect?: string }
+
+// Common aspect ratios offered in the per-item dropdown. The `value` is what
+// gets stored (a CSS aspect-ratio string); the `label` is what the user sees.
+const ASPECT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '16/9',  label: '16:9  · Landscape' },
+  { value: '21/9',  label: '21:9  · Cinematic' },
+  { value: '1/1',   label: '1:1   · Square' },
+  { value: '4/5',   label: '4:5   · Portrait (IG)' },
+  { value: '9/16',  label: '9:16  · Vertical' },
+  { value: '4/3',   label: '4:3   · Classic' },
+  { value: '3/4',   label: '3:4   · Tall' },
+  { value: '16/10', label: '16:10 · Wide' },
+]
 
 type Props = {
   slug: string
@@ -157,7 +170,7 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
             transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
             className="fixed top-0 right-0 bottom-0 z-[9999] flex flex-col"
             style={{
-              width: 'min(480px, 92vw)',
+              width: 'min(520px, 94vw)',
               background: '#111',
               color: '#fff',
               borderLeft: '1px solid rgba(255,255,255,0.08)',
@@ -242,9 +255,28 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
                       <p className="text-white/80 text-[10px] truncate" title={item.name || item.path}>
                         {String(i + 1).padStart(2, '0')} · {item.name || item.path?.split('/').pop()}
                       </p>
-                      <p className="text-white/30 text-[8px] uppercase tracking-[0.1em] mt-0.5">
-                        {item.path ? (isVideo(item.path) ? 'Video' : 'Image') : '—'}
-                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-white/30 text-[7px] uppercase tracking-[0.1em] flex-shrink-0">
+                          {item.path ? (isVideo(item.path) ? 'Video' : 'Image') : '—'}
+                        </span>
+                        <select
+                          value={item.aspect || '16/9'}
+                          onChange={(e) => {
+                            const next = media.map((m, j) => j === i ? { ...m, aspect: e.target.value } : m)
+                            persist(next)
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          className="text-[8px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/70 outline-none focus:border-white/25 cursor-pointer"
+                          title="Aspect ratio on the project page"
+                        >
+                          {ASPECT_OPTIONS.map(opt => (
+                            <option key={opt.value} value={opt.value} className="bg-zinc-900 text-white">
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     <button
                       onClick={() => {

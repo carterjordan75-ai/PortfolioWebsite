@@ -298,28 +298,40 @@ For licensing inquiries: carterjordan75@gmail.com
   const pageBg = dark ? '#0a0a0a' : '#f5f5f0'
   const rule = dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
 
-  // All media items flattened for lightbox
-  const allMedia: { aspect: string; label: string; src: string; mediaType: 'video' | 'image' }[] = [
-    { aspect: '16/9', label: '01', src: projectMedia.heroVideo, mediaType: 'video' },
-    ...mediaBlocks.flatMap((block, i) => {
-      const num = String(i + 2).padStart(2, '0')
-      if (block.type === 'image' || block.type === 'video') {
-        const idx = i + 1
-        const m = projectMedia.media[idx % projectMedia.media.length]
-        return [{ aspect: '16/10', label: num, src: m.src, mediaType: m.type }]
-      }
-      if (block.type === 'image-grid') return block.images.map((_, j) => {
-        const idx = (i + 1) * 10 + j
-        const m = projectMedia.media[idx % projectMedia.media.length]
-        return { aspect: '4/3', label: `${num}.${j+1}`, src: m.src, mediaType: m.type }
-      })
-      return []
-    }),
-    { aspect: '16/9', label: String(mediaBlocks.length + 2).padStart(2, '0'), src: projectMedia.media[4 % projectMedia.media.length].src, mediaType: projectMedia.media[4 % projectMedia.media.length].type },
-    { aspect: '1/1', label: `${String(mediaBlocks.length + 3).padStart(2, '0')}.1`, src: projectMedia.media[5 % projectMedia.media.length].src, mediaType: projectMedia.media[5 % projectMedia.media.length].type },
-    { aspect: '1/1', label: `${String(mediaBlocks.length + 3).padStart(2, '0')}.2`, src: projectMedia.media[6 % projectMedia.media.length].src, mediaType: projectMedia.media[6 % projectMedia.media.length].type },
-    { aspect: '21/9', label: String(mediaBlocks.length + 4).padStart(2, '0'), src: projectMedia.media[7 % projectMedia.media.length].src, mediaType: projectMedia.media[7 % projectMedia.media.length].type },
-  ]
+  // All media items flattened for the lightbox. When admin media is present
+  // the page renders as a dynamic feed (one block per admin item at its
+  // chosen aspect), so the lightbox list mirrors that exactly. Otherwise we
+  // fall back to the legacy fixed-layout list with test-pool footage.
+  const allMedia: { aspect: string; label: string; src: string; mediaType: 'video' | 'image' }[] =
+    localMedia && localMedia.length > 0
+      ? localMedia
+          .filter(m => !!m.path)
+          .map((m, i) => {
+            const mediaType: 'video' | 'image' = /\.(mp4|webm|mov)$/i.test(m.path!) ? 'video' : 'image'
+            const aspect = (m as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
+            return { aspect, label: String(i + 1).padStart(2, '0'), src: m.path!, mediaType }
+          })
+      : [
+          { aspect: '16/9', label: '01', src: projectMedia.heroVideo, mediaType: 'video' },
+          ...mediaBlocks.flatMap((block, i) => {
+            const num = String(i + 2).padStart(2, '0')
+            if (block.type === 'image' || block.type === 'video') {
+              const idx = i + 1
+              const m = projectMedia.media[idx % projectMedia.media.length]
+              return [{ aspect: '16/10', label: num, src: m.src, mediaType: m.type }]
+            }
+            if (block.type === 'image-grid') return block.images.map((_, j) => {
+              const idx = (i + 1) * 10 + j
+              const m = projectMedia.media[idx % projectMedia.media.length]
+              return { aspect: '4/3', label: `${num}.${j+1}`, src: m.src, mediaType: m.type }
+            })
+            return []
+          }),
+          { aspect: '16/9', label: String(mediaBlocks.length + 2).padStart(2, '0'), src: projectMedia.media[4 % projectMedia.media.length].src, mediaType: projectMedia.media[4 % projectMedia.media.length].type },
+          { aspect: '1/1', label: `${String(mediaBlocks.length + 3).padStart(2, '0')}.1`, src: projectMedia.media[5 % projectMedia.media.length].src, mediaType: projectMedia.media[5 % projectMedia.media.length].type },
+          { aspect: '1/1', label: `${String(mediaBlocks.length + 3).padStart(2, '0')}.2`, src: projectMedia.media[6 % projectMedia.media.length].src, mediaType: projectMedia.media[6 % projectMedia.media.length].type },
+          { aspect: '21/9', label: String(mediaBlocks.length + 4).padStart(2, '0'), src: projectMedia.media[7 % projectMedia.media.length].src, mediaType: projectMedia.media[7 % projectMedia.media.length].type },
+        ]
 
   return (
     <PageTransition>
@@ -505,44 +517,73 @@ For licensing inquiries: carterjordan75@gmail.com
           <div className="w-full md:w-[67%] overflow-y-auto">
             <div className="p-3 md:p-4 space-y-3">
 
-              {/* Hero */}
-              <MediaBlock idx={0} aspect="16/9" label="01" onExpand={() => setExpandedMedia(0)} dark={dark} mediaSrc={projectMedia.heroVideo} mediaType="video" />
-
-              {/* Content media */}
-              {(() => {
-                let globalIdx = 1
-                return mediaBlocks.map((block, i) => {
-                  const num = String(i + 2).padStart(2, '0')
-
-                  if (block.type === 'image' || block.type === 'video') {
-                    const idx = globalIdx++
-                    const m = projectMedia.media[idx % projectMedia.media.length]
-                    return <MediaBlock key={i} idx={idx} aspect={block.type === 'video' ? '16/9' : '16/10'} label={num} onExpand={() => setExpandedMedia(idx)} dark={dark} mediaSrc={m.src} mediaType={m.type} />
-                  }
-
-                  if (block.type === 'image-grid') {
-                    const items = block.images.map((_, j) => {
-                      const idx = globalIdx++
-                      const m = projectMedia.media[idx % projectMedia.media.length]
-                      return <MediaBlock key={j} idx={idx} aspect="4/3" label={`${num}.${j+1}`} onExpand={() => setExpandedMedia(idx)} dark={dark} mediaSrc={m.src} mediaType={m.type} />
-                    })
+              {/* When admin has uploaded media for this project, the page is a
+                  dynamic feed: one MediaBlock per item, in the order set in
+                  the admin panel, each at its own aspect ratio. When there
+                  is no admin media yet, fall back to the legacy fixed layout
+                  with test-pool footage so the page is never blank. */}
+              {localMedia && localMedia.length > 0 ? (
+                <>
+                  {localMedia.map((item, i) => {
+                    if (!item.path) return null
+                    const mediaType: 'video' | 'image' = /\.(mp4|webm|mov)$/i.test(item.path) ? 'video' : 'image'
+                    const aspect = (item as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
                     return (
-                      <div key={i} className={`grid gap-2 ${block.columns === 3 ? 'grid-cols-3' : block.columns === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                        {items}
-                      </div>
+                      <MediaBlock
+                        key={i}
+                        idx={i}
+                        aspect={aspect}
+                        label={String(i + 1).padStart(2, '0')}
+                        onExpand={() => setExpandedMedia(i)}
+                        dark={dark}
+                        mediaSrc={item.path}
+                        mediaType={mediaType}
+                      />
                     )
-                  }
-                  return null
-                })
-              })()}
+                  })}
+                </>
+              ) : (
+                <>
+                  {/* Hero */}
+                  <MediaBlock idx={0} aspect="16/9" label="01" onExpand={() => setExpandedMedia(0)} dark={dark} mediaSrc={projectMedia.heroVideo} mediaType="video" />
 
-              {/* Extra placeholders with real media */}
-              <MediaBlock idx={allMedia.length - 4} aspect="16/9" label={String(mediaBlocks.length + 2).padStart(2, '0')} onExpand={() => setExpandedMedia(allMedia.length - 4)} dark={dark} mediaSrc={projectMedia.media[4 % projectMedia.media.length].src} mediaType={projectMedia.media[4 % projectMedia.media.length].type} />
-              <div className="grid grid-cols-2 gap-2">
-                <MediaBlock idx={allMedia.length - 3} aspect="1/1" label={`${String(mediaBlocks.length + 3).padStart(2, '0')}.1`} onExpand={() => setExpandedMedia(allMedia.length - 3)} dark={dark} mediaSrc={projectMedia.media[5 % projectMedia.media.length].src} mediaType={projectMedia.media[5 % projectMedia.media.length].type} />
-                <MediaBlock idx={allMedia.length - 2} aspect="1/1" label={`${String(mediaBlocks.length + 3).padStart(2, '0')}.2`} onExpand={() => setExpandedMedia(allMedia.length - 2)} dark={dark} mediaSrc={projectMedia.media[6 % projectMedia.media.length].src} mediaType={projectMedia.media[6 % projectMedia.media.length].type} />
-              </div>
-              <MediaBlock idx={allMedia.length - 1} aspect="21/9" label={String(mediaBlocks.length + 4).padStart(2, '0')} onExpand={() => setExpandedMedia(allMedia.length - 1)} dark={dark} mediaSrc={projectMedia.media[7 % projectMedia.media.length].src} mediaType={projectMedia.media[7 % projectMedia.media.length].type} />
+                  {/* Content media */}
+                  {(() => {
+                    let globalIdx = 1
+                    return mediaBlocks.map((block, i) => {
+                      const num = String(i + 2).padStart(2, '0')
+
+                      if (block.type === 'image' || block.type === 'video') {
+                        const idx = globalIdx++
+                        const m = projectMedia.media[idx % projectMedia.media.length]
+                        return <MediaBlock key={i} idx={idx} aspect={block.type === 'video' ? '16/9' : '16/10'} label={num} onExpand={() => setExpandedMedia(idx)} dark={dark} mediaSrc={m.src} mediaType={m.type} />
+                      }
+
+                      if (block.type === 'image-grid') {
+                        const items = block.images.map((_, j) => {
+                          const idx = globalIdx++
+                          const m = projectMedia.media[idx % projectMedia.media.length]
+                          return <MediaBlock key={j} idx={idx} aspect="4/3" label={`${num}.${j+1}`} onExpand={() => setExpandedMedia(idx)} dark={dark} mediaSrc={m.src} mediaType={m.type} />
+                        })
+                        return (
+                          <div key={i} className={`grid gap-2 ${block.columns === 3 ? 'grid-cols-3' : block.columns === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                            {items}
+                          </div>
+                        )
+                      }
+                      return null
+                    })
+                  })()}
+
+                  {/* Extra placeholders with real media */}
+                  <MediaBlock idx={allMedia.length - 4} aspect="16/9" label={String(mediaBlocks.length + 2).padStart(2, '0')} onExpand={() => setExpandedMedia(allMedia.length - 4)} dark={dark} mediaSrc={projectMedia.media[4 % projectMedia.media.length].src} mediaType={projectMedia.media[4 % projectMedia.media.length].type} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <MediaBlock idx={allMedia.length - 3} aspect="1/1" label={`${String(mediaBlocks.length + 3).padStart(2, '0')}.1`} onExpand={() => setExpandedMedia(allMedia.length - 3)} dark={dark} mediaSrc={projectMedia.media[5 % projectMedia.media.length].src} mediaType={projectMedia.media[5 % projectMedia.media.length].type} />
+                    <MediaBlock idx={allMedia.length - 2} aspect="1/1" label={`${String(mediaBlocks.length + 3).padStart(2, '0')}.2`} onExpand={() => setExpandedMedia(allMedia.length - 2)} dark={dark} mediaSrc={projectMedia.media[6 % projectMedia.media.length].src} mediaType={projectMedia.media[6 % projectMedia.media.length].type} />
+                  </div>
+                  <MediaBlock idx={allMedia.length - 1} aspect="21/9" label={String(mediaBlocks.length + 4).padStart(2, '0')} onExpand={() => setExpandedMedia(allMedia.length - 1)} dark={dark} mediaSrc={projectMedia.media[7 % projectMedia.media.length].src} mediaType={projectMedia.media[7 % projectMedia.media.length].type} />
+                </>
+              )}
 
               <div className="pt-4 pb-2">
                 <p className="text-[8px] uppercase tracking-[0.12em] text-center" style={{ opacity: 0.2 }}>
