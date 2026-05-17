@@ -55,13 +55,19 @@ async function getFFmpeg(onStatus?: (msg: string) => void): Promise<unknown> {
       const coreVer = '0.12.6'
       const baseCore = `https://unpkg.com/@ffmpeg/core@${coreVer}/dist/esm`
       // classWorkerURL must be a complete URL — FFmpeg internally does
-      // `new URL(classWorkerURL, import.meta.url)` and in the webpack bundle
-      // `import.meta.url` resolves to a `file:///` base, which would build
-      // `file:///ffmpeg/worker.js` and then fail the cross-origin Worker
-      // construction check. Anchoring to window.location.origin sidesteps it.
-      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      // `new URL(classWorkerURL, hardcodedFileBase)` against a base URL
+      // that's the @ffmpeg author's local dev path (file:///Users/focus/...
+      // in the published UMD bundle). With a path-only classWorkerURL the
+      // result was file:///ffmpeg/worker.js and Worker construction was
+      // blocked as cross-origin. Build the URL with `new URL(...).href`
+      // against location.href so it's airtight — string is fully absolute,
+      // no resolution surprises.
+      const workerHref = new URL('/ffmpeg/worker.js', window.location.href).href
+      // Log so we can verify in production devtools what's actually being
+      // passed to the Worker constructor.
+      console.log('[ffmpeg] classWorkerURL =', workerHref)
       await ffmpeg.load({
-        classWorkerURL: `${origin}/ffmpeg/worker.js`,
+        classWorkerURL: workerHref,
         coreURL: await toBlobURL(`${baseCore}/ffmpeg-core.js`, 'text/javascript'),
         wasmURL: await toBlobURL(`${baseCore}/ffmpeg-core.wasm`, 'application/wasm'),
       })
