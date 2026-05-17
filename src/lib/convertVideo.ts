@@ -38,17 +38,24 @@ async function getFFmpeg(onStatus?: (msg: string) => void): Promise<unknown> {
         if (typeof e?.message === 'string') console.log('[ffmpeg]', e.message)
       })
       // Single-threaded build — no SharedArrayBuffer / COOP-COEP needed.
-      // We pin exact versions so the unpkg URLs are stable.
-      const ffVer = '0.12.15'
+      //
+      // Worker is loaded from our own /public/ffmpeg/ (same-origin static
+      // assets). We need the ESM build of worker.js — the UMD build's
+      // dynamic-import fallback is a webpack stub that always throws
+      // "Cannot find module", which is exactly the error we hit when we
+      // first tried pointing classWorkerURL at the UMD bundle. The ESM
+      // worker does a real `import()` at runtime.
+      //
+      // worker.js has relative imports (./const.js, ./errors.js) so we ship
+      // all three files together under /ffmpeg/.
+      //
+      // Core + wasm are still pulled from unpkg and wrapped in Blob URLs.
+      // We use the ESM core (not UMD) because the worker dynamic-imports it
+      // and looks for `.default` — the UMD core has no ES module exports.
       const coreVer = '0.12.6'
-      const baseFFMPEG = `https://unpkg.com/@ffmpeg/ffmpeg@${ffVer}/dist/umd`
-      const baseCore = `https://unpkg.com/@ffmpeg/core@${coreVer}/dist/umd`
-      // classWorkerURL: the bundled UMD worker (NOT the ESM one — that has
-      // relative imports that won't resolve from a Blob URL). All three URLs
-      // are turned into same-origin Blob URLs to dodge cross-origin Worker
-      // restrictions in production.
+      const baseCore = `https://unpkg.com/@ffmpeg/core@${coreVer}/dist/esm`
       await ffmpeg.load({
-        classWorkerURL: await toBlobURL(`${baseFFMPEG}/814.ffmpeg.js`, 'text/javascript'),
+        classWorkerURL: '/ffmpeg/worker.js',
         coreURL: await toBlobURL(`${baseCore}/ffmpeg-core.js`, 'text/javascript'),
         wasmURL: await toBlobURL(`${baseCore}/ffmpeg-core.wasm`, 'application/wasm'),
       })
