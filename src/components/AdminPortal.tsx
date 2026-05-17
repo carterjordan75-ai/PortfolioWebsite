@@ -11,7 +11,7 @@ import { deleteBlobUrls } from '@/lib/blobClient'
 
 const ADMIN_PASSWORD = '3432'
 
-type Section = 'dashboard' | 'work' | 'archive' | 'employment' | 'experiments' | 'look' | 'info'
+type Section = 'dashboard' | 'work' | 'archive' | 'employment' | 'experiments' | 'look' | 'info' | 'storage'
 
 /**
  * Direct-to-Blob file upload. Used by every admin panel that accepts file
@@ -99,6 +99,7 @@ export default function AdminPortal({ show, onClose }: { show: boolean; onClose:
     { id: 'experiments', label: 'Misc' },
     { id: 'look', label: 'Look Gallery' },
     { id: 'info', label: 'Info / About' },
+    { id: 'storage', label: 'Storage' },
   ]
 
   return (
@@ -250,6 +251,10 @@ export default function AdminPortal({ show, onClose }: { show: boolean; onClose:
 
                   {activeSection === 'info' && (
                     <InfoPopupEditor onClose={onClose} />
+                  )}
+
+                  {activeSection === 'storage' && (
+                    <StorageAdminPanel />
                   )}
                 </div>
               </div>
@@ -2608,6 +2613,289 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
           Save All Settings
         </button>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Storage browser — lists every Blob in the project's store with its size,
+ * whether it's referenced by admin state, and lets you bulk-delete. Mostly
+ * useful for cleaning up failed-upload originals + abandoned drafts that
+ * accumulated before the leak fix shipped.
+ *
+ * Sort and filter: largest first by default (most useful for freeing space).
+ * "Show orphans only" hides anything currently in use so you can clear
+ * orphans confidently without nuking real assets.
+ */
+type StorageItem = {
+  pathname: string
+  url: string
+  size: number
+  uploadedAt?: string
+  referenced: boolean
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+function StorageAdminPanel() {
+  const [items, setItems] = useState<StorageItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [lastSelectedIdx, setLastSelectedIdx] = useState<number | null>(null)
+  const [filter, setFilter] = useState('')
+  const [orphansOnly, setOrphansOnly] = useState(false)
+  const [sortBy, setSortBy] = useState<'size' | 'date' | 'path'>('size')
+  const [deleting, setDeleting] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
+  const [totalBytes, setTotalBytes] = useState(0)
+
+  const load = () => {
+    setLoading(true)
+    setError(null)
+    fetch('/api/storage-list')
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { setError(String(data.error)); setLoading(false); return }
+        setItems(data.items || [])
+        setTotalBytes(data.totalBytes || 0)
+        setSelected(new Set())
+        setLastSelectedIdx(null)
+        setLoading(false)
+      })
+      .catch(err => { setError(String(err)); setLoading(false) })
+  }
+
+  useEffect(() => { load() }, [])
+
+  // Apply filter + orphan toggle + sort
+  const visible = items
+    .filter(i => !orphansOnly || !i.referenced)
+    .filter(i => !filter || i.pathname.toLowerCase().includes(filter.toLowerCase()))
+    .sort((a, b) => {
+      if (sortBy === 'size') return b.size - a.size
+      if (sortBy === 'date') return (b.uploadedAt || '').localeCompare(a.uploadedAt || '')
+      return a.pathname.localeCompare(b.pathname)
+    })
+
+  const orphanCount = items.filter(i => !i.referenced).length
+  const orphanBytes = items.filter(i => !i.referenced).reduce((sum, i) => sum + i.size, 0)
+  const selectedBytes = visible.filter(i => selected.has(i.url)).reduce((sum, i) => sum + i.size, 0)
+
+  const toggleOne = (url: string, idx: number, shiftKey = false) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (shiftKey && lastSelectedIdx !== null && lastSelectedIdx !== idx) {
+        const [lo, hi] = lastSelectedIdx < idx ? [lastSelectedIdx, idx] : [idx, lastSelectedIdx]
+        const adding = !prev.has(visible[lastSelectedIdx].url)
+        for (let i = lo; i <= hi; i++) {
+          const u = visible[i].url
+          if (adding) next.add(u); else next.delete(u)
+        }
+      } else {
+        if (next.has(url)) next.delete(url); else next.add(url)
+      }
+      return next
+    })
+    setLastSelectedIdx(idx)
+  }
+
+  const selectAllVisible = () => setSelected(new Set(visible.map(i => i.url)))
+  const selectAllOrphans = () => setSelected(new Set(items.filter(i => !i.referenced).map(i => i.url)))
+  const clearSelected = () => setSelected(new Set())
+
+  const handleDelete = async () => {
+    if (selected.size === 0 || deleting) return
+    const willDeleteReferenced = visible.some(i => selected.has(i.url) && i.referenced)
+    const msg = `Delete ${selected.size} file${selected.size === 1 ? '' : 's'} (${formatBytes(selectedBytes)})?${
+      willDeleteReferenced ? '\n\nWARNING: some of these are still referenced by admin state — deleting them will leave broken links on the site.' : ''
+    }`
+    if (!confirm(msg)) return
+    setDeleting(true)
+    setStatus(`Deleting ${selected.size}…`)
+    try {
+      const res = await fetch('/api/blob-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls: Array.from(selected) }),
+      })
+      const data = await res.json()
+      setStatus(`✓ Deleted ${data.deleted}${data.failed ? ` · ${data.failed} failed` : ''}`)
+      load()
+    } catch (err) {
+      setStatus(`✗ Delete failed: ${String(err)}`)
+    } finally {
+      setDeleting(false)
+      setTimeout(() => setStatus(null), 4000)
+    }
+  }
+
+  const isImage = (path: string) => /\.(jpe?g|png|gif|webp|avif|svg)$/i.test(path)
+  const isVideo = (path: string) => /\.(mp4|webm|mov|m4v)$/i.test(path)
+
+  return (
+    <div>
+      <h2 className="text-white text-[14px] font-bold uppercase tracking-[0.1em] mb-4">Storage</h2>
+
+      {/* Summary bar */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="p-3 rounded-lg border border-white/8 bg-white/3">
+          <p className="text-white/40 text-[7px] uppercase tracking-[0.15em]">Total</p>
+          <p className="text-white text-[14px] font-bold">{formatBytes(totalBytes)}</p>
+          <p className="text-white/30 text-[8px] mt-0.5">{items.length} files</p>
+        </div>
+        <div className="p-3 rounded-lg border border-amber-400/20 bg-amber-400/5">
+          <p className="text-amber-400/60 text-[7px] uppercase tracking-[0.15em]">Orphans</p>
+          <p className="text-amber-400 text-[14px] font-bold">{formatBytes(orphanBytes)}</p>
+          <p className="text-amber-400/50 text-[8px] mt-0.5">{orphanCount} files unused</p>
+        </div>
+        <div className="p-3 rounded-lg border border-white/8 bg-white/3">
+          <p className="text-white/40 text-[7px] uppercase tracking-[0.15em]">Selected</p>
+          <p className="text-white text-[14px] font-bold">{formatBytes(selectedBytes)}</p>
+          <p className="text-white/30 text-[8px] mt-0.5">{selected.size} files</p>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-2 mb-3 text-[8px] uppercase tracking-[0.1em]">
+        <input
+          type="text"
+          placeholder="Filter by path…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="flex-1 min-w-[180px] px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/20 outline-none focus:border-white/25 text-[10px] tracking-normal normal-case"
+        />
+        <label className="flex items-center gap-1.5 text-white/60 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={orphansOnly}
+            onChange={(e) => setOrphansOnly(e.target.checked)}
+            className="accent-amber-400"
+          />
+          Orphans only
+        </label>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as 'size' | 'date' | 'path')}
+          className="px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/70 outline-none text-[9px] cursor-pointer"
+        >
+          <option value="size" className="bg-zinc-900">Sort: Largest</option>
+          <option value="date" className="bg-zinc-900">Sort: Newest</option>
+          <option value="path" className="bg-zinc-900">Sort: Path</option>
+        </select>
+        <button
+          onClick={load}
+          disabled={loading || deleting}
+          className="px-2.5 py-1.5 rounded text-[7px] font-bold text-white/60 border border-white/15 hover:border-white/30 hover:text-white/80 disabled:opacity-40"
+        >
+          {loading ? '⟳…' : '⟳ Refresh'}
+        </button>
+      </div>
+
+      {/* Bulk toolbar */}
+      {(selected.size > 0 || orphanCount > 0) && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 p-2 rounded-lg border border-white/12 bg-white/5 text-[8px] uppercase tracking-[0.1em]">
+          <span className="text-white/70 font-bold">{selected.size} selected</span>
+          <button onClick={clearSelected} disabled={selected.size === 0} className="text-white/40 hover:text-white disabled:opacity-30">clear</button>
+          <button onClick={selectAllVisible} className="text-white/60 hover:text-white">select visible</button>
+          {orphanCount > 0 && (
+            <button onClick={selectAllOrphans} className="text-amber-400/80 hover:text-amber-400 font-bold">
+              select all orphans ({orphanCount})
+            </button>
+          )}
+          <div className="flex-1" />
+          <button
+            onClick={handleDelete}
+            disabled={selected.size === 0 || deleting}
+            className="px-3 py-1.5 rounded text-[8px] font-bold text-red-400 border border-red-400/30 hover:bg-red-400/10 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            {deleting ? 'Deleting…' : `🗑 Delete ${selected.size} (${formatBytes(selectedBytes)})`}
+          </button>
+        </div>
+      )}
+
+      {status && (
+        <p className={`mb-3 text-[9px] ${status.startsWith('✓') ? 'text-green-400' : status.startsWith('✗') ? 'text-red-400' : 'text-white/60'}`}>{status}</p>
+      )}
+
+      {error && (
+        <p className="text-red-400 text-[9px] mb-3">✗ Failed to load storage: {error}</p>
+      )}
+
+      {/* Item grid */}
+      {loading ? (
+        <p className="text-white/40 text-[9px] py-8 text-center">Loading…</p>
+      ) : visible.length === 0 ? (
+        <p className="text-white/30 text-[9px] py-8 text-center">
+          {items.length === 0 ? 'No blobs in storage.' : 'No items match the current filters.'}
+        </p>
+      ) : (
+        <div className="space-y-1">
+          {visible.map((item, i) => {
+            const isOrphan = !item.referenced
+            const isSel = selected.has(item.url)
+            return (
+              <div
+                key={item.url}
+                className={`flex items-center gap-3 p-2 rounded-lg border transition-colors ${
+                  isSel ? 'border-white/30 bg-white/8' : 'border-white/8 hover:bg-white/5'
+                } ${isOrphan ? 'border-l-2 border-l-amber-400/60' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSel}
+                  onChange={() => {}}
+                  onClick={(e) => { e.stopPropagation(); toggleOne(item.url, i, e.shiftKey) }}
+                  className="accent-white cursor-pointer flex-shrink-0"
+                  title="Click to toggle · Shift+click for range"
+                />
+                <div className="w-12 h-12 rounded overflow-hidden bg-black flex-shrink-0">
+                  {isImage(item.pathname) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={item.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                  ) : isVideo(item.pathname) ? (
+                    <video src={item.url} muted className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-white/30 text-[8px]">
+                      {item.pathname.split('.').pop()?.toUpperCase() || '?'}
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/85 text-[10px] truncate" title={item.pathname}>
+                    {item.pathname}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5 text-[7px] uppercase tracking-[0.1em]">
+                    <span className="text-white/40">{formatBytes(item.size)}</span>
+                    {item.uploadedAt && (
+                      <span className="text-white/30">{new Date(item.uploadedAt).toLocaleDateString()}</span>
+                    )}
+                    {isOrphan ? (
+                      <span className="text-amber-400 font-bold">orphan</span>
+                    ) : (
+                      <span className="text-green-400/60">referenced</span>
+                    )}
+                  </div>
+                </div>
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-white/40 hover:text-white text-[8px] uppercase tracking-[0.1em] px-2 py-1 border border-white/10 rounded hover:border-white/25"
+                  title="Open in new tab"
+                >
+                  ↗
+                </a>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
