@@ -11,6 +11,59 @@ const ADMIN_PASSWORD = '3432'
 type Section = 'dashboard' | 'work' | 'archive' | 'employment' | 'experiments' | 'look' | 'info'
 
 /**
+ * Fetch every file in `files`, zip them with jszip, and trigger a browser
+ * download. Used by both the project-editor "Download all assets" button and
+ * the misc-panel "Download selected" button.
+ *
+ * Files are added to a sub-folder named after `folderName`, with each entry
+ * prefixed by its order index ("01_", "02_", …) so the receiver can see
+ * which file was which slot in the admin list. Failures don't abort the
+ * batch — missed files get a `__missing_N.txt` placeholder inside the zip
+ * with the failed URL + error.
+ *
+ * `onProgress(done, total)` (optional) fires after each file completes so
+ * the caller can render a progress indicator.
+ */
+async function downloadAssetsZip(
+  files: { name: string; url: string }[],
+  folderName: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
+  if (!files.length) return
+  const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9.-]+/g, '_').replace(/^_+|_+$/g, '')
+  const { default: JSZip } = await import('jszip')
+  const zip = new JSZip()
+  const folderSafe = sanitize(folderName) || 'assets'
+  const folder = zip.folder(folderSafe) ?? zip
+
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i]
+    try {
+      const res = await fetch(f.url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const seq = String(i + 1).padStart(2, '0')
+      const rawName = f.name || f.url.split('/').pop() || `file_${seq}`
+      folder.file(`${seq}_${sanitize(rawName)}`, blob)
+    } catch (err) {
+      console.error(`Failed to fetch ${f.url}:`, err)
+      folder.file(`__missing_${i + 1}.txt`, `Failed to fetch: ${f.url}\nError: ${String(err)}\n`)
+    }
+    onProgress?.(i + 1, files.length)
+  }
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' })
+  const url = URL.createObjectURL(zipBlob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = folderSafe + '.zip'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+/**
  * Direct-to-Blob file upload. Used by every admin panel that accepts file
  * uploads. The browser PUTs the file straight to Vercel Blob via a
  * short-lived token from /api/upload-token, completely bypassing Vercel
@@ -571,45 +624,16 @@ function DownloadAssetsButton({
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
-  const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9.-]+/g, '_').replace(/^_+|_+$/g, '')
-
   const handleDownload = async () => {
     if (!mediaFiles.length || busy) return
     setBusy(true)
     setProgress({ done: 0, total: mediaFiles.length })
-
     try {
-      const { default: JSZip } = await import('jszip')
-      const zip = new JSZip()
-      const folder = zip.folder(sanitize(`${projectName}_${projectSlug}_assets`)) ?? zip
-
-      for (let i = 0; i < mediaFiles.length; i++) {
-        const f = mediaFiles[i]
-        try {
-          const res = await fetch(f.path)
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          const blob = await res.blob()
-          // Pad to 2 digits for sort, preserve extension from original name
-          const seq = String(i + 1).padStart(2, '0')
-          const rawName = f.name || f.path.split('/').pop() || `file_${seq}`
-          folder.file(`${seq}_${sanitize(rawName)}`, blob)
-        } catch (err) {
-          console.error(`Failed to fetch ${f.path}:`, err)
-          // Drop a small note in the zip so the user knows something was missed
-          folder.file(`__missing_${i + 1}.txt`, `Failed to fetch: ${f.path}\nError: ${String(err)}\n`)
-        }
-        setProgress({ done: i + 1, total: mediaFiles.length })
-      }
-
-      const zipBlob = await zip.generateAsync({ type: 'blob' })
-      const url = URL.createObjectURL(zipBlob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = sanitize(`${projectName}_${projectSlug}_assets`) + '.zip'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      await downloadAssetsZip(
+        mediaFiles.map(m => ({ name: m.name, url: m.path })),
+        `${projectName}_${projectSlug}_assets`,
+        (done, total) => setProgress({ done, total }),
+      )
     } catch (err) {
       console.error('Download all failed:', err)
       // eslint-disable-next-line no-alert
@@ -1772,6 +1796,42 @@ function MiscUploadPanel() {
     setTimeout(() => setStatus(null), 2000)
   }
 
+  // Bulk download — zips up either the selected items or (if nothing
+  // selected) every item in the panel. Pulls the actual source files from
+  // Vercel Blob, no watermarking.
+  const [downloadingBulk, setDownloadingBulk] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState<{ done: number; total: number } | null>(null)
+  const bulkDownload = async () => {
+    if (downloadingBulk) return
+    const targets = selected.size > 0
+      ? items.filter((_, i) => selected.has(i))
+      : items
+    if (targets.length === 0) return
+    setDownloadingBulk(true)
+    setDownloadProgress({ done: 0, total: targets.length })
+    setStatus(null)
+    try {
+      await downloadAssetsZip(
+        targets.map((item, i) => ({
+          // Prefer the title slugified, fall back to the stored fileName so
+          // the receiver gets meaningful names even if title is blank.
+          name: (item.title || item.fileName || `misc_${i + 1}`).toString(),
+          url: item.src as string,
+        })),
+        `misc_${new Date().toISOString().slice(0, 10)}_${targets.length}files`,
+        (done, total) => setDownloadProgress({ done, total }),
+      )
+      setStatus(`✓ Downloaded ${targets.length} file${targets.length !== 1 ? 's' : ''}`)
+    } catch (err) {
+      console.error('Bulk download failed:', err)
+      setStatus('✗ Download failed')
+    } finally {
+      setDownloadingBulk(false)
+      setDownloadProgress(null)
+      setTimeout(() => setStatus(null), 2500)
+    }
+  }
+
   const handleEditSave = async (idx: number) => {
     const updated = [...items]
     updated[idx] = { ...updated[idx], title: newTitle || updated[idx].title, year: newYear, medium: newMedium }
@@ -1789,6 +1849,18 @@ function MiscUploadPanel() {
           <h2 className="text-white text-[14px] font-bold uppercase tracking-[0.1em] mb-1">Misc / Experiments</h2>
           <p className="text-white/30 text-[9px]">{items.length} pieces — displayed on both panels in shuffled order</p>
         </div>
+        {items.length > 0 && selected.size === 0 && (
+          <button
+            onClick={bulkDownload}
+            disabled={downloadingBulk}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold text-white/70 border border-white/15 hover:border-white/30 hover:text-white/90 hover:bg-white/5 transition-all disabled:opacity-40 disabled:cursor-wait"
+            title="Download every original file in this panel as a ZIP"
+          >
+            {downloadingBulk
+              ? (downloadProgress ? `⏳ ${downloadProgress.done}/${downloadProgress.total}` : '⏳ Zipping…')
+              : `↓ Download all (${items.length})`}
+          </button>
+        )}
       </div>
 
       {status && (
@@ -1935,6 +2007,16 @@ function MiscUploadPanel() {
             className="px-3 py-1 rounded text-[8px] font-bold text-green-400 border border-green-400/30 hover:bg-green-400/10 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             Apply
+          </button>
+          <button
+            onClick={bulkDownload}
+            disabled={downloadingBulk}
+            className="px-3 py-1 rounded text-[8px] font-bold text-white/80 border border-white/25 hover:bg-white/10 disabled:opacity-40 disabled:cursor-wait"
+            title="Download original files for the selected items as a ZIP"
+          >
+            {downloadingBulk
+              ? (downloadProgress ? `⏳ ${downloadProgress.done}/${downloadProgress.total}` : '⏳ Zipping…')
+              : `↓ Download (${selected.size})`}
           </button>
           <button
             onClick={bulkDelete}
