@@ -10,6 +10,42 @@ const ADMIN_PASSWORD = '3432'
 
 type Section = 'dashboard' | 'work' | 'archive' | 'employment' | 'experiments' | 'look' | 'info'
 
+/**
+ * Direct-to-Blob file upload. Used by every admin panel that accepts file
+ * uploads. The browser PUTs the file straight to Vercel Blob via a
+ * short-lived token from /api/upload-token, completely bypassing Vercel
+ * Hobby's 4.5 MB function-payload cap (the previous FormData -> /api/upload
+ * route hit that wall on anything but tiny logos).
+ *
+ * `section` becomes the blob's parent folder (e.g. 'home-videos', 'look',
+ * 'info-videos'). `credits` is used to build a slug for the filename — pass
+ * the project client name, the file's own name, or a short descriptor.
+ *
+ * Returns the public Blob URL plus the resulting pathname/filename. Callers
+ * typically only need `url` — use that as the `src` in saved state.
+ */
+async function uploadFileToBlob(
+  file: File,
+  section: string,
+  credits?: string,
+): Promise<{ url: string; pathname: string; fileName: string }> {
+  const slugify = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'file'
+  const extMatch = file.name.match(/\.[^.]+$/)
+  const ext = extMatch ? extMatch[0].toLowerCase() : ''
+  const slug = slugify(credits || file.name.replace(/\.[^.]+$/, ''))
+  const pathname = `media/${section}/${slug}-${Date.now().toString(36)}${ext}`
+  const blob = await upload(pathname, file, {
+    access: 'public',
+    handleUploadUrl: '/api/upload-token',
+  })
+  return {
+    url: blob.url,
+    pathname: blob.pathname,
+    fileName: blob.pathname.split('/').pop() || pathname.split('/').pop() || file.name,
+  }
+}
+
 export default function AdminPortal({ show, onClose }: { show: boolean; onClose: () => void }) {
   const [authenticated, setAuthenticated] = useState(false)
   const [password, setPassword] = useState('')
@@ -775,15 +811,10 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
                       const file = e.target.files?.[0]
                       if (!file) return
                       setUploadingLogo(true)
-                      const formData = new FormData()
-                      formData.append('file', file)
-                      formData.append('section', 'Logos')
-                      formData.append('credits', client || 'client')
                       try {
-                        const res = await fetch('/api/upload', { method: 'POST', body: formData })
-                        const data = await res.json()
-                        if (data.success) setLogoPath(data.path)
-                      } catch {}
+                        const { url } = await uploadFileToBlob(file, 'Logos', client || 'client')
+                        setLogoPath(url)
+                      } catch (err) { console.error('Logo upload failed:', err) }
                       setUploadingLogo(false)
                       e.target.value = ''
                     }}
@@ -862,17 +893,10 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
                         setUploadingMedia(true)
                         const slug = editingSlug || client.toLowerCase().replace(/[^a-z0-9]+/g, '-')
                         for (const file of Array.from(files)) {
-                          const formData = new FormData()
-                          formData.append('file', file)
-                          formData.append('section', `projects/${slug}`)
-                          formData.append('credits', client)
                           try {
-                            const res = await fetch('/api/upload', { method: 'POST', body: formData })
-                            const data = await res.json()
-                            if (data.success) {
-                              setMediaFiles(prev => [...prev, { name: data.fileName, path: data.path }])
-                            }
-                          } catch {}
+                            const { url, fileName } = await uploadFileToBlob(file, `projects/${slug}`, client)
+                            setMediaFiles(prev => [...prev, { name: fileName, path: url }])
+                          } catch (err) { console.error('Project media upload failed:', err) }
                         }
                         setUploadingMedia(false)
                         e.target.value = ''
@@ -1184,24 +1208,15 @@ function LookUploadPanel() {
     setUploading(true)
     setStatus(null)
     try {
-      const formData = new FormData()
-      formData.append('file', selectedFile)
-      formData.append('credits', credits)
-      formData.append('link', link)
-      formData.append('section', 'look')
-      const res = await fetch('/api/upload', { method: 'POST', body: formData })
-      const data = await res.json()
-      if (data.success) {
-        setStatus(`✓ Uploaded: ${data.fileName}`)
-        setExistingItems(prev => [{ fileName: data.fileName, path: data.path, credits }, ...prev])
-        setSelectedFile(null)
-        setCredits('')
-        setLink('')
-        if (fileRef.current) fileRef.current.value = ''
-      } else {
-        setStatus(`✗ Error: ${data.error}`)
-      }
-    } catch {
+      const { url, fileName } = await uploadFileToBlob(selectedFile, 'look', credits)
+      setStatus(`✓ Uploaded: ${fileName}`)
+      setExistingItems(prev => [{ fileName, path: url, credits }, ...prev])
+      setSelectedFile(null)
+      setCredits('')
+      setLink('')
+      if (fileRef.current) fileRef.current.value = ''
+    } catch (err) {
+      console.error('Look upload failed:', err)
       setStatus('✗ Upload failed')
     } finally {
       setUploading(false)
@@ -2202,10 +2217,10 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
                 Upload
                 <input type="file" className="hidden" accept="video/*" onChange={async (e) => {
                   const file = e.target.files?.[0]; if (!file) return
-                  const fd = new FormData(); fd.append('file', file); fd.append('section', 'info-videos'); fd.append('credits', 'light-mode')
-                  const res = await fetch('/api/upload', { method: 'POST', body: fd })
-                  const data = await res.json()
-                  if (data.success) setLightVid(data.path)
+                  try {
+                    const { url } = await uploadFileToBlob(file, 'info-videos', 'light-mode')
+                    setLightVid(url)
+                  } catch (err) { console.error('Info video upload failed:', err) }
                   e.target.value = ''
                 }} />
               </label>
@@ -2225,10 +2240,10 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
                 Upload
                 <input type="file" className="hidden" accept="video/*" onChange={async (e) => {
                   const file = e.target.files?.[0]; if (!file) return
-                  const fd = new FormData(); fd.append('file', file); fd.append('section', 'info-videos'); fd.append('credits', 'dark-mode')
-                  const res = await fetch('/api/upload', { method: 'POST', body: fd })
-                  const data = await res.json()
-                  if (data.success) setDarkVid(data.path)
+                  try {
+                    const { url } = await uploadFileToBlob(file, 'info-videos', 'dark-mode')
+                    setDarkVid(url)
+                  } catch (err) { console.error('Info video upload failed:', err) }
                   e.target.value = ''
                 }} />
               </label>
@@ -2263,10 +2278,10 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
                 Upload
                 <input type="file" className="hidden" accept="video/*,image/*" onChange={async (e) => {
                   const file = e.target.files?.[0]; if (!file) return
-                  const fd = new FormData(); fd.append('file', file); fd.append('section', 'info-profile'); fd.append('credits', 'profile-light')
-                  const res = await fetch('/api/upload', { method: 'POST', body: fd })
-                  const data = await res.json()
-                  if (data.success) setProfileLight(data.path)
+                  try {
+                    const { url } = await uploadFileToBlob(file, 'info-profile', 'profile-light')
+                    setProfileLight(url)
+                  } catch (err) { console.error('Profile upload failed:', err) }
                   e.target.value = ''
                 }} />
               </label>
@@ -2286,10 +2301,10 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
                 Upload
                 <input type="file" className="hidden" accept="video/*,image/*" onChange={async (e) => {
                   const file = e.target.files?.[0]; if (!file) return
-                  const fd = new FormData(); fd.append('file', file); fd.append('section', 'info-profile'); fd.append('credits', 'profile-dark')
-                  const res = await fetch('/api/upload', { method: 'POST', body: fd })
-                  const data = await res.json()
-                  if (data.success) setProfileDark(data.path)
+                  try {
+                    const { url } = await uploadFileToBlob(file, 'info-profile', 'profile-dark')
+                    setProfileDark(url)
+                  } catch (err) { console.error('Profile upload failed:', err) }
                   e.target.value = ''
                 }} />
               </label>
