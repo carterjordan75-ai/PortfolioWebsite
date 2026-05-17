@@ -249,13 +249,34 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     }
   }
 
+  // Best-effort: delete the underlying Blob so removed / replaced files don't
+  // accumulate in storage forever. Fire-and-forget — the user's action
+  // (replace, delete) already succeeded against the project state; this is
+  // pure cleanup. A failure here is logged but never surfaced as an error.
+  const deleteBlobUrls = async (urls: Array<string | undefined>) => {
+    const targets = urls.filter((u): u is string => !!u && /^https?:\/\//.test(u))
+    if (targets.length === 0) return
+    try {
+      await fetch('/api/blob-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls: targets }),
+      })
+    } catch (err) {
+      console.warn('Blob cleanup failed (not fatal):', err)
+    }
+  }
+
   const handleReplace = async (idx: number, file: File) => {
     setUploadingIdx(idx)
     setStatus(null)
+    const oldUrl = media[idx]?.path
     const item = await uploadFile(file)
     if (item) {
       const next = media.map((m, i) => i === idx ? item : m)
       await persist(next)
+      // Old file is no longer referenced — free its Blob.
+      void deleteBlobUrls([oldUrl])
       setStatus('✓ Replaced')
     } else {
       setStatus('✗ Replace failed')
@@ -266,8 +287,11 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
   }
 
   const handleDelete = async (idx: number) => {
+    const removed = media[idx]?.path
     const next = media.filter((_, i) => i !== idx)
     await persist(next)
+    // Project state saved — now free the Blob.
+    void deleteBlobUrls([removed])
   }
 
   const handleReorder = async (from: number, to: number) => {
