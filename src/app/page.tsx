@@ -6,6 +6,7 @@ import PageTransition from '@/components/PageTransition'
 import EmailPopup from '@/components/EmailPopup'
 import AdminPortal from '@/components/AdminPortal'
 import FooterBlurb from '@/components/FooterBlurb'
+import PageLoader from '@/components/PageLoader'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 
 type HomeVideo = {
@@ -24,6 +25,7 @@ export default function Home() {
   // local test data while the fetch is in flight — the viewport stays black
   // until the admin list resolves.
   const [homeVideos, setHomeVideos] = useState<HomeVideo[]>([])
+  const [loading, setLoading] = useState(true)
   const [idx, setIdx] = useState(0)
   const [showEmail, setShowEmail] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
@@ -57,6 +59,7 @@ export default function Home() {
         if (Array.isArray(d.videos)) setHomeVideos(d.videos as HomeVideo[])
       })
       .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
 
   // Admin home-page list is the only playlist source.
@@ -84,6 +87,7 @@ export default function Home() {
 
   return (
     <PageTransition>
+      <PageLoader show={loading} mode="data" />
       <div className="min-h-screen flex flex-col">
         {/* Full-screen video viewport — one screen tall, scroll past to reach footer */}
         <section className="relative w-full h-screen overflow-hidden bg-black">

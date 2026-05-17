@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import PageTransition from '@/components/PageTransition'
+import PageLoader from '@/components/PageLoader'
 import EmailPopup from '@/components/EmailPopup'
 import AdminPortal from '@/components/AdminPortal'
 import FooterBlurb from '@/components/FooterBlurb'
@@ -632,6 +633,7 @@ export default function ExperimentsPage() {
   // blank rather than showing test footage.
   const [left, setLeft] = useState<MediaItem[]>([])
   const [right, setRight] = useState<MediaItem[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetch('/api/misc')
@@ -647,6 +649,7 @@ export default function ExperimentsPage() {
         }
       })
       .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
 
   // Indices into each side's media list. Setters are unused (no manual cycling
@@ -668,6 +671,7 @@ export default function ExperimentsPage() {
 
   return (
     <PageTransition>
+      <PageLoader show={loading} mode="data" />
       <div style={{ background: dark ? '#0a0a0a' : '#f5f5f0', color: fg, minHeight: '100vh' }}>
         <div className="flex" style={{ height: '100vh', paddingTop: '68px' }}>
           <MediaPanel

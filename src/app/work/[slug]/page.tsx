@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useRef } from 'react'
 import EditableText from '@/components/EditableText'
 import ProjectMediaPanel, { type ProjectMediaItem } from '@/components/ProjectMediaPanel'
+import PageLoader from '@/components/PageLoader'
 import { useEditMode } from '@/contexts/EditModeContext'
 
 const featuredProjects = projects.filter(p => p.featured)
@@ -24,59 +25,8 @@ const clientLogos: Record<string, { src: string; width: number; height: number }
   'Adidas Rugby': { src: '/assets/Logos/Logo_ADIDAS.webp', width: 200, height: 80 },
 }
 
-// Test-media pool — fallback used ONLY when a project has no admin-uploaded
-// media yet, so the page doesn't render blank.
-const videoPool = ['/assets/TestMedia/video_01.mp4', '/assets/TestMedia/video_02.mp4', '/assets/TestMedia/video_03.mp4']
-const imagePool = ['/assets/TestMedia/Image_01.avif', '/assets/TestMedia/Image_02.avif', '/assets/TestMedia/Image_03.avif']
-
-// Local renderable shape — different from the admin's persisted ProjectMediaItem
-// (which is { name?, path? }). This one is resolved + classified for rendering.
-type RenderableMedia = { type: 'video' | 'image'; src: string; name?: string }
-
 function classifyMedia(path: string): 'video' | 'image' {
   return /\.(mp4|webm|mov)$/i.test(path) ? 'video' : 'image'
-}
-
-/**
- * Resolve the media to render for a project. Prefers admin-uploaded media
- * (from the project's `media` field in /api/projects). If the project has no
- * admin media yet, falls back to a deterministic shuffle of the test pool so
- * the layout still has content while the user populates it.
- */
-function getProjectMedia(
-  slug: string,
-  adminMedia?: Array<{ name?: string; path?: string }> | null,
-): { heroVideo: string; media: RenderableMedia[] } {
-  if (adminMedia && adminMedia.length > 0) {
-    const items: RenderableMedia[] = []
-    for (const m of adminMedia) {
-      if (m?.path) {
-        items.push({ type: classifyMedia(m.path), src: m.path, name: m.name })
-      }
-    }
-    if (items.length > 0) {
-      const firstVideo = items.find(i => i.type === 'video')
-      return {
-        heroVideo: firstVideo?.src || items[0].src,
-        media: items,
-      }
-    }
-  }
-  // Fallback: deterministic test pool
-  let hash = 0
-  for (let i = 0; i < slug.length; i++) hash = ((hash << 5) - hash) + slug.charCodeAt(i)
-  hash = Math.abs(hash)
-  const heroVideo = videoPool[hash % videoPool.length]
-  const media: RenderableMedia[] = []
-  for (let i = 0; i < 8; i++) {
-    const seed = hash + i * 7
-    if (seed % 3 === 0) {
-      media.push({ type: 'video', src: videoPool[seed % videoPool.length] })
-    } else {
-      media.push({ type: 'image', src: imagePool[seed % imagePool.length] })
-    }
-  }
-  return { heroVideo, media }
 }
 
 export default function ProjectPage({ params }: { params: { slug: string } }) {
@@ -161,8 +111,16 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
     } : {}),
   } : null
 
+  // Show the circle-grid loader while admin data is still in flight. The
+  // loader covers the page in 'data' mode — it stays put until adminLoading
+  // flips false, then plays its reveal animation as the page slides in
+  // underneath. (See PageLoader's 'data' mode.)
   if (adminLoading) {
-    return <div className="min-h-screen flex items-center justify-center" style={{ background: dark ? '#0a0a0a' : '#f5f5f0' }}><span style={{ color: fg, opacity: 0.3 }} className="text-sm">Loading...</span></div>
+    return (
+      <div style={{ background: dark ? '#0a0a0a' : '#f5f5f0', minHeight: '100vh' }}>
+        <PageLoader show={true} mode="data" />
+      </div>
+    )
   }
 
   if (!project) return notFound()
@@ -292,46 +250,20 @@ For licensing inquiries: carterjordan75@gmail.com
   const prev = featIdx > 0 ? featuredProjects[featIdx - 1] : featuredProjects[featuredProjects.length - 1]
   const next = featIdx < featuredProjects.length - 1 ? featuredProjects[featIdx + 1] : featuredProjects[0]
 
-  const mediaBlocks = project.content?.filter(b => b.type === 'image' || b.type === 'image-grid' || b.type === 'video') || []
-
-  const projectMedia = getProjectMedia(params.slug, localMedia ?? undefined)
   const pageBg = dark ? '#0a0a0a' : '#f5f5f0'
   const rule = dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
 
-  // All media items flattened for the lightbox. When admin media is present
-  // the page renders as a dynamic feed (one block per admin item at its
-  // chosen aspect), so the lightbox list mirrors that exactly. Otherwise we
-  // fall back to the legacy fixed-layout list with test-pool footage.
+  // The page renders ONLY admin-uploaded media (no test-pool fallback). When
+  // the admin list is empty the right column shows an empty-state hint
+  // pointing the user to the admin panel.
   const allMedia: { aspect: string; label: string; src: string; mediaType: 'video' | 'image' }[] =
-    localMedia && localMedia.length > 0
-      ? localMedia
-          .filter(m => !!m.path)
-          .map((m, i) => {
-            const mediaType: 'video' | 'image' = /\.(mp4|webm|mov)$/i.test(m.path!) ? 'video' : 'image'
-            const aspect = (m as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
-            return { aspect, label: String(i + 1).padStart(2, '0'), src: m.path!, mediaType }
-          })
-      : [
-          { aspect: '16/9', label: '01', src: projectMedia.heroVideo, mediaType: 'video' },
-          ...mediaBlocks.flatMap((block, i) => {
-            const num = String(i + 2).padStart(2, '0')
-            if (block.type === 'image' || block.type === 'video') {
-              const idx = i + 1
-              const m = projectMedia.media[idx % projectMedia.media.length]
-              return [{ aspect: '16/10', label: num, src: m.src, mediaType: m.type }]
-            }
-            if (block.type === 'image-grid') return block.images.map((_, j) => {
-              const idx = (i + 1) * 10 + j
-              const m = projectMedia.media[idx % projectMedia.media.length]
-              return { aspect: '4/3', label: `${num}.${j+1}`, src: m.src, mediaType: m.type }
-            })
-            return []
-          }),
-          { aspect: '16/9', label: String(mediaBlocks.length + 2).padStart(2, '0'), src: projectMedia.media[4 % projectMedia.media.length].src, mediaType: projectMedia.media[4 % projectMedia.media.length].type },
-          { aspect: '1/1', label: `${String(mediaBlocks.length + 3).padStart(2, '0')}.1`, src: projectMedia.media[5 % projectMedia.media.length].src, mediaType: projectMedia.media[5 % projectMedia.media.length].type },
-          { aspect: '1/1', label: `${String(mediaBlocks.length + 3).padStart(2, '0')}.2`, src: projectMedia.media[6 % projectMedia.media.length].src, mediaType: projectMedia.media[6 % projectMedia.media.length].type },
-          { aspect: '21/9', label: String(mediaBlocks.length + 4).padStart(2, '0'), src: projectMedia.media[7 % projectMedia.media.length].src, mediaType: projectMedia.media[7 % projectMedia.media.length].type },
-        ]
+    (localMedia ?? [])
+      .filter(m => !!m.path)
+      .map((m, i) => {
+        const mediaType: 'video' | 'image' = classifyMedia(m.path!)
+        const aspect = (m as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
+        return { aspect, label: String(i + 1).padStart(2, '0'), src: m.path!, mediaType }
+      })
 
   return (
     <PageTransition>
@@ -517,113 +449,76 @@ For licensing inquiries: carterjordan75@gmail.com
           <div className="w-full md:w-[67%] overflow-y-auto">
             <div className="p-3 md:p-4 space-y-3">
 
-              {/* When admin has uploaded media for this project, the page is a
-                  dynamic feed of rows. Consecutive items that share a `rowId`
-                  collapse into one flex row (each at its own aspect ratio,
-                  splitting width equally). Items without a rowId render alone
-                  as their own row. When there is no admin media yet, fall
-                  back to the legacy fixed layout. */}
-              {localMedia && localMedia.length > 0 ? (
-                <>
-                  {(() => {
-                    // Walk the list and batch consecutive same-rowId items.
-                    type Row = { items: Array<{ item: typeof localMedia[number]; idx: number }>; rowId?: string }
-                    const rows: Row[] = []
-                    for (let i = 0; i < localMedia.length; i++) {
-                      const m = localMedia[i]
-                      if (!m.path) continue
-                      const r = (m as { rowId?: string }).rowId
-                      const last = rows[rows.length - 1]
-                      if (r && last && last.rowId === r) {
-                        last.items.push({ item: m, idx: i })
-                      } else {
-                        rows.push({ items: [{ item: m, idx: i }], rowId: r })
-                      }
-                    }
-                    return rows.map((row, ri) => {
-                      if (row.items.length === 1) {
-                        const { item, idx } = row.items[0]
-                        const mediaType: 'video' | 'image' = /\.(mp4|webm|mov)$/i.test(item.path!) ? 'video' : 'image'
-                        const aspect = (item as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
-                        return (
-                          <MediaBlock
-                            key={`r${ri}`}
-                            idx={idx}
-                            aspect={aspect}
-                            label={String(idx + 1).padStart(2, '0')}
-                            onExpand={() => setExpandedMedia(idx)}
-                            dark={dark}
-                            mediaSrc={item.path}
-                            mediaType={mediaType}
-                          />
-                        )
-                      }
-                      // Grouped row: flex container, each child takes equal share.
-                      return (
-                        <div key={`r${ri}`} className="flex gap-2 items-start">
-                          {row.items.map(({ item, idx }) => {
-                            const mediaType: 'video' | 'image' = /\.(mp4|webm|mov)$/i.test(item.path!) ? 'video' : 'image'
-                            const aspect = (item as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
-                            return (
-                              <div key={idx} className="flex-1 min-w-0">
-                                <MediaBlock
-                                  idx={idx}
-                                  aspect={aspect}
-                                  label={String(idx + 1).padStart(2, '0')}
-                                  onExpand={() => setExpandedMedia(idx)}
-                                  dark={dark}
-                                  mediaSrc={item.path}
-                                  mediaType={mediaType}
-                                />
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )
-                    })
-                  })()}
-                </>
+              {/* Dynamic feed of admin-uploaded media. Consecutive items
+                  sharing a `rowId` collapse into one flex row (each at its
+                  own aspect ratio, splitting width equally). Items without
+                  a rowId render alone as their own row. No test-pool
+                  fallback — empty projects show an empty-state hint. */}
+              {(localMedia ?? []).length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 px-4 text-center" style={{ opacity: 0.35 }}>
+                  <p className="text-[10px] uppercase tracking-[0.18em] font-bold mb-1">No media yet</p>
+                  <p className="text-[9px] uppercase tracking-[0.1em]" style={{ opacity: 0.7 }}>
+                    Open admin → Work → this project → Add Media
+                  </p>
+                </div>
               ) : (
-                <>
-                  {/* Hero */}
-                  <MediaBlock idx={0} aspect="16/9" label="01" onExpand={() => setExpandedMedia(0)} dark={dark} mediaSrc={projectMedia.heroVideo} mediaType="video" />
-
-                  {/* Content media */}
-                  {(() => {
-                    let globalIdx = 1
-                    return mediaBlocks.map((block, i) => {
-                      const num = String(i + 2).padStart(2, '0')
-
-                      if (block.type === 'image' || block.type === 'video') {
-                        const idx = globalIdx++
-                        const m = projectMedia.media[idx % projectMedia.media.length]
-                        return <MediaBlock key={i} idx={idx} aspect={block.type === 'video' ? '16/9' : '16/10'} label={num} onExpand={() => setExpandedMedia(idx)} dark={dark} mediaSrc={m.src} mediaType={m.type} />
-                      }
-
-                      if (block.type === 'image-grid') {
-                        const items = block.images.map((_, j) => {
-                          const idx = globalIdx++
-                          const m = projectMedia.media[idx % projectMedia.media.length]
-                          return <MediaBlock key={j} idx={idx} aspect="4/3" label={`${num}.${j+1}`} onExpand={() => setExpandedMedia(idx)} dark={dark} mediaSrc={m.src} mediaType={m.type} />
-                        })
-                        return (
-                          <div key={i} className={`grid gap-2 ${block.columns === 3 ? 'grid-cols-3' : block.columns === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                            {items}
-                          </div>
-                        )
-                      }
-                      return null
-                    })
-                  })()}
-
-                  {/* Extra placeholders with real media */}
-                  <MediaBlock idx={allMedia.length - 4} aspect="16/9" label={String(mediaBlocks.length + 2).padStart(2, '0')} onExpand={() => setExpandedMedia(allMedia.length - 4)} dark={dark} mediaSrc={projectMedia.media[4 % projectMedia.media.length].src} mediaType={projectMedia.media[4 % projectMedia.media.length].type} />
-                  <div className="grid grid-cols-2 gap-2">
-                    <MediaBlock idx={allMedia.length - 3} aspect="1/1" label={`${String(mediaBlocks.length + 3).padStart(2, '0')}.1`} onExpand={() => setExpandedMedia(allMedia.length - 3)} dark={dark} mediaSrc={projectMedia.media[5 % projectMedia.media.length].src} mediaType={projectMedia.media[5 % projectMedia.media.length].type} />
-                    <MediaBlock idx={allMedia.length - 2} aspect="1/1" label={`${String(mediaBlocks.length + 3).padStart(2, '0')}.2`} onExpand={() => setExpandedMedia(allMedia.length - 2)} dark={dark} mediaSrc={projectMedia.media[6 % projectMedia.media.length].src} mediaType={projectMedia.media[6 % projectMedia.media.length].type} />
-                  </div>
-                  <MediaBlock idx={allMedia.length - 1} aspect="21/9" label={String(mediaBlocks.length + 4).padStart(2, '0')} onExpand={() => setExpandedMedia(allMedia.length - 1)} dark={dark} mediaSrc={projectMedia.media[7 % projectMedia.media.length].src} mediaType={projectMedia.media[7 % projectMedia.media.length].type} />
-                </>
+                (() => {
+                  // Walk the list and batch consecutive same-rowId items.
+                  type Row = { items: Array<{ item: NonNullable<typeof localMedia>[number]; idx: number }>; rowId?: string }
+                  const rows: Row[] = []
+                  for (let i = 0; i < localMedia!.length; i++) {
+                    const m = localMedia![i]
+                    if (!m.path) continue
+                    const r = (m as { rowId?: string }).rowId
+                    const last = rows[rows.length - 1]
+                    if (r && last && last.rowId === r) {
+                      last.items.push({ item: m, idx: i })
+                    } else {
+                      rows.push({ items: [{ item: m, idx: i }], rowId: r })
+                    }
+                  }
+                  return rows.map((row, ri) => {
+                    if (row.items.length === 1) {
+                      const { item, idx } = row.items[0]
+                      const mediaType: 'video' | 'image' = classifyMedia(item.path!)
+                      const aspect = (item as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
+                      return (
+                        <MediaBlock
+                          key={`r${ri}`}
+                          idx={idx}
+                          aspect={aspect}
+                          label={String(idx + 1).padStart(2, '0')}
+                          onExpand={() => setExpandedMedia(idx)}
+                          dark={dark}
+                          mediaSrc={item.path}
+                          mediaType={mediaType}
+                        />
+                      )
+                    }
+                    // Grouped row: flex container, each child takes equal share.
+                    return (
+                      <div key={`r${ri}`} className="flex gap-2 items-start">
+                        {row.items.map(({ item, idx }) => {
+                          const mediaType: 'video' | 'image' = classifyMedia(item.path!)
+                          const aspect = (item as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
+                          return (
+                            <div key={idx} className="flex-1 min-w-0">
+                              <MediaBlock
+                                idx={idx}
+                                aspect={aspect}
+                                label={String(idx + 1).padStart(2, '0')}
+                                onExpand={() => setExpandedMedia(idx)}
+                                dark={dark}
+                                mediaSrc={item.path}
+                                mediaType={mediaType}
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })
+                })()
               )}
 
               <div className="pt-4 pb-2">

@@ -5,18 +5,28 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 interface PageLoaderProps {
   show: boolean
-  onComplete: () => void
+  onComplete?: () => void
+  /**
+   * 'transition' (default) — the original behaviour. Auto-runs cover → hold
+   *   → reveal once `show` goes true; fires onComplete at the start of reveal
+   *   so the parent can navigate while the circles shrink away.
+   *
+   * 'data'       — covers the screen while `show` stays true. When `show`
+   *   goes false the loader plays its reveal-and-fade-out animation. Used
+   *   for "wait for media to load" overlays where the duration is unknown.
+   */
+  mode?: 'transition' | 'data'
 }
 
 const COLS = 12
 const ROWS = 8
 const TOTAL = COLS * ROWS
 
-export default function PageLoader({ show, onComplete }: PageLoaderProps) {
+export default function PageLoader({ show, onComplete, mode = 'transition' }: PageLoaderProps) {
   const [phase, setPhase] = useState<'idle' | 'cover' | 'hold' | 'reveal' | 'done'>('idle')
   const completedRef = useRef(false)
 
-  // One random non-edge circle is red
+  // Pick one random non-edge circle to be red.
   const redIndex = useMemo(() => {
     if (!show) return -1
     const inner: number[] = []
@@ -28,7 +38,9 @@ export default function PageLoader({ show, onComplete }: PageLoaderProps) {
     return inner[Math.floor(Math.random() * inner.length)]
   }, [show])
 
+  // -------------- transition mode --------------
   useEffect(() => {
+    if (mode !== 'transition') return
     if (!show) {
       setPhase('idle')
       completedRef.current = false
@@ -36,35 +48,57 @@ export default function PageLoader({ show, onComplete }: PageLoaderProps) {
     }
     completedRef.current = false
     setPhase('cover')
-
-    // Cover done: last stagger + grow duration
     const coverTime = (COLS + ROWS) * 12 + 180
     const t1 = setTimeout(() => setPhase('hold'), coverTime)
     return () => clearTimeout(t1)
-  }, [show])
+  }, [show, mode])
 
   useEffect(() => {
+    if (mode !== 'transition') return
     if (phase !== 'hold') return
-    // 250ms pause
     const t = setTimeout(() => setPhase('reveal'), 250)
     return () => clearTimeout(t)
-  }, [phase])
+  }, [phase, mode])
 
   useEffect(() => {
+    if (mode !== 'transition') return
     if (phase !== 'reveal') return
-    // Trigger navigation at the start of reveal so new page loads behind shrinking circles
     if (!completedRef.current) {
       completedRef.current = true
-      onComplete()
+      onComplete?.()
     }
     const revealTime = (COLS + ROWS) * 12 + 200
-    const t = setTimeout(() => {
-      setPhase('done')
-    }, revealTime)
+    const t = setTimeout(() => setPhase('done'), revealTime)
     return () => clearTimeout(t)
-  }, [phase, onComplete])
+  }, [phase, onComplete, mode])
 
-  if (phase === 'idle' || (phase === 'done' && !show)) return null
+  // -------------- data mode --------------
+  // Cover while show=true, reveal when show=false.
+  useEffect(() => {
+    if (mode !== 'data') return
+    if (show) {
+      // Either first mount or returning after a previous reveal — kick to cover.
+      if (phase === 'idle' || phase === 'reveal' || phase === 'done') setPhase('cover')
+    } else {
+      // Parent says "data ready" — animate the reveal then finish.
+      if (phase === 'cover' || phase === 'hold') setPhase('reveal')
+    }
+  }, [show, mode, phase])
+
+  useEffect(() => {
+    if (mode !== 'data') return
+    if (phase !== 'reveal') return
+    if (!completedRef.current) {
+      completedRef.current = true
+      onComplete?.()
+    }
+    const revealTime = (COLS + ROWS) * 12 + 200
+    const t = setTimeout(() => setPhase('done'), revealTime)
+    return () => clearTimeout(t)
+  }, [phase, onComplete, mode])
+
+  if (phase === 'idle') return null
+  if (phase === 'done' && !show) return null
 
   const growing = phase === 'cover' || phase === 'hold'
 
@@ -84,7 +118,9 @@ export default function PageLoader({ show, onComplete }: PageLoaderProps) {
             overflow: 'hidden',
           }}
         >
-          {/* Grid of circles */}
+          {/* Grid of circles — half of them get an X inside (checkerboard
+              pattern: (row+col) even = X). The X is rendered as an SVG with
+              a white stroke so it reads against both the black and red fills. */}
           <div
             style={{
               position: 'absolute',
@@ -101,6 +137,7 @@ export default function PageLoader({ show, onComplete }: PageLoaderProps) {
               const col = i % COLS
               const stagger = (row + col) * 0.012
               const isRed = i === redIndex
+              const hasX = (row + col) % 2 === 0
 
               return (
                 <motion.div
@@ -117,8 +154,29 @@ export default function PageLoader({ show, onComplete }: PageLoaderProps) {
                     aspectRatio: '1',
                     borderRadius: '50%',
                     background: isRed ? '#e53e3e' : '#000000',
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
-                />
+                >
+                  {hasX && (
+                    <svg
+                      viewBox="0 0 10 10"
+                      width="42%"
+                      height="42%"
+                      style={{
+                        stroke: '#ffffff',
+                        strokeWidth: 1.6,
+                        strokeLinecap: 'round',
+                        fill: 'none',
+                      }}
+                      aria-hidden="true"
+                    >
+                      <path d="M2 2 L8 8 M8 2 L2 8" />
+                    </svg>
+                  )}
+                </motion.div>
               )
             })}
           </div>

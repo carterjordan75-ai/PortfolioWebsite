@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 import PageTransition from '@/components/PageTransition'
+import PageLoader from '@/components/PageLoader'
 import EmailPopup from '@/components/EmailPopup'
 import AdminPortal from '@/components/AdminPortal'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -28,6 +29,7 @@ export default function LookPage() {
   const speedRef = useRef(0.5)
   const [activeItem, setActiveItem] = useState<number | null>(null)
   const [uploadedItems, setUploadedItems] = useState<GalleryItem[]>([])
+  const [loading, setLoading] = useState(true)
   const [showEmail, setShowEmail] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
 
@@ -52,6 +54,7 @@ export default function LookPage() {
         }
       })
       .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
 
   // Only render what the admin has uploaded. Triple the array so the
@@ -108,6 +111,7 @@ export default function LookPage() {
 
   return (
     <PageTransition>
+      <PageLoader show={loading} mode="data" />
       <div style={{ background: '#000000', minHeight: '100vh' }}>
         <div
           ref={scrollRef}
