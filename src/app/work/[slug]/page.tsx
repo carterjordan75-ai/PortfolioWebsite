@@ -518,29 +518,70 @@ For licensing inquiries: carterjordan75@gmail.com
             <div className="p-3 md:p-4 space-y-3">
 
               {/* When admin has uploaded media for this project, the page is a
-                  dynamic feed: one MediaBlock per item, in the order set in
-                  the admin panel, each at its own aspect ratio. When there
-                  is no admin media yet, fall back to the legacy fixed layout
-                  with test-pool footage so the page is never blank. */}
+                  dynamic feed of rows. Consecutive items that share a `rowId`
+                  collapse into one flex row (each at its own aspect ratio,
+                  splitting width equally). Items without a rowId render alone
+                  as their own row. When there is no admin media yet, fall
+                  back to the legacy fixed layout. */}
               {localMedia && localMedia.length > 0 ? (
                 <>
-                  {localMedia.map((item, i) => {
-                    if (!item.path) return null
-                    const mediaType: 'video' | 'image' = /\.(mp4|webm|mov)$/i.test(item.path) ? 'video' : 'image'
-                    const aspect = (item as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
-                    return (
-                      <MediaBlock
-                        key={i}
-                        idx={i}
-                        aspect={aspect}
-                        label={String(i + 1).padStart(2, '0')}
-                        onExpand={() => setExpandedMedia(i)}
-                        dark={dark}
-                        mediaSrc={item.path}
-                        mediaType={mediaType}
-                      />
-                    )
-                  })}
+                  {(() => {
+                    // Walk the list and batch consecutive same-rowId items.
+                    type Row = { items: Array<{ item: typeof localMedia[number]; idx: number }>; rowId?: string }
+                    const rows: Row[] = []
+                    for (let i = 0; i < localMedia.length; i++) {
+                      const m = localMedia[i]
+                      if (!m.path) continue
+                      const r = (m as { rowId?: string }).rowId
+                      const last = rows[rows.length - 1]
+                      if (r && last && last.rowId === r) {
+                        last.items.push({ item: m, idx: i })
+                      } else {
+                        rows.push({ items: [{ item: m, idx: i }], rowId: r })
+                      }
+                    }
+                    return rows.map((row, ri) => {
+                      if (row.items.length === 1) {
+                        const { item, idx } = row.items[0]
+                        const mediaType: 'video' | 'image' = /\.(mp4|webm|mov)$/i.test(item.path!) ? 'video' : 'image'
+                        const aspect = (item as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
+                        return (
+                          <MediaBlock
+                            key={`r${ri}`}
+                            idx={idx}
+                            aspect={aspect}
+                            label={String(idx + 1).padStart(2, '0')}
+                            onExpand={() => setExpandedMedia(idx)}
+                            dark={dark}
+                            mediaSrc={item.path}
+                            mediaType={mediaType}
+                          />
+                        )
+                      }
+                      // Grouped row: flex container, each child takes equal share.
+                      return (
+                        <div key={`r${ri}`} className="flex gap-2 items-start">
+                          {row.items.map(({ item, idx }) => {
+                            const mediaType: 'video' | 'image' = /\.(mp4|webm|mov)$/i.test(item.path!) ? 'video' : 'image'
+                            const aspect = (item as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
+                            return (
+                              <div key={idx} className="flex-1 min-w-0">
+                                <MediaBlock
+                                  idx={idx}
+                                  aspect={aspect}
+                                  label={String(idx + 1).padStart(2, '0')}
+                                  onExpand={() => setExpandedMedia(idx)}
+                                  dark={dark}
+                                  mediaSrc={item.path}
+                                  mediaType={mediaType}
+                                />
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })
+                  })()}
                 </>
               ) : (
                 <>

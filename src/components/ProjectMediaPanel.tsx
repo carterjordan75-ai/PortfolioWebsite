@@ -22,7 +22,14 @@ import { upload } from '@vercel/blob/client'
  * straight to Vercel Blob, sidestepping the 4.5MB Vercel-Hobby payload cap).
  */
 
-export type ProjectMediaItem = { name?: string; path?: string; aspect?: string }
+export type ProjectMediaItem = {
+  name?: string
+  path?: string
+  aspect?: string
+  // Items sharing the same `rowId` render in one row on the project page
+  // (side-by-side, equal-width via flex). Set by the "Group as row" action.
+  rowId?: string
+}
 
 // Common aspect ratios offered in the per-item dropdown. The `value` is what
 // gets stored (a CSS aspect-ratio string); the `label` is what the user sees.
@@ -63,6 +70,65 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
   const [status, setStatus] = useState<string | null>(null)
   const [dragSrc, setDragSrc] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState<number | null>(null)
+  // Multi-select for grouping items into rows
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [lastSelectedIdx, setLastSelectedIdx] = useState<number | null>(null)
+
+  // Stable short id for a new row group
+  const makeRowId = () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+
+  const toggleSelected = (idx: number, shiftKey = false) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (shiftKey && lastSelectedIdx !== null && lastSelectedIdx !== idx) {
+        const [lo, hi] = lastSelectedIdx < idx ? [lastSelectedIdx, idx] : [idx, lastSelectedIdx]
+        const adding = prev.has(lastSelectedIdx)
+        for (let i = lo; i <= hi; i++) {
+          if (adding) next.add(i)
+          else next.delete(i)
+        }
+      } else {
+        if (next.has(idx)) next.delete(idx)
+        else next.add(idx)
+      }
+      return next
+    })
+    setLastSelectedIdx(idx)
+  }
+  const clearSelected = () => { setSelected(new Set()); setLastSelectedIdx(null) }
+
+  // Group the currently-selected items into one row. The selected items are
+  // pulled out, given a shared rowId, then reinserted as a contiguous block
+  // at the position of the first selected item — so visually they collapse
+  // together immediately and the page renders them as one row.
+  const groupSelectedAsRow = async () => {
+    if (selected.size < 2) return
+    const indices = Array.from(selected).sort((a, b) => a - b)
+    const rowId = makeRowId()
+    const movingSet = new Set(indices)
+    const movedItems = indices.map(i => ({ ...media[i], rowId }))
+    const remaining = media.filter((_, i) => !movingSet.has(i))
+    const insertAt = Math.max(0, Math.min(remaining.length, indices[0]))
+    const next = [
+      ...remaining.slice(0, insertAt),
+      ...movedItems,
+      ...remaining.slice(insertAt),
+    ]
+    await persist(next)
+    setSelected(new Set(movedItems.map((_, i) => insertAt + i)))
+    setLastSelectedIdx(insertAt + movedItems.length - 1)
+  }
+
+  // Strip rowId from all selected items — they go back to one-per-row.
+  const ungroupSelected = async () => {
+    if (selected.size === 0) return
+    const next = media.map((m, i) => selected.has(i) ? { ...m, rowId: undefined } : m)
+    await persist(next)
+  }
+
+  // Does the current selection contain any grouped items? Drives whether
+  // the Ungroup button is enabled.
+  const selectionHasGrouped = Array.from(selected).some(i => !!media[i]?.rowId)
 
   // Persist a media update to the server, then mirror locally.
   const persist = async (next: ProjectMediaItem[]) => {
@@ -198,6 +264,30 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
               <p className={`mx-5 mt-3 text-[9px] ${status.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>{status}</p>
             )}
 
+            {/* Grouping toolbar — appears whenever rows are selected */}
+            {selected.size > 0 && (
+              <div className="mx-5 mt-3 p-2.5 rounded-lg border border-white/15 bg-white/5 flex flex-wrap items-center gap-2 text-[8px] uppercase tracking-[0.1em]">
+                <span className="text-white/80 font-bold">{selected.size} selected</span>
+                <button onClick={clearSelected} className="text-white/35 hover:text-white">clear</button>
+                <div className="flex-1" />
+                <button
+                  onClick={groupSelectedAsRow}
+                  disabled={selected.size < 2}
+                  className="px-2.5 py-1 rounded text-[7px] font-bold text-green-400 border border-green-400/30 hover:bg-green-400/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Place selected items side-by-side in one row on the page"
+                >
+                  Group as row
+                </button>
+                <button
+                  onClick={ungroupSelected}
+                  disabled={!selectionHasGrouped}
+                  className="px-2.5 py-1 rounded text-[7px] font-bold text-white/70 border border-white/20 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Ungroup
+                </button>
+              </div>
+            )}
+
             {/* Item list */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2">
               {media.length === 0 && (
@@ -205,9 +295,31 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
                   No media yet. Click <span className="text-white/60 font-bold">Add</span> below to upload.
                 </p>
               )}
+              {/* Compute the visible "Row N" labels — one number per distinct
+                  rowId encountered (in order), so the user can see at a glance
+                  which items will end up in the same row on the page. */}
+              {(() => null)()}
               {media.map((item, i) => {
                 const indicatorAbove = dragOver === i && dragSrc !== null && dragSrc > i
                 const indicatorBelow = dragOver === i && dragSrc !== null && dragSrc < i
+                const inGroup = !!item.rowId
+                // Distinct row-index for label/colour: walk earlier items and
+                // count distinct rowIds.
+                let rowLabel = ''
+                let rowColor: string | undefined
+                if (inGroup) {
+                  const seen: string[] = []
+                  for (let k = 0; k <= i; k++) {
+                    const r = media[k]?.rowId
+                    if (r && !seen.includes(r)) seen.push(r)
+                  }
+                  const num = seen.indexOf(item.rowId!) + 1
+                  rowLabel = `Row ${num}`
+                  // Deterministic hue per rowId
+                  let h = 0
+                  for (const ch of item.rowId!) h = (h * 31 + ch.charCodeAt(0)) & 0xffff
+                  rowColor = `hsl(${h % 360} 70% 60%)`
+                }
                 return (
                   <div
                     key={`${item.path}-${i}`}
@@ -235,11 +347,20 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
                     className="flex items-center gap-3 p-2 rounded-lg border border-white/8 bg-white/3 hover:bg-white/5 transition-colors group"
                     style={{
                       opacity: dragSrc === i ? 0.4 : 1,
+                      borderLeft: inGroup ? `3px solid ${rowColor}` : '3px solid transparent',
                       borderTop: indicatorAbove ? '2px solid rgba(255,255,255,0.6)' : undefined,
                       borderBottom: indicatorBelow ? '2px solid rgba(255,255,255,0.6)' : undefined,
                       cursor: dragSrc === i ? 'grabbing' : 'default',
                     }}
                   >
+                    <input
+                      type="checkbox"
+                      checked={selected.has(i)}
+                      onChange={() => { /* state via onClick to capture shiftKey */ }}
+                      onClick={(e) => { e.stopPropagation(); toggleSelected(i, e.shiftKey) }}
+                      className="accent-white cursor-pointer flex-shrink-0"
+                      title="Click to toggle · Shift+click to select a range"
+                    />
                     <span className="text-white/30 group-hover:text-white/60 text-[14px] select-none" style={{ cursor: 'grab' }} title="Drag to reorder">
                       ⋮⋮
                     </span>
@@ -259,6 +380,14 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
                         <span className="text-white/30 text-[7px] uppercase tracking-[0.1em] flex-shrink-0">
                           {item.path ? (isVideo(item.path) ? 'Video' : 'Image') : '—'}
                         </span>
+                        {rowLabel && (
+                          <span
+                            className="text-[7px] uppercase tracking-[0.1em] font-bold px-1.5 py-0.5 rounded-sm flex-shrink-0"
+                            style={{ background: `${rowColor}22`, color: rowColor, border: `1px solid ${rowColor}66` }}
+                          >
+                            {rowLabel}
+                          </span>
+                        )}
                         <select
                           value={item.aspect || '16/9'}
                           onChange={(e) => {
