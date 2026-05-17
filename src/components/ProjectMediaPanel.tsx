@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { upload } from '@vercel/blob/client'
+import { downloadAssetsZip } from '@/lib/downloadZip'
 
 /**
  * In-page media manager for a single featured project.
@@ -130,6 +131,37 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
   // the Ungroup button is enabled.
   const selectionHasGrouped = Array.from(selected).some(i => !!media[i]?.rowId)
 
+  // Bulk download — zips either the selected items or every item in the
+  // panel (when nothing is selected). Pulls the actual source files from
+  // their public URLs, no watermarking.
+  const [downloading, setDownloading] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState<{ done: number; total: number } | null>(null)
+  const runDownload = async (mode: 'selected' | 'all') => {
+    if (downloading) return
+    const targets = mode === 'selected'
+      ? media.filter((_, i) => selected.has(i))
+      : media
+    const filesWithPath = targets.filter(m => !!m.path)
+    if (filesWithPath.length === 0) return
+    setDownloading(true)
+    setDownloadProgress({ done: 0, total: filesWithPath.length })
+    try {
+      await downloadAssetsZip(
+        filesWithPath.map((m, i) => ({
+          name: m.name || m.path!.split('/').pop() || `file_${i + 1}`,
+          url: m.path!,
+        })),
+        `${slug}_${mode === 'selected' ? 'selected' : 'all'}_${filesWithPath.length}files`,
+        (done, total) => setDownloadProgress({ done, total }),
+      )
+    } catch (err) {
+      console.error('Project media download failed:', err)
+    } finally {
+      setDownloading(false)
+      setDownloadProgress(null)
+    }
+  }
+
   // Persist a media update to the server, then mirror locally.
   const persist = async (next: ProjectMediaItem[]) => {
     onChange(next)
@@ -251,13 +283,27 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
                   {media.length} item{media.length !== 1 ? 's' : ''} · drag to reorder
                 </p>
               </div>
-              <button
-                onClick={onClose}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all"
-                aria-label="Close"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                {media.length > 0 && selected.size === 0 && (
+                  <button
+                    onClick={() => runDownload('all')}
+                    disabled={downloading}
+                    className="px-2.5 py-1 rounded-full text-[7px] uppercase tracking-[0.1em] font-bold text-white/70 border border-white/20 hover:bg-white/10 hover:text-white transition-all disabled:opacity-40 disabled:cursor-wait"
+                    title="Download every file in this project as a ZIP"
+                  >
+                    {downloading
+                      ? (downloadProgress ? `⏳ ${downloadProgress.done}/${downloadProgress.total}` : '⏳')
+                      : `↓ Download all (${media.length})`}
+                  </button>
+                )}
+                <button
+                  onClick={onClose}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {status && (
@@ -284,6 +330,16 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
                   className="px-2.5 py-1 rounded text-[7px] font-bold text-white/70 border border-white/20 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   Ungroup
+                </button>
+                <button
+                  onClick={() => runDownload('selected')}
+                  disabled={downloading}
+                  className="px-2.5 py-1 rounded text-[7px] font-bold text-white/80 border border-white/25 hover:bg-white/10 disabled:opacity-40 disabled:cursor-wait"
+                  title="Download original files for the selected items as a ZIP"
+                >
+                  {downloading
+                    ? (downloadProgress ? `⏳ ${downloadProgress.done}/${downloadProgress.total}` : '⏳ Zipping…')
+                    : `↓ Download (${selected.size})`}
                 </button>
               </div>
             )}
