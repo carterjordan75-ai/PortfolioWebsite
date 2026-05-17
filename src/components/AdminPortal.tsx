@@ -1439,6 +1439,8 @@ function MiscUploadPanel() {
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   // Multi-select for batch operations
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  // Index of the most-recently toggled row — anchor for shift-click range selection.
+  const [lastSelectedIdx, setLastSelectedIdx] = useState<number | null>(null)
   // Bulk-edit panel inputs (kept separate from the new-upload form's state)
   const [bulkYear, setBulkYear] = useState<string>('')
   const [bulkMedium, setBulkMedium] = useState<string[]>([])
@@ -1571,28 +1573,78 @@ function MiscUploadPanel() {
     setTimeout(() => setStatus(null), 1500)
   }
 
-  // Drag-and-drop reorder: splice the dragged item out at `from` and insert
-  // at `to` (so dragging item 5 onto item 2 puts it before item 2, original
-  // item 2 shifts to position 3). Persists to the API.
+  // Drag-and-drop reorder. Single-item move: splice from→to. Multi-item move:
+  // when the dragged row is part of a selection, all selected items travel as
+  // a group to the drop position (in their existing relative order). This
+  // matches the bulk-reorder UX the misc panel asks for.
   const reorderItem = async (from: number, to: number) => {
     if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return
-    const updated = [...items]
-    const [moved] = updated.splice(from, 1)
-    updated.splice(to, 0, moved)
+
+    // If the dragged row is part of the current selection, treat ALL selected
+    // rows as the move set. Otherwise just move the single dragged row.
+    const movingIndices = selected.has(from)
+      ? Array.from(selected).sort((a, b) => a - b)
+      : [from]
+
+    // Pull out the items we're moving (preserve their existing order).
+    const movingSet = new Set(movingIndices)
+    const movedItems = movingIndices.map(i => items[i])
+    const remaining = items.filter((_, i) => !movingSet.has(i))
+
+    // The original `to` was an index into the full array. Adjust for the
+    // moving-items removed from positions BEFORE `to`.
+    const removedBefore = movingIndices.filter(i => i < to).length
+    const insertAt = Math.max(0, Math.min(remaining.length, to - removedBefore))
+
+    const updated = [
+      ...remaining.slice(0, insertAt),
+      ...movedItems,
+      ...remaining.slice(insertAt),
+    ]
     setItems(updated)
     await saveItems(updated)
+
+    // Update the selected set so the moved rows stay selected at their new
+    // positions (otherwise the highlight follows the original indices).
+    if (movingIndices.length > 1) {
+      const newSelected = new Set<number>()
+      for (let i = 0; i < movedItems.length; i++) newSelected.add(insertAt + i)
+      setSelected(newSelected)
+      setLastSelectedIdx(insertAt + movedItems.length - 1)
+    }
   }
 
-  const toggleSelected = (idx: number) =>
+  // Toggle a single row, or shift-click to select the range from the last
+  // toggled row to this one. The range fills in everything between (inclusive),
+  // matching the standard list-multi-select pattern from native file managers.
+  const toggleSelected = (idx: number, shiftKey = false) => {
     setSelected(prev => {
       const next = new Set(prev)
-      if (next.has(idx)) next.delete(idx)
-      else next.add(idx)
+      if (shiftKey && lastSelectedIdx !== null && lastSelectedIdx !== idx) {
+        const [lo, hi] = lastSelectedIdx < idx ? [lastSelectedIdx, idx] : [idx, lastSelectedIdx]
+        // Decide direction: if the anchor was selected, we ADD the range;
+        // otherwise we REMOVE it (so shift-click can also bulk-deselect).
+        const adding = prev.has(lastSelectedIdx)
+        for (let i = lo; i <= hi; i++) {
+          if (adding) next.add(i)
+          else next.delete(i)
+        }
+      } else {
+        if (next.has(idx)) next.delete(idx)
+        else next.add(idx)
+      }
       return next
     })
-  const toggleSelectAll = () =>
+    setLastSelectedIdx(idx)
+  }
+  const toggleSelectAll = () => {
     setSelected(prev => (prev.size === items.length ? new Set() : new Set(items.map((_, i) => i))))
-  const clearSelected = () => setSelected(new Set())
+    setLastSelectedIdx(null)
+  }
+  const clearSelected = () => {
+    setSelected(new Set())
+    setLastSelectedIdx(null)
+  }
 
   // Apply year and/or medium to every selected item. Year only updates if
   // bulkYear is non-empty; medium only updates if `bulkApplyMedium` is on
@@ -1739,6 +1791,11 @@ function MiscUploadPanel() {
           <span className="text-white/80 text-[9px] font-bold uppercase tracking-[0.1em]">
             {selected.size} selected
           </span>
+          {selected.size > 1 && (
+            <span className="text-white/35 text-[8px] uppercase tracking-[0.1em]">
+              · drag any of them to move all together
+            </span>
+          )}
           <button onClick={clearSelected} className="text-white/40 text-[8px] uppercase tracking-[0.1em] hover:text-white">
             Clear
           </button>
@@ -1819,7 +1876,12 @@ function MiscUploadPanel() {
         {!loading && items.length === 0 && <p className="text-white/15 text-[9px] py-4 text-center">No pieces yet. Upload above.</p>}
 
         {items.map((item, i) => {
-          const isDraggedOver = dragOverIdx === i && dragSrcIdx !== null && dragSrcIdx !== i
+          // When the user drags a row that's in the selection, the entire
+          // selected group travels together. Compute which rows are "in
+          // flight" so we can dim them all uniformly during the drag.
+          const isMultiDrag = dragSrcIdx !== null && selected.has(dragSrcIdx)
+          const isInFlight = dragSrcIdx === i || (isMultiDrag && selected.has(i))
+          const isDraggedOver = dragOverIdx === i && dragSrcIdx !== null && !isInFlight
           // Drop indicator on the top edge when dragging downward, bottom edge upward
           const indicatorAbove = isDraggedOver && (dragSrcIdx as number) > i
           const indicatorBelow = isDraggedOver && (dragSrcIdx as number) < i
@@ -1835,7 +1897,12 @@ function MiscUploadPanel() {
               }}
               onDragOver={(e) => {
                 e.preventDefault()
-                if (dragSrcIdx !== null && dragSrcIdx !== i) setDragOverIdx(i)
+                if (dragSrcIdx === null) return
+                // Don't show a drop indicator on rows that are themselves part
+                // of the group being dragged — you can't drop a group onto itself.
+                if (selected.has(dragSrcIdx) && selected.has(i)) return
+                if (dragSrcIdx === i) return
+                setDragOverIdx(i)
               }}
               onDragLeave={(e) => {
                 // Only clear if we actually left the row (not a child)
@@ -1844,7 +1911,7 @@ function MiscUploadPanel() {
               }}
               onDrop={(e) => {
                 e.preventDefault()
-                if (dragSrcIdx !== null && dragSrcIdx !== i) reorderItem(dragSrcIdx, i)
+                if (dragSrcIdx !== null && !isInFlight) reorderItem(dragSrcIdx, i)
                 setDragSrcIdx(null)
                 setDragOverIdx(null)
               }}
@@ -1854,29 +1921,34 @@ function MiscUploadPanel() {
               }}
               className="flex items-center py-2 border-b border-white/5 hover:bg-white/3 transition-colors group"
               style={{
-                opacity: dragSrcIdx === i ? 0.4 : 1,
+                opacity: isInFlight ? 0.4 : 1,
+                background: selected.has(i) ? 'rgba(255,255,255,0.04)' : undefined,
                 borderTop: indicatorAbove ? '2px solid rgba(255,255,255,0.7)' : undefined,
                 borderBottom: indicatorBelow ? '2px solid rgba(255,255,255,0.7)' : '1px solid rgba(255,255,255,0.05)',
-                cursor: dragSrcIdx === i ? 'grabbing' : 'default',
+                cursor: isInFlight ? 'grabbing' : 'default',
               }}
             >
               {/* Drag handle column */}
               <span
                 className="w-[3%] text-white/20 group-hover:text-white/60 text-[12px] flex items-center justify-center"
                 style={{ cursor: 'grab', lineHeight: 1 }}
-                aria-label="Drag to reorder"
-                title="Drag to reorder"
+                aria-label={selected.has(i) && selected.size > 1 ? `Drag ${selected.size} selected items` : 'Drag to reorder'}
+                title={selected.has(i) && selected.size > 1 ? `Drag ${selected.size} selected items together` : 'Drag to reorder'}
               >
                 ⋮⋮
               </span>
-              {/* Selection checkbox */}
+              {/* Selection checkbox — supports shift-click to select a range */}
               <span className="w-[4%] flex items-center">
                 <input
                   type="checkbox"
                   checked={selected.has(i)}
-                  onChange={() => toggleSelected(i)}
-                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => { /* state changes handled by onClick to capture shiftKey */ }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleSelected(i, e.shiftKey)
+                  }}
                   className="accent-white cursor-pointer"
+                  title="Click to toggle · Shift+click to select a range"
                 />
               </span>
               <span className="w-[4%] text-white/30 text-[8px] font-mono">{String(i + 1).padStart(2, '0')}</span>
