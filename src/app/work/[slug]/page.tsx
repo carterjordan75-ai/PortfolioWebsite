@@ -50,8 +50,10 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   const [mediaPanelOpen, setMediaPanelOpen] = useState(false)
 
   // Always fetch admin data — for code projects it may have overrides (logo, brief, etc.)
+  // cache: 'no-store' so admin edits show up immediately on the public page
+  // (otherwise the browser/Vercel edge cache can serve a stale title/brief).
   useEffect(() => {
-    fetch('/api/projects')
+    fetch('/api/projects', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => {
         const found = (data.projects || []).find((p: Record<string, unknown>) => p.slug === params.slug)

@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
 import seedMisc from '../../../../data/misc.json'
 
+// Live admin data — always rerun, never serve from edge/static cache.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+
 const BLOB_KEY = 'state/misc.json'
 
 type MiscItem = Record<string, unknown>
@@ -12,7 +17,7 @@ async function getData(): Promise<{ items: MiscItem[] }> {
 
 export async function GET() {
   const data = await getData()
-  return NextResponse.json(data)
+  return NextResponse.json(data, NO_CACHE)
 }
 
 export async function POST(request: NextRequest) {

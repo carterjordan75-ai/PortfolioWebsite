@@ -6,6 +6,11 @@ import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
 // from there.
 import seedPages from '../../../../data/pages.json'
 
+// Live admin data — always rerun, never serve from edge/static cache.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+
 /**
  * On-disk shape (legacy data/pages.json): { [pageId]: { ...fields } }
  * API surface:
@@ -23,7 +28,7 @@ async function getPagesData(): Promise<PagesData> {
 
 export async function GET() {
   const data = await getPagesData()
-  return NextResponse.json({ pages: data })
+  return NextResponse.json({ pages: data }, NO_CACHE)
 }
 
 export async function POST(request: NextRequest) {

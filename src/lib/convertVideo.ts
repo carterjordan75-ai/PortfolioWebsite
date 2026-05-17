@@ -110,18 +110,28 @@ export async function convertMp4ToWebm(
 
   try {
     await ffmpeg.writeFile(inputName, await fetchFile(file))
+    // VP8 (libvpx), not VP9 (libvpx-vp9). VP9 ran the single-threaded WASM
+    // heap out of bounds on real portfolio MP4s ("memory access out of
+    // bounds"). VP8 needs ~3-5× less working memory at comparable quality
+    // and encodes faster too. Output is still a valid WebM that the site's
+    // <video> tag plays natively.
+    //
+    // -vf scale='min(1920,iw)':-2  — cap width at 1920 (1080p horizontal),
+    //   keep aspect, round height to even. Skips scaling for already-small
+    //   inputs because min() picks iw. Hero-cinema 4K/5K inputs are the
+    //   ones that triggered OOM, so this is the main relief.
     await ffmpeg.exec([
       '-i', inputName,
-      // VP9 video, variable bitrate, CRF 35 = visually transparent for web.
-      '-c:v', 'libvpx-vp9',
-      '-crf', '35',
-      '-b:v', '0',
-      // Encoder speed knobs — single-threaded ffmpeg.wasm is the bottleneck.
-      '-cpu-used', '5',
+      '-vf', "scale='min(1920,iw)':-2",
+      '-c:v', 'libvpx',
+      // VP8 needs an explicit target bitrate even when using CRF — without
+      // -b:v it caps quality very low. 1.5 Mbps is a sensible default for
+      // 1080p web video.
+      '-b:v', '1500k',
+      '-crf', '30',
+      '-cpu-used', '3',
       '-deadline', 'good',
-      '-row-mt', '1',
-      // Opus audio at 128 kbps.
-      '-c:a', 'libopus',
+      '-c:a', 'libvorbis',
       '-b:a', '128k',
       outputName,
     ])

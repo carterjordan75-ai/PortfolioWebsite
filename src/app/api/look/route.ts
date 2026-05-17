@@ -16,6 +16,11 @@ import {
  *   media/look/<fileName>       (was public/assets/look/<fileName>)
  */
 
+// Live admin data — always rerun, never serve from edge/static cache.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+
 const META_PREFIX = 'meta/look/'
 const ORDER_KEY = 'state/look-order.json'
 
@@ -62,10 +67,10 @@ export async function GET() {
       })
     }
 
-    return NextResponse.json({ items })
+    return NextResponse.json({ items }, NO_CACHE)
   } catch (error) {
     console.error('Look API error:', error)
-    return NextResponse.json({ items: [] })
+    return NextResponse.json({ items: [] }, NO_CACHE)
   }
 }
 

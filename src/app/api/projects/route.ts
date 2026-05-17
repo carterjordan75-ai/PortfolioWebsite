@@ -3,6 +3,15 @@ import { projects as codeProjects } from '@/data/projects'
 import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
 import seedAdminProjects from '../../../../public/assets/_data/admin-projects.json'
 
+// Opt out of Next.js's default route-handler caching. Without this, the GET
+// response was being cached on Vercel's edge, and admin edits to a project
+// title weren't visible on /work/[slug] until the cache expired. The data
+// lives in Blob and changes on every admin write, so the route must always
+// rerun.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+
 /**
  * Project admin data — slug-keyed overrides + additions + tombstones.
  *
@@ -78,7 +87,7 @@ function getMergedProjects(adminData: AdminData) {
 export async function GET() {
   const adminData = await getAdminData()
   const projects = getMergedProjects(adminData)
-  return NextResponse.json({ projects })
+  return NextResponse.json({ projects }, NO_CACHE)
 }
 
 export async function POST(request: NextRequest) {
