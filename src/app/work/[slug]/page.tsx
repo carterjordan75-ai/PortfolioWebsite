@@ -48,6 +48,10 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   // sit above any early returns below, hence declared here.
   const [localMedia, setLocalMedia] = useState<Array<{ name?: string; path?: string }> | null>(null)
   const [mediaPanelOpen, setMediaPanelOpen] = useState(false)
+  // Project-page video audio toggle. Videos auto-play muted (browser
+  // requirement) but the user can flip this once they've interacted with
+  // the page — every <video> on the page binds to this single switch.
+  const [videoAudioOn, setVideoAudioOn] = useState(false)
 
   // Always fetch admin data — for code projects it may have overrides (logo, brief, etc.)
   // cache: 'no-store' so admin edits show up immediately on the public page
@@ -448,7 +452,30 @@ For licensing inquiries: carterjordan75@gmail.com
           </div>
 
           {/* RIGHT — 2/3 — Media with expand */}
-          <div className="w-full md:w-[67%] overflow-y-auto">
+          <div className="w-full md:w-[67%] overflow-y-auto relative">
+            {/* Audio toggle — sticky in the top-right of the media column.
+                Videos default to muted (autoplay requires it); this lets the
+                viewer enable sound on all of them at once. */}
+            {(localMedia ?? []).some(m => m.path && /\.(mp4|webm|mov|m4v)$/i.test(m.path)) && (
+              <button
+                onClick={() => setVideoAudioOn(v => !v)}
+                aria-label={videoAudioOn ? 'Mute videos' : 'Unmute videos'}
+                title={videoAudioOn ? 'Mute videos' : 'Unmute videos'}
+                className="sticky top-3 z-10 ml-auto mr-3 mt-3 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md transition-all hover:scale-105 active:scale-95"
+                style={{
+                  background: videoAudioOn ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.45)',
+                  color: videoAudioOn ? '#000' : '#fff',
+                  border: '1px solid rgba(255,255,255,0.25)',
+                  float: 'right',
+                }}
+              >
+                {videoAudioOn ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                )}
+              </button>
+            )}
             <div className="p-3 md:p-4 space-y-3">
 
               {/* Dynamic feed of admin-uploaded media. Consecutive items
@@ -494,6 +521,7 @@ For licensing inquiries: carterjordan75@gmail.com
                           dark={dark}
                           mediaSrc={item.path}
                           mediaType={mediaType}
+                          audioOn={videoAudioOn}
                         />
                       )
                     }
@@ -513,6 +541,7 @@ For licensing inquiries: carterjordan75@gmail.com
                                 dark={dark}
                                 mediaSrc={item.path}
                                 mediaType={mediaType}
+                                audioOn={videoAudioOn}
                               />
                             </div>
                           )
@@ -630,6 +659,9 @@ For licensing inquiries: carterjordan75@gmail.com
               onClose={() => setMediaPanelOpen(false)}
               media={(localMedia ?? []) as ProjectMediaItem[]}
               onChange={(next) => setLocalMedia(next)}
+              // Featured projects auto-mirror their uploads into /misc. The
+              // drawer prompts the user for tags once per Add batch.
+              mirror={project.featured ? { client: project.client, year: project.year } : undefined}
             />
           </>
         )}
@@ -642,16 +674,25 @@ For licensing inquiries: carterjordan75@gmail.com
 // `idx` and `dark` are part of the public API for call sites that pass them
 // (handy for future hover states / theming), but not currently consumed inside —
 // underscore-prefix keeps ESLint happy.
-function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType }: {
+function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, audioOn }: {
   idx: number; aspect: string; label: string; onExpand: () => void; dark: boolean;
-  mediaSrc?: string; mediaType?: 'video' | 'image';
+  mediaSrc?: string; mediaType?: 'video' | 'image'; audioOn?: boolean;
 }) {
   return (
-    <div className="relative group bg-black overflow-hidden cursor-pointer" style={{ aspectRatio: aspect }} onClick={onExpand}>
+    // maxHeight cap so a 16:9 item in the wide media column doesn't fill the
+    // viewport on big screens — visually anchored to ~85% of viewport height,
+    // which keeps the page scannable. `width: '100%'` keeps the flex layout.
+    // For aspect ratios narrower than the column the height cap kicks in;
+    // since aspectRatio drives the size, this clamps the larger dimension.
+    <div
+      className="relative group bg-black overflow-hidden cursor-pointer w-full"
+      style={{ aspectRatio: aspect, maxHeight: '85vh', margin: '0 auto' }}
+      onClick={onExpand}
+    >
       {mediaSrc && mediaType === 'video' && (
         <video
           autoPlay
-          muted
+          muted={!audioOn}
           loop
           playsInline
           className="absolute inset-0 w-full h-full object-cover"

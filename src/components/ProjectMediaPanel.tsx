@@ -6,6 +6,7 @@ import { upload } from '@vercel/blob/client'
 import { downloadAssetsZip } from '@/lib/downloadZip'
 import { prepareForUpload } from '@/lib/convertVideo'
 import { deleteBlobUrls } from '@/lib/blobClient'
+import { mirrorToMisc } from '@/lib/miscMirror'
 
 /**
  * In-page media manager for a single featured project.
@@ -54,6 +55,14 @@ type Props = {
   onClose: () => void
   media: ProjectMediaItem[]
   onChange: (next: ProjectMediaItem[]) => void
+  /**
+   * When set, every successful Add (not Replace) on this drawer is also
+   * mirrored into the Misc gallery. The user is prompted once per batch for
+   * comma-separated tags; the project's client name is used as the Misc
+   * title. Pass this from the project page only when the project is
+   * featured.
+   */
+  mirror?: { client: string; year?: number | string }
 }
 
 function slugify(s: string, max = 50): string {
@@ -64,7 +73,7 @@ function isVideo(path: string | undefined): boolean {
   return !!path && /\.(mp4|webm|mov)$/i.test(path)
 }
 
-export default function ProjectMediaPanel({ slug, client, open, onClose, media, onChange }: Props) {
+export default function ProjectMediaPanel({ slug, client, open, onClose, media, onChange, mirror }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const replaceFileRef = useRef<HTMLInputElement>(null)
   const [replacingIdx, setReplacingIdx] = useState<number | null>(null)
@@ -229,14 +238,48 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
 
   const handleAdd = async (files: FileList | null) => {
     if (!files?.length) return
+    // If this drawer is configured to mirror uploads to Misc, prompt the user
+    // once for tags. Cancelling the prompt still uploads but skips the
+    // mirror — letting the user opt out per-batch. Empty answer = no tags
+    // (mirror falls back to default '3D' tag).
+    let mirrorTags: string[] | null = null
+    if (mirror) {
+      const raw = typeof window !== 'undefined'
+        ? window.prompt(`Tags for ${mirror.client} in /misc (comma-separated, e.g. 3D, Motion). Cancel to skip Misc mirror.`, '3D')
+        : null
+      if (raw !== null) {
+        mirrorTags = raw
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean)
+      }
+    }
     setUploading(true)
     setStatus(null)
     const next = [...media]
     let count = 0
+    let mirrored = 0
     const total = Array.from(files).length
+    const mirrorYear = String(mirror?.year ?? new Date().getFullYear())
     for (const file of Array.from(files)) {
       const item = await uploadFile(file)
-      if (item) { next.push(item); count++ }
+      if (item) {
+        next.push(item)
+        count++
+        // Mirror to Misc — same Blob URL, project name as title.
+        if (mirror && mirrorTags && item.path) {
+          const isVideoFile = /\.(mp4|webm|mov|m4v)$/i.test(item.path) || /\.(mp4|webm|mov|m4v)$/i.test(item.name || '')
+          const ok = await mirrorToMisc({
+            src: item.path,
+            title: mirror.client,
+            year: mirrorYear,
+            medium: mirrorTags,
+            type: isVideoFile ? 'video' : 'image',
+            fileName: item.name,
+          })
+          if (ok) mirrored++
+        }
+      }
       // Persist incrementally so a network blip mid-batch doesn't lose work.
       await persist([...next])
     }
@@ -245,8 +288,9 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     // show "✓ Added N" when N > 0; otherwise leave the failure status on
     // screen for the user to read.
     if (count > 0) {
-      setStatus(`✓ Added ${count}${count < total ? ` (${total - count} failed)` : ''}`)
-      setTimeout(() => setStatus(null), 1800)
+      const mirrorNote = mirror && mirrorTags ? ` · mirrored ${mirrored} to /misc` : ''
+      setStatus(`✓ Added ${count}${count < total ? ` (${total - count} failed)` : ''}${mirrorNote}`)
+      setTimeout(() => setStatus(null), 2400)
     }
   }
 

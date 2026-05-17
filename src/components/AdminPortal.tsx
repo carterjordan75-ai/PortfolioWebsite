@@ -2250,6 +2250,10 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
   const [improvingField, setImprovingField] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  // Distinct state for the save button so it can show its own ✓ / ✗ /
+  // saving state at the spot the user clicks, without depending on the
+  // top-of-form status banner that's often offscreen.
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [lightVid, setLightVid] = useState('')
   const [darkVid, setDarkVid] = useState('')
   const [figCaption, setFigCaption] = useState('FIG. 001 — MELBOURNE, 2024')
@@ -2300,6 +2304,7 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
   })
 
   const handleSave = async () => {
+    setSaveState('saving')
     try {
       const res = await fetch('/api/pages', {
         method: 'POST',
@@ -2340,11 +2345,17 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
       }
       if (res.ok) {
         setStatus('✓ Saved — reload to see changes')
+        setSaveState('saved')
+        setTimeout(() => setSaveState('idle'), 2500)
       } else {
         setStatus('✗ Save failed')
+        setSaveState('error')
+        setTimeout(() => setSaveState('idle'), 3000)
       }
     } catch {
       setStatus('✗ Network error')
+      setSaveState('error')
+      setTimeout(() => setSaveState('idle'), 3000)
     }
   }
 
@@ -2603,14 +2614,30 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
 
         <button
           onClick={handleSave}
-          className="w-full py-2.5 mt-4 rounded-full text-[9px] uppercase tracking-[0.12em] font-bold transition-all hover:scale-[1.02] active:scale-[0.98]"
+          disabled={saveState === 'saving'}
+          className={`w-full py-2.5 mt-4 rounded-full text-[9px] uppercase tracking-[0.12em] font-bold transition-all ${
+            saveState === 'idle' ? 'hover:scale-[1.02] active:scale-[0.98]' : ''
+          } disabled:cursor-wait`}
           style={{
-            background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            color: 'rgba(255,255,255,0.8)',
+            background:
+              saveState === 'saved' ? 'rgba(34,197,94,0.25)' :
+              saveState === 'error' ? 'rgba(248,113,113,0.25)' :
+              saveState === 'saving' ? 'rgba(255,255,255,0.06)' :
+              'rgba(255,255,255,0.1)',
+            border:
+              saveState === 'saved' ? '1px solid rgba(34,197,94,0.55)' :
+              saveState === 'error' ? '1px solid rgba(248,113,113,0.55)' :
+              '1px solid rgba(255,255,255,0.2)',
+            color:
+              saveState === 'saved' ? 'rgb(74,222,128)' :
+              saveState === 'error' ? 'rgb(252,165,165)' :
+              'rgba(255,255,255,0.8)',
           }}
         >
-          Save All Settings
+          {saveState === 'saving' && '⟳ Saving…'}
+          {saveState === 'saved' && '✓ Saved'}
+          {saveState === 'error' && '✗ Save failed — try again'}
+          {saveState === 'idle' && 'Save All Settings'}
         </button>
       </div>
     </div>
