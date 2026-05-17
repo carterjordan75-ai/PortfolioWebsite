@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { upload } from '@vercel/blob/client'
 import { downloadAssetsZip } from '@/lib/downloadZip'
+import { prepareForUpload } from '@/lib/convertVideo'
 
 /**
  * In-page media manager for a single featured project.
@@ -183,16 +184,18 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
   }
 
   const uploadFile = async (file: File): Promise<ProjectMediaItem | null> => {
-    const extMatch = file.name.match(/\.[^.]+$/)
+    // MP4 → WebM in the browser before upload (no-op for non-MP4 files).
+    const ready = await prepareForUpload(file, (msg) => setStatus(msg))
+    const extMatch = ready.name.match(/\.[^.]+$/)
     const ext = extMatch ? extMatch[0].toLowerCase() : ''
-    const pathname = `media/projects/${slug}/${slugify(client || file.name.replace(/\.[^.]+$/, ''))}-${Date.now().toString(36)}${ext}`
+    const pathname = `media/projects/${slug}/${slugify(client || ready.name.replace(/\.[^.]+$/, ''))}-${Date.now().toString(36)}${ext}`
     try {
-      const blob = await upload(pathname, file, {
+      const blob = await upload(pathname, ready, {
         access: 'public',
         handleUploadUrl: '/api/upload-token',
       })
       return {
-        name: blob.pathname.split('/').pop() || pathname.split('/').pop() || file.name,
+        name: blob.pathname.split('/').pop() || pathname.split('/').pop() || ready.name,
         path: blob.url,
       }
     } catch (err) {

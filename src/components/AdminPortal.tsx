@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { upload } from '@vercel/blob/client'
 import { useEditMode } from '@/contexts/EditModeContext'
 import { downloadAssetsZip } from '@/lib/downloadZip'
+import { prepareForUpload, isMp4 } from '@/lib/convertVideo'
 
 const ADMIN_PASSWORD = '3432'
 
@@ -29,21 +30,25 @@ async function uploadFileToBlob(
   file: File,
   section: string,
   credits?: string,
+  onStatus?: (msg: string) => void,
 ): Promise<{ url: string; pathname: string; fileName: string }> {
+  // Pre-upload: MP4s are auto-converted to WebM in the browser via
+  // ffmpeg.wasm. Non-MP4 files pass straight through unchanged.
+  const ready = await prepareForUpload(file, onStatus)
   const slugify = (s: string) =>
     s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'file'
-  const extMatch = file.name.match(/\.[^.]+$/)
+  const extMatch = ready.name.match(/\.[^.]+$/)
   const ext = extMatch ? extMatch[0].toLowerCase() : ''
-  const slug = slugify(credits || file.name.replace(/\.[^.]+$/, ''))
+  const slug = slugify(credits || ready.name.replace(/\.[^.]+$/, ''))
   const pathname = `media/${section}/${slug}-${Date.now().toString(36)}${ext}`
-  const blob = await upload(pathname, file, {
+  const blob = await upload(pathname, ready, {
     access: 'public',
     handleUploadUrl: '/api/upload-token',
   })
   return {
     url: blob.url,
     pathname: blob.pathname,
-    fileName: blob.pathname.split('/').pop() || pathname.split('/').pop() || file.name,
+    fileName: blob.pathname.split('/').pop() || pathname.split('/').pop() || ready.name,
   }
 }
 
@@ -375,14 +380,16 @@ function HomePagePanel() {
     // Direct-to-Blob upload (browser PUTs straight to Vercel Blob, bypassing
     // the 4.5 MB Vercel-Hobby function-payload cap that was rejecting the
     // larger home videos through /api/upload).
+    // MP4s are auto-converted to WebM in the browser before upload.
+    const ready = await prepareForUpload(pendingFile, (msg) => setStatus(msg))
     const slugify = (s: string) =>
       s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'video'
-    const extMatch = pendingFile.name.match(/\.[^.]+$/)
+    const extMatch = ready.name.match(/\.[^.]+$/)
     const ext = extMatch ? extMatch[0].toLowerCase() : ''
-    const pathname = `media/home-videos/${slugify(pendingTitle || pendingFile.name)}-${Date.now().toString(36)}${ext}`
+    const pathname = `media/home-videos/${slugify(pendingTitle || ready.name)}-${Date.now().toString(36)}${ext}`
 
     try {
-      const blob = await upload(pathname, pendingFile, {
+      const blob = await upload(pathname, ready, {
         access: 'public',
         handleUploadUrl: '/api/upload-token',
       })
@@ -953,11 +960,12 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
                         const slug = editingSlug || client.toLowerCase().replace(/[^a-z0-9]+/g, '-')
                         for (const file of Array.from(files)) {
                           try {
-                            const { url, fileName } = await uploadFileToBlob(file, `projects/${slug}`, client)
+                            const { url, fileName } = await uploadFileToBlob(file, `projects/${slug}`, client, setStatus)
                             setMediaFiles(prev => [...prev, { name: fileName, path: url }])
                           } catch (err) { console.error('Project media upload failed:', err) }
                         }
                         setUploadingMedia(false)
+                        setStatus(null)
                         e.target.value = ''
                       }}
                     />
@@ -1274,7 +1282,7 @@ function LookUploadPanel() {
     setUploading(true)
     setStatus(null)
     try {
-      const { url, fileName } = await uploadFileToBlob(selectedFile, 'look', credits)
+      const { url, fileName } = await uploadFileToBlob(selectedFile, 'look', credits, setStatus)
       setStatus(`✓ Uploaded: ${fileName}`)
       setExistingItems(prev => [{ fileName, path: url, credits }, ...prev])
       setSelectedFile(null)
@@ -1575,24 +1583,32 @@ function MiscUploadPanel() {
       const file = list[i]
       const titleForFile = newTitle.trim() || titleFromFilename(file.name)
 
+      // MP4 → WebM in the browser before upload (no-op for non-MP4 files).
+      if (isMp4(file)) {
+        setStatus(`(${i + 1}/${list.length}) Converting ${file.name}…`)
+      }
+      const ready = await prepareForUpload(file, (msg) =>
+        setStatus(`(${i + 1}/${list.length}) ${msg}`),
+      )
+
       // Build a stable Blob pathname: media/Misc/<slug>-<timestamp><ext>
-      const extMatch = file.name.match(/\.[^.]+$/)
+      const extMatch = ready.name.match(/\.[^.]+$/)
       const ext = extMatch ? extMatch[0].toLowerCase() : ''
       const pathname = `media/Misc/${slugify(titleForFile)}-${Date.now().toString(36)}${i}${ext}`
 
       try {
-        const blob = await upload(pathname, file, {
+        const blob = await upload(pathname, ready, {
           access: 'public',
           handleUploadUrl: '/api/upload-token',
         })
-        const isVideo = file.type.startsWith('video') || /\.(mp4|webm|mov)$/i.test(file.name)
+        const isVideo = ready.type.startsWith('video') || /\.(mp4|webm|mov)$/i.test(ready.name)
         const newItem: MiscItem = {
           src: blob.url,
           type: isVideo ? 'video' : 'image',
           title: titleForFile,
           year: newYear,
           medium: newMedium.length ? newMedium : ['3D'],
-          fileName: blob.pathname.split('/').pop() || pathname.split('/').pop() || file.name,
+          fileName: blob.pathname.split('/').pop() || pathname.split('/').pop() || ready.name,
         }
         currentItems = [...currentItems, newItem]
         uploadCount++
@@ -2414,8 +2430,9 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
                 <input type="file" className="hidden" accept="video/*" onChange={async (e) => {
                   const file = e.target.files?.[0]; if (!file) return
                   try {
-                    const { url } = await uploadFileToBlob(file, 'info-videos', 'light-mode')
+                    const { url } = await uploadFileToBlob(file, 'info-videos', 'light-mode', setStatus)
                     setLightVid(url)
+                    setStatus(null)
                   } catch (err) { console.error('Info video upload failed:', err) }
                   e.target.value = ''
                 }} />
@@ -2437,8 +2454,9 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
                 <input type="file" className="hidden" accept="video/*" onChange={async (e) => {
                   const file = e.target.files?.[0]; if (!file) return
                   try {
-                    const { url } = await uploadFileToBlob(file, 'info-videos', 'dark-mode')
+                    const { url } = await uploadFileToBlob(file, 'info-videos', 'dark-mode', setStatus)
                     setDarkVid(url)
+                    setStatus(null)
                   } catch (err) { console.error('Info video upload failed:', err) }
                   e.target.value = ''
                 }} />
@@ -2475,8 +2493,9 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
                 <input type="file" className="hidden" accept="video/*,image/*" onChange={async (e) => {
                   const file = e.target.files?.[0]; if (!file) return
                   try {
-                    const { url } = await uploadFileToBlob(file, 'info-profile', 'profile-light')
+                    const { url } = await uploadFileToBlob(file, 'info-profile', 'profile-light', setStatus)
                     setProfileLight(url)
+                    setStatus(null)
                   } catch (err) { console.error('Profile upload failed:', err) }
                   e.target.value = ''
                 }} />
@@ -2498,8 +2517,9 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
                 <input type="file" className="hidden" accept="video/*,image/*" onChange={async (e) => {
                   const file = e.target.files?.[0]; if (!file) return
                   try {
-                    const { url } = await uploadFileToBlob(file, 'info-profile', 'profile-dark')
+                    const { url } = await uploadFileToBlob(file, 'info-profile', 'profile-dark', setStatus)
                     setProfileDark(url)
+                    setStatus(null)
                   } catch (err) { console.error('Profile upload failed:', err) }
                   e.target.value = ''
                 }} />
