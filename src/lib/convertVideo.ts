@@ -120,7 +120,7 @@ export async function convertMp4ToWebm(
     //   keep aspect, round height to even. Skips scaling for already-small
     //   inputs because min() picks iw. Hero-cinema 4K/5K inputs are the
     //   ones that triggered OOM, so this is the main relief.
-    await ffmpeg.exec([
+    const exitCode = await ffmpeg.exec([
       '-i', inputName,
       '-vf', "scale='min(1920,iw)':-2",
       '-c:v', 'libvpx',
@@ -135,8 +135,18 @@ export async function convertMp4ToWebm(
       '-b:a', '128k',
       outputName,
     ])
+    // exec() resolves with the ffmpeg process exit code. Non-zero = the
+    // encoder bailed (codec error, corrupt input, OOM caught internally,
+    // etc.) and the output file is either missing or unusable. Throw so
+    // the caller's catch surfaces it instead of us shipping a 0-byte WebM.
+    if (typeof exitCode === 'number' && exitCode !== 0) {
+      throw new Error(`ffmpeg exit ${exitCode}`)
+    }
     const data = await ffmpeg.readFile(outputName)
     const bytes = data instanceof Uint8Array ? data : new Uint8Array(0)
+    if (bytes.byteLength === 0) {
+      throw new Error('ffmpeg produced an empty WebM')
+    }
     const buf = new ArrayBuffer(bytes.byteLength)
     new Uint8Array(buf).set(bytes)
     const newName = (file.name.replace(/\.mp4$/i, '.webm')) || 'video.webm'

@@ -167,7 +167,7 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
   const persist = async (next: ProjectMediaItem[]) => {
     onChange(next)
     try {
-      await fetch('/api/projects', {
+      const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -176,19 +176,35 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
           project: { slug, media: next },
         }),
       })
+      // fetch() only rejects on network failure — a 500 from the server
+      // resolves normally. Surface non-2xx responses so a Blob-token
+      // error doesn't look like a successful save.
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`
+        try { detail += ': ' + (await res.text()).slice(0, 200) } catch {}
+        throw new Error(detail)
+      }
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
       console.error('Project media save failed:', err)
-      setStatus('✗ Save failed')
-      setTimeout(() => setStatus(null), 2000)
+      setStatus(`✗ Save failed: ${msg}`)
+      setTimeout(() => setStatus(null), 4000)
     }
   }
 
   const uploadFile = async (file: File): Promise<ProjectMediaItem | null> => {
     // MP4 → WebM in the browser before upload (no-op for non-MP4 files).
     const ready = await prepareForUpload(file, (msg) => setStatus(msg))
+    if (ready.size === 0) {
+      const m = `✗ ${ready.name} is empty (0 bytes) — skipped`
+      console.error(m)
+      setStatus(m)
+      return null
+    }
     const extMatch = ready.name.match(/\.[^.]+$/)
     const ext = extMatch ? extMatch[0].toLowerCase() : ''
     const pathname = `media/projects/${slug}/${slugify(client || ready.name.replace(/\.[^.]+$/, ''))}-${Date.now().toString(36)}${ext}`
+    setStatus(`Uploading ${ready.name} (${Math.round(ready.size / 1024 / 1024)} MB)…`)
     try {
       const blob = await upload(pathname, ready, {
         access: 'public',
@@ -199,7 +215,13 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
         path: blob.url,
       }
     } catch (err) {
+      // Surface the error so we can see WHY an upload failed instead of just
+      // silently dropping the file. The previous behaviour ate every upload
+      // error and only logged to console — the user would see "✓ Added 0"
+      // with no clue what broke.
+      const msg = err instanceof Error ? err.message : String(err)
       console.error('Project media upload failed:', err)
+      setStatus(`✗ Upload failed for ${ready.name}: ${msg}`)
       return null
     }
   }
@@ -210,6 +232,7 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     setStatus(null)
     const next = [...media]
     let count = 0
+    const total = Array.from(files).length
     for (const file of Array.from(files)) {
       const item = await uploadFile(file)
       if (item) { next.push(item); count++ }
@@ -217,8 +240,13 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
       await persist([...next])
     }
     setUploading(false)
-    setStatus(`✓ Added ${count}`)
-    setTimeout(() => setStatus(null), 1800)
+    // Don't overwrite an upload-failure message with a success counter. Only
+    // show "✓ Added N" when N > 0; otherwise leave the failure status on
+    // screen for the user to read.
+    if (count > 0) {
+      setStatus(`✓ Added ${count}${count < total ? ` (${total - count} failed)` : ''}`)
+      setTimeout(() => setStatus(null), 1800)
+    }
   }
 
   const handleReplace = async (idx: number, file: File) => {
