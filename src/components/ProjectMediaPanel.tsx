@@ -33,6 +33,14 @@ export type ProjectMediaItem = {
   // Items sharing the same `rowId` render in one row on the project page
   // (side-by-side, equal-width via flex). Set by the "Group as row" action.
   rowId?: string
+  // Width as a % of the available column width. Default 100. Lets the user
+  // make smaller media blocks (e.g. a centered 50% video) without grouping
+  // them into a row.
+  widthPct?: number
+  // CSS object-position for the cropped media. Default 'center center'. Use
+  // this to control which part of the image shows when the frame's aspect
+  // ratio differs from the source's. Stored as a CSS string.
+  objectPos?: string
 }
 
 // Common aspect ratios offered in the per-item dropdown. The `value` is what
@@ -46,6 +54,29 @@ const ASPECT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '4/3',   label: '4:3   · Classic' },
   { value: '3/4',   label: '3:4   · Tall' },
   { value: '16/10', label: '16:10 · Wide' },
+]
+
+// Width-as-percent options. 100 = full column (default).
+const WIDTH_OPTIONS: Array<{ value: number; label: string }> = [
+  { value: 100, label: '100%' },
+  { value: 75,  label: '75%' },
+  { value: 50,  label: '50%' },
+  { value: 33,  label: '33%' },
+]
+
+// 3×3 anchor grid → CSS object-position string. Visual picker in the drawer
+// lets the user click a cell to pin which part of the image stays visible
+// when the source ratio doesn't match the frame.
+const ANCHOR_GRID: Array<{ value: string; label: string }> = [
+  { value: 'left top',     label: '↖' },
+  { value: 'center top',   label: '↑' },
+  { value: 'right top',    label: '↗' },
+  { value: 'left center',  label: '←' },
+  { value: 'center center', label: '·' },
+  { value: 'right center', label: '→' },
+  { value: 'left bottom',  label: '↙' },
+  { value: 'center bottom', label: '↓' },
+  { value: 'right bottom', label: '↘' },
 ]
 
 type Props = {
@@ -85,6 +116,12 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
   // Multi-select for grouping items into rows
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [lastSelectedIdx, setLastSelectedIdx] = useState<number | null>(null)
+  // Mirror controls — user can toggle this independently of whether the
+  // project is featured. Default ON if the parent passed a mirror prop
+  // (i.e. the project IS featured), default OFF otherwise. Whatever the
+  // checkbox says at the time of upload is what runs.
+  const [mirrorOn, setMirrorOn] = useState<boolean>(!!mirror)
+  const [mirrorTagsInput, setMirrorTagsInput] = useState<string>('3D')
 
   // Stable short id for a new row group
   const makeRowId = () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -238,28 +275,19 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
 
   const handleAdd = async (files: FileList | null) => {
     if (!files?.length) return
-    // If this drawer is configured to mirror uploads to Misc, prompt the user
-    // once for tags. Cancelling the prompt still uploads but skips the
-    // mirror — letting the user opt out per-batch. Empty answer = no tags
-    // (mirror falls back to default '3D' tag).
-    let mirrorTags: string[] | null = null
-    if (mirror) {
-      const raw = typeof window !== 'undefined'
-        ? window.prompt(`Tags for ${mirror.client} in /misc (comma-separated, e.g. 3D, Motion). Cancel to skip Misc mirror.`, '3D')
-        : null
-      if (raw !== null) {
-        mirrorTags = raw
-          .split(',')
-          .map(s => s.trim())
-          .filter(Boolean)
-      }
-    }
+    // Mirror state is the in-drawer checkbox + tag input. No more native
+    // prompt() — the user can see the mirror config the whole time and
+    // toggle per batch without a dialog.
+    const mirrorTags = mirrorOn
+      ? mirrorTagsInput.split(',').map(s => s.trim()).filter(Boolean)
+      : null
     setUploading(true)
     setStatus(null)
     const next = [...media]
     let count = 0
     let mirrored = 0
     const total = Array.from(files).length
+    const mirrorTitle = mirror?.client || client
     const mirrorYear = String(mirror?.year ?? new Date().getFullYear())
     for (const file of Array.from(files)) {
       const item = await uploadFile(file)
@@ -267,13 +295,13 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
         next.push(item)
         count++
         // Mirror to Misc — same Blob URL, project name as title.
-        if (mirror && mirrorTags && item.path) {
+        if (mirrorOn && mirrorTags && item.path) {
           const isVideoFile = /\.(mp4|webm|mov|m4v)$/i.test(item.path) || /\.(mp4|webm|mov|m4v)$/i.test(item.name || '')
           const ok = await mirrorToMisc({
             src: item.path,
-            title: mirror.client,
+            title: mirrorTitle,
             year: mirrorYear,
-            medium: mirrorTags,
+            medium: mirrorTags.length > 0 ? mirrorTags : ['3D'],
             type: isVideoFile ? 'video' : 'image',
             fileName: item.name,
           })
@@ -284,11 +312,8 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
       await persist([...next])
     }
     setUploading(false)
-    // Don't overwrite an upload-failure message with a success counter. Only
-    // show "✓ Added N" when N > 0; otherwise leave the failure status on
-    // screen for the user to read.
     if (count > 0) {
-      const mirrorNote = mirror && mirrorTags ? ` · mirrored ${mirrored} to /misc` : ''
+      const mirrorNote = mirrorOn ? ` · mirrored ${mirrored}/${count} to /misc` : ''
       setStatus(`✓ Added ${count}${count < total ? ` (${total - count} failed)` : ''}${mirrorNote}`)
       setTimeout(() => setStatus(null), 2400)
     }
@@ -545,6 +570,55 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
                             </option>
                           ))}
                         </select>
+                        <select
+                          value={item.widthPct ?? 100}
+                          onChange={(e) => {
+                            const next = media.map((m, j) => j === i ? { ...m, widthPct: Number(e.target.value) } : m)
+                            persist(next)
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          className="text-[8px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/70 outline-none focus:border-white/25 cursor-pointer"
+                          title="Width as % of column. Smaller items are horizontally centered."
+                        >
+                          {WIDTH_OPTIONS.map(opt => (
+                            <option key={opt.value} value={opt.value} className="bg-zinc-900 text-white">
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {/* Focus / crop anchor: 3×3 grid of buttons. Click a
+                          cell to pin which part of the image stays visible
+                          when the frame's aspect ratio doesn't match the
+                          source's (object-cover crops; object-position chooses
+                          what's preserved). */}
+                      <div
+                        className="grid grid-cols-3 gap-[2px] mt-1.5 w-fit"
+                        title="Crop focus point — controls which part of the image stays visible"
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        {ANCHOR_GRID.map(a => {
+                          const active = (item.objectPos || 'center center') === a.value
+                          return (
+                            <button
+                              key={a.value}
+                              onClick={() => {
+                                const next = media.map((m, j) => j === i ? { ...m, objectPos: a.value } : m)
+                                persist(next)
+                              }}
+                              className={`w-3 h-3 rounded-[2px] text-[7px] flex items-center justify-center transition-colors ${
+                                active
+                                  ? 'bg-blue-400/80 text-white'
+                                  : 'bg-white/8 text-white/40 hover:bg-white/15 hover:text-white/70'
+                              }`}
+                              aria-label={`Focus: ${a.value}`}
+                            >
+                              {a.label}
+                            </button>
+                          )
+                        })}
                       </div>
                     </div>
                     <button
@@ -569,8 +643,35 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
               })}
             </div>
 
-            {/* Footer: Add button */}
-            <div className="px-5 py-4 border-t border-white/10">
+            {/* Footer: mirror toggle + Add button */}
+            <div className="px-5 py-3 border-t border-white/10 space-y-3">
+              {/* Mirror-to-Misc inline controls. Always visible so the user
+                  can see whether the next upload will be mirrored and edit
+                  the tags before clicking Add. */}
+              <div className="flex items-center gap-2 text-[8px] uppercase tracking-[0.1em]">
+                <label className="flex items-center gap-1.5 text-white/70 cursor-pointer select-none flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={mirrorOn}
+                    onChange={(e) => setMirrorOn(e.target.checked)}
+                    className="accent-blue-400"
+                  />
+                  Mirror to /misc
+                </label>
+                <input
+                  type="text"
+                  value={mirrorTagsInput}
+                  onChange={(e) => setMirrorTagsInput(e.target.value)}
+                  disabled={!mirrorOn}
+                  placeholder="Tags: 3D, Motion"
+                  className="flex-1 px-2 py-1 rounded bg-white/5 border border-white/10 text-white/80 placeholder-white/20 outline-none focus:border-white/25 text-[9px] tracking-normal normal-case disabled:opacity-30"
+                />
+              </div>
+              {mirrorOn && (
+                <p className="text-white/35 text-[7px] uppercase tracking-[0.1em] -mt-1">
+                  Each upload will create a /misc card titled <span className="text-white/55">{mirror?.client || client}</span>
+                </p>
+              )}
               <input
                 ref={fileRef}
                 type="file"

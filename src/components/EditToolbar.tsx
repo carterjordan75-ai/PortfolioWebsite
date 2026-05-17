@@ -6,16 +6,18 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 export default function EditToolbar() {
   const { editMode, setEditMode, pendingChanges, clearChanges, changeCount } = useEditMode()
-  const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [savedCount, setSavedCount] = useState(0)
+  const [errorDetail, setErrorDetail] = useState<string | null>(null)
 
   const handleSave = async () => {
-    setSaving(true)
-    setStatus(null)
+    setSaveState('saving')
+    setErrorDetail(null)
     try {
       const pageKeys = ['info-page', 'look-page', 'experiments-page', 'work-page']
 
-      let savedCount = 0
+      let ok = 0
+      let failed: string[] = []
       for (const [slug, fields] of Object.entries(pendingChanges)) {
         if (pageKeys.includes(slug)) {
           const res = await fetch('/api/pages', {
@@ -23,8 +25,11 @@ export default function EditToolbar() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ pageId: slug, fields }),
           })
-          if (res.ok) savedCount++
-          else console.error('Page save failed:', slug, await res.text())
+          if (res.ok) ok++
+          else {
+            console.error('Page save failed:', slug, await res.text())
+            failed.push(slug)
+          }
         } else {
           const res = await fetch('/api/projects', {
             method: 'POST',
@@ -35,20 +40,28 @@ export default function EditToolbar() {
               project: fields,
             }),
           })
-          if (res.ok) savedCount++
-          else console.error('Project save failed:', slug, await res.text())
+          if (res.ok) ok++
+          else {
+            console.error('Project save failed:', slug, await res.text())
+            failed.push(slug)
+          }
         }
       }
-      setStatus(`Saved ${savedCount} change${savedCount !== 1 ? 's' : ''}`)
-      clearChanges()
-      setTimeout(() => {
-        setStatus(null)
-        setEditMode(false)
-      }, 1500)
-    } catch {
-      setStatus('Save failed')
-    } finally {
-      setSaving(false)
+      setSavedCount(ok)
+      if (failed.length > 0) {
+        setErrorDetail(`${failed.length} failed: ${failed.join(', ')}`)
+        setSaveState('error')
+        // Don't auto-clear failures — user needs to see them.
+      } else {
+        setSaveState('saved')
+        clearChanges()
+        // Stay in edit mode after save so the user can keep editing. The
+        // pill shows ✓ Saved for 4s, then fades back to idle.
+        setTimeout(() => setSaveState('idle'), 4000)
+      }
+    } catch (err) {
+      setErrorDetail(String(err))
+      setSaveState('error')
     }
   }
 
@@ -75,19 +88,30 @@ export default function EditToolbar() {
           }}
         >
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+            <div className={`w-2 h-2 rounded-full ${
+              saveState === 'saving' ? 'bg-blue-300 animate-ping' :
+              saveState === 'saved' ? 'bg-green-400' :
+              saveState === 'error' ? 'bg-red-400' :
+              'bg-blue-400 animate-pulse'
+            }`} />
             <span className="text-white/70 text-[10px] uppercase tracking-[0.12em] font-bold">Edit Mode</span>
           </div>
 
-          {changeCount > 0 && (
+          {saveState === 'idle' && changeCount > 0 && (
             <span className="text-yellow-400/80 text-[9px] font-mono">
               {changeCount} pending
             </span>
           )}
 
-          {status && (
-            <span className={`text-[9px] font-mono ${status.includes('fail') ? 'text-red-400' : 'text-green-400'}`}>
-              {status}
+          {saveState === 'saved' && (
+            <span className="text-green-400 text-[10px] font-bold uppercase tracking-[0.1em]">
+              ✓ Saved {savedCount} change{savedCount !== 1 ? 's' : ''}
+            </span>
+          )}
+
+          {saveState === 'error' && (
+            <span className="text-red-400 text-[10px] font-bold uppercase tracking-[0.1em]" title={errorDetail || undefined}>
+              ✗ Save failed{errorDetail ? ` (${errorDetail.slice(0, 40)}${errorDetail.length > 40 ? '…' : ''})` : ''}
             </span>
           )}
 
@@ -95,14 +119,21 @@ export default function EditToolbar() {
 
           <button
             onClick={handleSave}
-            disabled={saving || changeCount === 0}
-            className="px-4 py-1.5 rounded-full text-[9px] uppercase tracking-[0.1em] font-bold transition-all hover:scale-105 active:scale-95 disabled:opacity-30"
+            disabled={saveState === 'saving' || (changeCount === 0 && saveState === 'idle')}
+            className="px-4 py-1.5 rounded-full text-[9px] uppercase tracking-[0.1em] font-bold transition-all hover:scale-105 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
-              background: changeCount > 0 ? 'rgba(59, 130, 246, 0.8)' : 'rgba(255, 255, 255, 0.1)',
+              background:
+                saveState === 'saved' ? 'rgba(34,197,94,0.85)' :
+                saveState === 'error' ? 'rgba(248,113,113,0.85)' :
+                saveState === 'saving' ? 'rgba(59, 130, 246, 0.5)' :
+                changeCount > 0 ? 'rgba(59, 130, 246, 0.8)' : 'rgba(255, 255, 255, 0.1)',
               color: 'white',
             }}
           >
-            {saving ? 'Saving...' : 'Save All'}
+            {saveState === 'saving' && '⟳ Saving…'}
+            {saveState === 'saved' && '✓ Saved'}
+            {saveState === 'error' && '↻ Retry'}
+            {saveState === 'idle' && 'Save All'}
           </button>
 
           <button

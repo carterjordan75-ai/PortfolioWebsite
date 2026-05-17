@@ -453,29 +453,31 @@ For licensing inquiries: carterjordan75@gmail.com
 
           {/* RIGHT — 2/3 — Media with expand */}
           <div className="w-full md:w-[67%] overflow-y-auto relative">
-            {/* Audio toggle — sticky in the top-right of the media column.
-                Videos default to muted (autoplay requires it); this lets the
-                viewer enable sound on all of them at once. */}
-            {(localMedia ?? []).some(m => m.path && /\.(mp4|webm|mov|m4v)$/i.test(m.path)) && (
-              <button
-                onClick={() => setVideoAudioOn(v => !v)}
-                aria-label={videoAudioOn ? 'Mute videos' : 'Unmute videos'}
-                title={videoAudioOn ? 'Mute videos' : 'Unmute videos'}
-                className="sticky top-3 z-10 ml-auto mr-3 mt-3 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md transition-all hover:scale-105 active:scale-95"
-                style={{
-                  background: videoAudioOn ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.45)',
-                  color: videoAudioOn ? '#000' : '#fff',
-                  border: '1px solid rgba(255,255,255,0.25)',
-                  float: 'right',
-                }}
-              >
-                {videoAudioOn ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-                )}
-              </button>
-            )}
+            {/* Audio toggle — pinned to the viewport bottom-right so it
+                stays visible as the user scrolls long projects. Videos
+                default to muted (autoplay requirement); this lets the
+                viewer enable sound on every video at once. We render it
+                unconditionally — if the project has zero videos, hiding
+                it is fine but checking the media list at every render is
+                fragile (the check missed when items used .mov / blob URLs
+                with query strings). */}
+            <button
+              onClick={() => setVideoAudioOn(v => !v)}
+              aria-label={videoAudioOn ? 'Mute videos' : 'Unmute videos'}
+              title={videoAudioOn ? 'Mute videos' : 'Unmute videos'}
+              className="fixed bottom-6 right-6 z-30 w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-md transition-all hover:scale-105 active:scale-95 shadow-lg"
+              style={{
+                background: videoAudioOn ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.6)',
+                color: videoAudioOn ? '#000' : '#fff',
+                border: '1px solid rgba(255,255,255,0.3)',
+              }}
+            >
+              {videoAudioOn ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+              )}
+            </button>
             <div className="p-3 md:p-4 space-y-3">
 
               {/* Dynamic feed of admin-uploaded media. Consecutive items
@@ -511,18 +513,25 @@ For licensing inquiries: carterjordan75@gmail.com
                       const { item, idx } = row.items[0]
                       const mediaType: 'video' | 'image' = classifyMedia(item.path!)
                       const aspect = (item as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
+                      const widthPct = (item as { widthPct?: number }).widthPct ?? 100
+                      const objectPos = (item as { objectPos?: string }).objectPos || 'center center'
+                      // Wrap in a width container so widthPct < 100 produces a
+                      // smaller, centered media block. 100 = full-width (no
+                      // visible wrapping behaviour).
                       return (
-                        <MediaBlock
-                          key={`r${ri}`}
-                          idx={idx}
-                          aspect={aspect}
-                          label={String(idx + 1).padStart(2, '0')}
-                          onExpand={() => setExpandedMedia(idx)}
-                          dark={dark}
-                          mediaSrc={item.path}
-                          mediaType={mediaType}
-                          audioOn={videoAudioOn}
-                        />
+                        <div key={`r${ri}`} style={{ width: `${widthPct}%`, margin: '0 auto' }}>
+                          <MediaBlock
+                            idx={idx}
+                            aspect={aspect}
+                            label={String(idx + 1).padStart(2, '0')}
+                            onExpand={() => setExpandedMedia(idx)}
+                            dark={dark}
+                            mediaSrc={item.path}
+                            mediaType={mediaType}
+                            audioOn={videoAudioOn}
+                            objectPos={objectPos}
+                          />
+                        </div>
                       )
                     }
                     // Grouped row: flex container, each child takes equal share.
@@ -531,6 +540,7 @@ For licensing inquiries: carterjordan75@gmail.com
                         {row.items.map(({ item, idx }) => {
                           const mediaType: 'video' | 'image' = classifyMedia(item.path!)
                           const aspect = (item as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
+                          const objectPos = (item as { objectPos?: string }).objectPos || 'center center'
                           return (
                             <div key={idx} className="flex-1 min-w-0">
                               <MediaBlock
@@ -542,6 +552,7 @@ For licensing inquiries: carterjordan75@gmail.com
                                 mediaSrc={item.path}
                                 mediaType={mediaType}
                                 audioOn={videoAudioOn}
+                                objectPos={objectPos}
                               />
                             </div>
                           )
@@ -674,10 +685,11 @@ For licensing inquiries: carterjordan75@gmail.com
 // `idx` and `dark` are part of the public API for call sites that pass them
 // (handy for future hover states / theming), but not currently consumed inside —
 // underscore-prefix keeps ESLint happy.
-function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, audioOn }: {
+function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, audioOn, objectPos }: {
   idx: number; aspect: string; label: string; onExpand: () => void; dark: boolean;
-  mediaSrc?: string; mediaType?: 'video' | 'image'; audioOn?: boolean;
+  mediaSrc?: string; mediaType?: 'video' | 'image'; audioOn?: boolean; objectPos?: string;
 }) {
+  const pos = objectPos || 'center center'
   return (
     // maxHeight cap so a 16:9 item in the wide media column doesn't fill the
     // viewport on big screens — visually anchored to ~85% of viewport height,
@@ -696,6 +708,7 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
           loop
           playsInline
           className="absolute inset-0 w-full h-full object-cover"
+          style={{ objectPosition: pos }}
           src={mediaSrc}
         />
       )}
@@ -705,6 +718,7 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
           src={mediaSrc}
           alt={label}
           className="absolute inset-0 w-full h-full object-cover"
+          style={{ objectPosition: pos }}
         />
       )}
       <span className="absolute top-3 left-3 text-[8px] font-mono font-bold uppercase tracking-widest text-white" style={{ opacity: 0.3, zIndex: 2 }}>
