@@ -48,10 +48,6 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   // sit above any early returns below, hence declared here.
   const [localMedia, setLocalMedia] = useState<Array<{ name?: string; path?: string }> | null>(null)
   const [mediaPanelOpen, setMediaPanelOpen] = useState(false)
-  // Project-page video audio toggle. Videos auto-play muted (browser
-  // requirement) but the user can flip this once they've interacted with
-  // the page — every <video> on the page binds to this single switch.
-  const [videoAudioOn, setVideoAudioOn] = useState(false)
 
   // Always fetch admin data — for code projects it may have overrides (logo, brief, etc.)
   // cache: 'no-store' so admin edits show up immediately on the public page
@@ -453,31 +449,6 @@ For licensing inquiries: carterjordan75@gmail.com
 
           {/* RIGHT — 2/3 — Media with expand */}
           <div className="w-full md:w-[67%] overflow-y-auto relative">
-            {/* Audio toggle — pinned to the viewport bottom-right so it
-                stays visible as the user scrolls long projects. Videos
-                default to muted (autoplay requirement); this lets the
-                viewer enable sound on every video at once. We render it
-                unconditionally — if the project has zero videos, hiding
-                it is fine but checking the media list at every render is
-                fragile (the check missed when items used .mov / blob URLs
-                with query strings). */}
-            <button
-              onClick={() => setVideoAudioOn(v => !v)}
-              aria-label={videoAudioOn ? 'Mute videos' : 'Unmute videos'}
-              title={videoAudioOn ? 'Mute videos' : 'Unmute videos'}
-              className="fixed bottom-6 right-6 z-30 w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-md transition-all hover:scale-105 active:scale-95 shadow-lg"
-              style={{
-                background: videoAudioOn ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.6)',
-                color: videoAudioOn ? '#000' : '#fff',
-                border: '1px solid rgba(255,255,255,0.3)',
-              }}
-            >
-              {videoAudioOn ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-              )}
-            </button>
             <div className="p-3 md:p-4 space-y-3">
 
               {/* Dynamic feed of admin-uploaded media. Consecutive items
@@ -528,7 +499,6 @@ For licensing inquiries: carterjordan75@gmail.com
                             dark={dark}
                             mediaSrc={item.path}
                             mediaType={mediaType}
-                            audioOn={videoAudioOn}
                             objectPos={objectPos}
                           />
                         </div>
@@ -551,7 +521,6 @@ For licensing inquiries: carterjordan75@gmail.com
                                 dark={dark}
                                 mediaSrc={item.path}
                                 mediaType={mediaType}
-                                audioOn={videoAudioOn}
                                 objectPos={objectPos}
                               />
                             </div>
@@ -685,11 +654,17 @@ For licensing inquiries: carterjordan75@gmail.com
 // `idx` and `dark` are part of the public API for call sites that pass them
 // (handy for future hover states / theming), but not currently consumed inside —
 // underscore-prefix keeps ESLint happy.
-function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, audioOn, objectPos }: {
+function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, objectPos }: {
   idx: number; aspect: string; label: string; onExpand: () => void; dark: boolean;
-  mediaSrc?: string; mediaType?: 'video' | 'image'; audioOn?: boolean; objectPos?: string;
+  mediaSrc?: string; mediaType?: 'video' | 'image'; objectPos?: string;
 }) {
   const pos = objectPos || 'center center'
+  // Each video owns its own muted state — different clips can have different
+  // audio so a global toggle would mix them in the wrong way. Default muted
+  // so autoplay isn't blocked by the browser; the corner button lets the
+  // viewer enable sound per-video.
+  const [muted, setMuted] = useState(true)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
   return (
     // maxHeight cap so a 16:9 item in the wide media column doesn't fill the
     // viewport on big screens — visually anchored to ~85% of viewport height,
@@ -703,8 +678,9 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
     >
       {mediaSrc && mediaType === 'video' && (
         <video
+          ref={videoRef}
           autoPlay
-          muted={!audioOn}
+          muted={muted}
           loop
           playsInline
           className="absolute inset-0 w-full h-full object-cover"
@@ -724,6 +700,38 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
       <span className="absolute top-3 left-3 text-[8px] font-mono font-bold uppercase tracking-widest text-white" style={{ opacity: 0.3, zIndex: 2 }}>
         {label}
       </span>
+      {/* Per-video audio toggle. Sits in the bottom-left of each video
+          block. Clicking it stops the click from bubbling to onExpand. */}
+      {mediaType === 'video' && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            setMuted(prev => {
+              // If we're going from muted → unmuted, the browser may have
+              // paused us (autoplay-with-sound is normally blocked). The
+              // click itself is a user gesture so retrying play() here
+              // succeeds. React's `muted` prop syncs via re-render.
+              if (prev) videoRef.current?.play().catch(() => {})
+              return !prev
+            })
+          }}
+          aria-label={muted ? 'Unmute' : 'Mute'}
+          title={muted ? 'Unmute' : 'Mute'}
+          className="absolute bottom-3 left-3 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md transition-all hover:scale-110 active:scale-95"
+          style={{
+            background: muted ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.9)',
+            color: muted ? '#fff' : '#000',
+            border: '1px solid rgba(255,255,255,0.25)',
+            zIndex: 2,
+          }}
+        >
+          {muted ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+          )}
+        </button>
+      )}
       <div
         className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity"
         style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)', zIndex: 2 }}
