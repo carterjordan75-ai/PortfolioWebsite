@@ -1,0 +1,308 @@
+'use client'
+
+import { useRef, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { upload } from '@vercel/blob/client'
+
+/**
+ * In-page media manager for a single featured project.
+ *
+ * Opens as a right-side drawer on the project page when in edit mode. Lists
+ * every media item the admin has uploaded for this project, with:
+ *   - drag handle to reorder
+ *   - "Replace" to upload a new file in place
+ *   - delete (✕)
+ *   - "Add" button at the end to extend the list
+ *
+ * Every mutation persists immediately to /api/projects via the `update`
+ * action (no batched save). Local state mirrors the saved list so the page
+ * reflects changes instantly.
+ *
+ * Files are uploaded direct-to-Blob via /api/upload-token (the browser PUTs
+ * straight to Vercel Blob, sidestepping the 4.5MB Vercel-Hobby payload cap).
+ */
+
+export type ProjectMediaItem = { name?: string; path?: string }
+
+type Props = {
+  slug: string
+  client: string
+  open: boolean
+  onClose: () => void
+  media: ProjectMediaItem[]
+  onChange: (next: ProjectMediaItem[]) => void
+}
+
+function slugify(s: string, max = 50): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, max) || 'file'
+}
+
+function isVideo(path: string | undefined): boolean {
+  return !!path && /\.(mp4|webm|mov)$/i.test(path)
+}
+
+export default function ProjectMediaPanel({ slug, client, open, onClose, media, onChange }: Props) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const replaceFileRef = useRef<HTMLInputElement>(null)
+  const [replacingIdx, setReplacingIdx] = useState<number | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
+  const [dragSrc, setDragSrc] = useState<number | null>(null)
+  const [dragOver, setDragOver] = useState<number | null>(null)
+
+  // Persist a media update to the server, then mirror locally.
+  const persist = async (next: ProjectMediaItem[]) => {
+    onChange(next)
+    try {
+      await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          slug,
+          project: { slug, media: next },
+        }),
+      })
+    } catch (err) {
+      console.error('Project media save failed:', err)
+      setStatus('✗ Save failed')
+      setTimeout(() => setStatus(null), 2000)
+    }
+  }
+
+  const uploadFile = async (file: File): Promise<ProjectMediaItem | null> => {
+    const extMatch = file.name.match(/\.[^.]+$/)
+    const ext = extMatch ? extMatch[0].toLowerCase() : ''
+    const pathname = `media/projects/${slug}/${slugify(client || file.name.replace(/\.[^.]+$/, ''))}-${Date.now().toString(36)}${ext}`
+    try {
+      const blob = await upload(pathname, file, {
+        access: 'public',
+        handleUploadUrl: '/api/upload-token',
+      })
+      return {
+        name: blob.pathname.split('/').pop() || pathname.split('/').pop() || file.name,
+        path: blob.url,
+      }
+    } catch (err) {
+      console.error('Project media upload failed:', err)
+      return null
+    }
+  }
+
+  const handleAdd = async (files: FileList | null) => {
+    if (!files?.length) return
+    setUploading(true)
+    setStatus(null)
+    const next = [...media]
+    let count = 0
+    for (const file of Array.from(files)) {
+      const item = await uploadFile(file)
+      if (item) { next.push(item); count++ }
+      // Persist incrementally so a network blip mid-batch doesn't lose work.
+      await persist([...next])
+    }
+    setUploading(false)
+    setStatus(`✓ Added ${count}`)
+    setTimeout(() => setStatus(null), 1800)
+  }
+
+  const handleReplace = async (idx: number, file: File) => {
+    setUploadingIdx(idx)
+    setStatus(null)
+    const item = await uploadFile(file)
+    if (item) {
+      const next = media.map((m, i) => i === idx ? item : m)
+      await persist(next)
+      setStatus('✓ Replaced')
+    } else {
+      setStatus('✗ Replace failed')
+    }
+    setUploadingIdx(null)
+    setReplacingIdx(null)
+    setTimeout(() => setStatus(null), 1800)
+  }
+
+  const handleDelete = async (idx: number) => {
+    const next = media.filter((_, i) => i !== idx)
+    await persist(next)
+  }
+
+  const handleReorder = async (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= media.length || to >= media.length) return
+    const next = [...media]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    await persist(next)
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 z-[9998]"
+            style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)' }}
+          />
+          {/* Drawer */}
+          <motion.aside
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+            className="fixed top-0 right-0 bottom-0 z-[9999] flex flex-col"
+            style={{
+              width: 'min(480px, 92vw)',
+              background: '#111',
+              color: '#fff',
+              borderLeft: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '-10px 0 40px rgba(0,0,0,0.5)',
+            }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+              <div>
+                <h3 className="text-[12px] font-bold uppercase tracking-[0.12em]">{client} — Media</h3>
+                <p className="text-white/40 text-[8px] mt-1 uppercase tracking-[0.1em]">
+                  {media.length} item{media.length !== 1 ? 's' : ''} · drag to reorder
+                </p>
+              </div>
+              <button
+                onClick={onClose}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {status && (
+              <p className={`mx-5 mt-3 text-[9px] ${status.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>{status}</p>
+            )}
+
+            {/* Item list */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2">
+              {media.length === 0 && (
+                <p className="text-white/30 text-[9px] py-8 text-center">
+                  No media yet. Click <span className="text-white/60 font-bold">Add</span> below to upload.
+                </p>
+              )}
+              {media.map((item, i) => {
+                const indicatorAbove = dragOver === i && dragSrc !== null && dragSrc > i
+                const indicatorBelow = dragOver === i && dragSrc !== null && dragSrc < i
+                return (
+                  <div
+                    key={`${item.path}-${i}`}
+                    draggable
+                    onDragStart={(e) => {
+                      setDragSrc(i)
+                      e.dataTransfer.effectAllowed = 'move'
+                      try { e.dataTransfer.setData('text/plain', String(i)) } catch {}
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      if (dragSrc !== null && dragSrc !== i) setDragOver(i)
+                    }}
+                    onDragLeave={(e) => {
+                      if (e.currentTarget.contains(e.relatedTarget as Node)) return
+                      setDragOver(prev => prev === i ? null : prev)
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      if (dragSrc !== null && dragSrc !== i) handleReorder(dragSrc, i)
+                      setDragSrc(null)
+                      setDragOver(null)
+                    }}
+                    onDragEnd={() => { setDragSrc(null); setDragOver(null) }}
+                    className="flex items-center gap-3 p-2 rounded-lg border border-white/8 bg-white/3 hover:bg-white/5 transition-colors group"
+                    style={{
+                      opacity: dragSrc === i ? 0.4 : 1,
+                      borderTop: indicatorAbove ? '2px solid rgba(255,255,255,0.6)' : undefined,
+                      borderBottom: indicatorBelow ? '2px solid rgba(255,255,255,0.6)' : undefined,
+                      cursor: dragSrc === i ? 'grabbing' : 'default',
+                    }}
+                  >
+                    <span className="text-white/30 group-hover:text-white/60 text-[14px] select-none" style={{ cursor: 'grab' }} title="Drag to reorder">
+                      ⋮⋮
+                    </span>
+                    <div className="w-14 h-14 rounded overflow-hidden bg-black flex-shrink-0">
+                      {item.path && (isVideo(item.path) ? (
+                        <video src={item.path} muted className="w-full h-full object-cover" />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={item.path} alt="" className="w-full h-full object-cover" />
+                      ))}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white/80 text-[10px] truncate" title={item.name || item.path}>
+                        {String(i + 1).padStart(2, '0')} · {item.name || item.path?.split('/').pop()}
+                      </p>
+                      <p className="text-white/30 text-[8px] uppercase tracking-[0.1em] mt-0.5">
+                        {item.path ? (isVideo(item.path) ? 'Video' : 'Image') : '—'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setReplacingIdx(i)
+                        replaceFileRef.current?.click()
+                      }}
+                      disabled={uploadingIdx === i}
+                      className="px-2.5 py-1 rounded text-[7px] uppercase tracking-[0.1em] font-bold text-blue-400/70 border border-blue-400/20 hover:bg-blue-400/10 transition-all disabled:opacity-40"
+                    >
+                      {uploadingIdx === i ? '…' : 'Replace'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(i)}
+                      className="px-2 py-1 rounded text-[8px] text-red-400/60 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                      aria-label="Delete"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Footer: Add button */}
+            <div className="px-5 py-4 border-t border-white/10">
+              <input
+                ref={fileRef}
+                type="file"
+                className="hidden"
+                accept="image/*,video/*"
+                multiple
+                onChange={(e) => {
+                  handleAdd(e.target.files)
+                  if (fileRef.current) fileRef.current.value = ''
+                }}
+              />
+              <input
+                ref={replaceFileRef}
+                type="file"
+                className="hidden"
+                accept="image/*,video/*"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f && replacingIdx !== null) handleReplace(replacingIdx, f)
+                  if (replaceFileRef.current) replaceFileRef.current.value = ''
+                }}
+              />
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="w-full py-2.5 rounded-full text-[9px] uppercase tracking-[0.12em] font-bold text-white/80 border border-white/20 hover:bg-white/5 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50"
+              >
+                {uploading ? 'Uploading…' : '+ Add media (multi-select OK)'}
+              </button>
+            </div>
+          </motion.aside>
+        </>
+      )}
+    </AnimatePresence>
+  )
+}

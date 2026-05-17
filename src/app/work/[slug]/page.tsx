@@ -12,6 +12,7 @@ import { useDarkMode } from '@/contexts/DarkModeContext'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRef } from 'react'
 import EditableText from '@/components/EditableText'
+import ProjectMediaPanel, { type ProjectMediaItem } from '@/components/ProjectMediaPanel'
 import { useEditMode } from '@/contexts/EditModeContext'
 
 const featuredProjects = projects.filter(p => p.featured)
@@ -23,17 +24,50 @@ const clientLogos: Record<string, { src: string; width: number; height: number }
   'Adidas Rugby': { src: '/assets/Logos/Logo_ADIDAS.webp', width: 200, height: 80 },
 }
 
-// Media pool — videos and images from TestMedia folder
+// Test-media pool — fallback used ONLY when a project has no admin-uploaded
+// media yet, so the page doesn't render blank.
 const videoPool = ['/assets/TestMedia/video_01.mp4', '/assets/TestMedia/video_02.mp4', '/assets/TestMedia/video_03.mp4']
 const imagePool = ['/assets/TestMedia/Image_01.avif', '/assets/TestMedia/Image_02.avif', '/assets/TestMedia/Image_03.avif']
 
-// Deterministic shuffle based on slug so each project gets consistent but different media
-function getProjectMedia(slug: string) {
+// Local renderable shape — different from the admin's persisted ProjectMediaItem
+// (which is { name?, path? }). This one is resolved + classified for rendering.
+type RenderableMedia = { type: 'video' | 'image'; src: string; name?: string }
+
+function classifyMedia(path: string): 'video' | 'image' {
+  return /\.(mp4|webm|mov)$/i.test(path) ? 'video' : 'image'
+}
+
+/**
+ * Resolve the media to render for a project. Prefers admin-uploaded media
+ * (from the project's `media` field in /api/projects). If the project has no
+ * admin media yet, falls back to a deterministic shuffle of the test pool so
+ * the layout still has content while the user populates it.
+ */
+function getProjectMedia(
+  slug: string,
+  adminMedia?: Array<{ name?: string; path?: string }> | null,
+): { heroVideo: string; media: RenderableMedia[] } {
+  if (adminMedia && adminMedia.length > 0) {
+    const items: RenderableMedia[] = []
+    for (const m of adminMedia) {
+      if (m?.path) {
+        items.push({ type: classifyMedia(m.path), src: m.path, name: m.name })
+      }
+    }
+    if (items.length > 0) {
+      const firstVideo = items.find(i => i.type === 'video')
+      return {
+        heroVideo: firstVideo?.src || items[0].src,
+        media: items,
+      }
+    }
+  }
+  // Fallback: deterministic test pool
   let hash = 0
   for (let i = 0; i < slug.length; i++) hash = ((hash << 5) - hash) + slug.charCodeAt(i)
   hash = Math.abs(hash)
   const heroVideo = videoPool[hash % videoPool.length]
-  const media: { type: 'video' | 'image'; src: string }[] = []
+  const media: RenderableMedia[] = []
   for (let i = 0; i < 8; i++) {
     const seed = hash + i * 7
     if (seed % 3 === 0) {
@@ -59,6 +93,11 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   const [adminLoading, setAdminLoading] = useState(!codeProject)
   const { editMode, addChange } = useEditMode()
   const [logoScale, setLogoScale] = useState(100)
+  // Admin-supplied media list (preferred). Held in local state so the
+  // inline media manager can mutate it without a full refetch. Hooks must
+  // sit above any early returns below, hence declared here.
+  const [localMedia, setLocalMedia] = useState<Array<{ name?: string; path?: string }> | null>(null)
+  const [mediaPanelOpen, setMediaPanelOpen] = useState(false)
 
   // Always fetch admin data — for code projects it may have overrides (logo, brief, etc.)
   useEffect(() => {
@@ -80,6 +119,13 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
     localStorage.setItem(key, String(current))
     setViewCount(current)
   }, [params.slug])
+
+  // Mirror the latest admin media into local state — used by the inline
+  // media manager + by getProjectMedia() when rendering the page.
+  useEffect(() => {
+    const m = (adminProject?.media as Array<{ name?: string; path?: string }> | undefined) || null
+    setLocalMedia(m)
+  }, [adminProject])
 
   // Merge: code project as base, admin data as overrides
   const baseProject = codeProject || (adminProject ? {
@@ -248,7 +294,7 @@ For licensing inquiries: carterjordan75@gmail.com
 
   const mediaBlocks = project.content?.filter(b => b.type === 'image' || b.type === 'image-grid' || b.type === 'video') || []
 
-  const projectMedia = getProjectMedia(params.slug)
+  const projectMedia = getProjectMedia(params.slug, localMedia ?? undefined)
   const pageBg = dark ? '#0a0a0a' : '#f5f5f0'
   const rule = dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
 
@@ -582,6 +628,32 @@ For licensing inquiries: carterjordan75@gmail.com
 
         <EmailPopup show={showEmail} onClose={() => setShowEmail(false)} />
         <AdminPortal show={showAdmin} onClose={() => setShowAdmin(false)} />
+
+        {/* Inline media manager — only mounted in edit mode. Floats a button
+            bottom-right; click opens a drawer with the full project media
+            list (drag-reorder / replace / delete / add). */}
+        {editMode && (
+          <>
+            <button
+              onClick={() => setMediaPanelOpen(true)}
+              className="fixed bottom-6 right-6 z-[9997] px-4 py-2.5 rounded-full text-[9px] uppercase tracking-[0.14em] font-bold text-white border border-white/20 backdrop-blur-md transition-all hover:scale-105 active:scale-95"
+              style={{
+                background: 'rgba(0,0,0,0.7)',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+              }}
+            >
+              🎞 Manage media ({(localMedia ?? []).length})
+            </button>
+            <ProjectMediaPanel
+              slug={params.slug}
+              client={project.client}
+              open={mediaPanelOpen}
+              onClose={() => setMediaPanelOpen(false)}
+              media={(localMedia ?? []) as ProjectMediaItem[]}
+              onChange={(next) => setLocalMedia(next)}
+            />
+          </>
+        )}
       </div>
     </PageTransition>
   )
