@@ -54,8 +54,14 @@ async function getFFmpeg(onStatus?: (msg: string) => void): Promise<unknown> {
       // and looks for `.default` — the UMD core has no ES module exports.
       const coreVer = '0.12.6'
       const baseCore = `https://unpkg.com/@ffmpeg/core@${coreVer}/dist/esm`
+      // classWorkerURL must be a complete URL — FFmpeg internally does
+      // `new URL(classWorkerURL, import.meta.url)` and in the webpack bundle
+      // `import.meta.url` resolves to a `file:///` base, which would build
+      // `file:///ffmpeg/worker.js` and then fail the cross-origin Worker
+      // construction check. Anchoring to window.location.origin sidesteps it.
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
       await ffmpeg.load({
-        classWorkerURL: '/ffmpeg/worker.js',
+        classWorkerURL: `${origin}/ffmpeg/worker.js`,
         coreURL: await toBlobURL(`${baseCore}/ffmpeg-core.js`, 'text/javascript'),
         wasmURL: await toBlobURL(`${baseCore}/ffmpeg-core.wasm`, 'application/wasm'),
       })
