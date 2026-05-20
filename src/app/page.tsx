@@ -48,15 +48,22 @@ export default function Home() {
   }, [])
 
   const playlist: HomeVideo[] = homeVideos
+  // Triple the playlist so we can loop scroll silently. The user always lives
+  // in the middle copy (sections [N, 2N-1]); the first copy (0..N-1) and last
+  // copy (2N..3N-1) act as buffers. When the user scrolls into a buffer copy,
+  // an effect shifts scrollTop back to the equivalent position in the middle
+  // copy — instant, invisible. Result: infinite scroll feel, no edge wrap
+  // animation, no flicker because the destination already looks identical
+  // to where the user was.
+  const N = playlist.length
+  const tripled: HomeVideo[] = N > 0 ? [...playlist, ...playlist, ...playlist] : []
 
-  // IntersectionObserver: whichever video section is most-visible becomes the
-  // active one. Off-screen sections pause their videos to keep CPU/network
-  // usage low when scrolling through a long playlist.
+  // IntersectionObserver tracks which absolute section is currently most
+  // visible. Active video (modulo N) is what plays / highlights the dot.
   useEffect(() => {
-    if (playlist.length === 0) return
+    if (tripled.length === 0) return
     const root = scrollContainerRef.current
     const obs = new IntersectionObserver((entries) => {
-      // Pick the entry with the highest intersectionRatio.
       let best: IntersectionObserverEntry | null = null
       for (const e of entries) {
         if (!best || e.intersectionRatio > best.intersectionRatio) best = e
@@ -70,10 +77,45 @@ export default function Home() {
     })
     sectionRefs.current.forEach(el => { if (el) obs.observe(el) })
     return () => obs.disconnect()
-  }, [playlist.length])
+  }, [tripled.length])
 
-  // Pause every video except the active one. Plays the active one from where
-  // it left off so the user sees something already moving when they snap.
+  // Once the playlist loads, jump the user to the START of the MIDDLE copy
+  // (section index N). They have plenty of scroll room in either direction
+  // before hitting a buffer-copy boundary.
+  useEffect(() => {
+    if (N === 0) return
+    const container = scrollContainerRef.current
+    const el = sectionRefs.current[N]
+    if (!container || !el) return
+    container.style.scrollBehavior = 'auto'
+    container.scrollTop = el.offsetTop
+    requestAnimationFrame(() => { container.style.scrollBehavior = '' })
+  }, [N])
+
+  // Silent shift: if the active section is in copy 1 (idx < N) or copy 3
+  // (idx >= 2N), translate scrollTop by ±N sections so the user lives in the
+  // middle copy. Direct scrollTop assignment + temporary scroll-behavior:auto
+  // = invisible jump.
+  useEffect(() => {
+    if (N === 0) return
+    const container = scrollContainerRef.current
+    if (!container) return
+    let shiftTo = -1
+    if (activeIdx < N) shiftTo = activeIdx + N
+    else if (activeIdx >= 2 * N) shiftTo = activeIdx - N
+    if (shiftTo < 0) return
+    const el = sectionRefs.current[shiftTo]
+    if (!el) return
+    const prev = container.style.scrollBehavior
+    container.style.scrollBehavior = 'auto'
+    container.scrollTop = el.offsetTop
+    requestAnimationFrame(() => { container.style.scrollBehavior = prev })
+    setActiveIdx(shiftTo)
+  }, [activeIdx, N])
+
+  // Play the active section's video, pause all others. Saves CPU + means
+  // each scroll into a section restarts the video at frame 0 (visually
+  // crisper than mid-clip).
   useEffect(() => {
     sectionRefs.current.forEach((sec, i) => {
       if (!sec) return
@@ -87,98 +129,36 @@ export default function Home() {
     })
   }, [activeIdx])
 
-  // Dot nav: native scrollIntoView. CSS scroll-snap snaps the result.
-  const goTo = (target: number) => {
-    const el = sectionRefs.current[target]
+  // playlist-index for UI (which dot to highlight, etc.) — wraps the tripled
+  // section index back into 0..N-1.
+  const playlistIdx = N > 0 ? ((activeIdx % N) + N) % N : 0
+
+  // Dot nav: scroll to the matching section in the MIDDLE copy. CSS
+  // scroll-snap handles the snap; smooth scrollIntoView animates the move.
+  const goTo = (playlistIndex: number) => {
+    if (N === 0) return
+    const el = sectionRefs.current[N + playlistIndex]
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  // Loop wrap: when the user is on the last video and tries to advance, jump
-  // to the first video (and vice versa for scrolling up from the first). The
-  // jump is instant (no smooth) so the loop feels seamless — the user sees
-  // a snap into the next section without a long animation through the whole
-  // page height.
+  // Keyboard nav — arrow keys / PageUp/Down / space. No edge-handling needed
+  // because the silent-shift effect keeps the user inside the middle copy.
   useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container || playlist.length < 2) return
-
-    const wrap = (dir: 1 | -1) => {
-      const targetIdx = dir > 0 ? 0 : playlist.length - 1
-      const el = sectionRefs.current[targetIdx]
-      if (!el) return
-      // Force the wrap to be truly instant. The container has CSS
-      // scroll-behavior: smooth (for the dot-nav animations) which would
-      // otherwise turn this jump into a 500ms ride past every section in
-      // between, making the last and first videos look like they're
-      // flickering/overlapping. Temporarily flip the CSS to auto, set
-      // scrollTop directly, then restore.
-      const prev = container.style.scrollBehavior
-      container.style.scrollBehavior = 'auto'
-      container.scrollTop = el.offsetTop
-      // Restore on next frame so any in-flight smooth scroll request from
-      // a previous gesture doesn't get applied to the wrapped position.
-      requestAnimationFrame(() => { container.style.scrollBehavior = prev || '' })
-      // Reflect the new active section immediately so the wheel-handler
-      // closure sees the updated index (avoids double-wrap on a fast
-      // repeated wheel gesture).
-      setActiveIdx(targetIdx)
-    }
-
-    const handleWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) < 12) return
-      const atLast = activeIdx === playlist.length - 1
-      const atFirst = activeIdx === 0
-      if (e.deltaY > 0 && atLast) {
-        e.preventDefault()
-        wrap(1)
-      } else if (e.deltaY < 0 && atFirst) {
-        e.preventDefault()
-        wrap(-1)
-      }
-    }
-    container.addEventListener('wheel', handleWheel, { passive: false })
-
-    let touchStartY = 0
-    const handleTouchStart = (e: TouchEvent) => { touchStartY = e.touches[0].clientY }
-    const handleTouchEnd = (e: TouchEvent) => {
-      const dy = touchStartY - e.changedTouches[0].clientY
-      if (Math.abs(dy) < 40) return
-      const atLast = activeIdx === playlist.length - 1
-      const atFirst = activeIdx === 0
-      if (dy > 0 && atLast) wrap(1)
-      else if (dy < 0 && atFirst) wrap(-1)
-    }
-    container.addEventListener('touchstart', handleTouchStart, { passive: true })
-    container.addEventListener('touchend', handleTouchEnd, { passive: true })
-
+    if (N === 0) return
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
-        if (activeIdx === playlist.length - 1) {
-          e.preventDefault()
-          wrap(1)
-        } else {
-          e.preventDefault()
-          goTo(activeIdx + 1)
-        }
+        e.preventDefault()
+        const el = sectionRefs.current[activeIdx + 1]
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
       } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
-        if (activeIdx === 0) {
-          e.preventDefault()
-          wrap(-1)
-        } else {
-          e.preventDefault()
-          goTo(activeIdx - 1)
-        }
+        e.preventDefault()
+        const el = sectionRefs.current[activeIdx - 1]
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }
     }
     window.addEventListener('keydown', handleKey)
-
-    return () => {
-      container.removeEventListener('wheel', handleWheel)
-      container.removeEventListener('touchstart', handleTouchStart)
-      container.removeEventListener('touchend', handleTouchEnd)
-      window.removeEventListener('keydown', handleKey)
-    }
-  }, [activeIdx, playlist.length])
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [activeIdx, N])
 
   return (
     <PageTransition>
@@ -200,10 +180,11 @@ export default function Home() {
           overscrollBehavior: 'contain',
         }}
       >
-        {/* Vertical stack of full-viewport video sections. Each section
-            takes one viewport height and snaps to the top of the scroll
-            container. */}
-        {playlist.map((v, i) => (
+        {/* Vertical stack of full-viewport video sections — tripled
+            playlist so the user can scroll infinitely without ever hitting
+            an edge. The silent-shift effect above keeps them in the middle
+            copy. */}
+        {tripled.map((v, i) => (
           <section
             key={`${v.src}-${i}`}
             ref={(el) => { sectionRefs.current[i] = el }}
@@ -212,7 +193,7 @@ export default function Home() {
           >
             <video
               src={v.src}
-              autoPlay={i === 0}
+              autoPlay={i === N}
               muted
               loop
               playsInline
@@ -253,14 +234,14 @@ export default function Home() {
               </div>
             )}
 
-            {/* Scroll cue on the first section only — fades out once the user
-                starts scrolling. */}
-            {i === 0 && playlist.length > 1 && (
+            {/* Scroll cue on the very first render only (middle copy's
+                first section), fades once the user advances. */}
+            {i === N && N > 1 && (
               <div
                 className="absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none flex flex-col items-center gap-2"
                 style={{
                   bottom: '6.5rem',
-                  opacity: activeIdx === 0 ? 0.7 : 0,
+                  opacity: playlistIdx === 0 ? 0.7 : 0,
                   transition: 'opacity 0.4s',
                 }}
               >
@@ -273,8 +254,9 @@ export default function Home() {
           </section>
         ))}
 
-        {/* Right-rail nav dots — one per video, sticky vertically centered. */}
-        {playlist.length > 1 && (
+        {/* Right-rail nav dots — one per UNIQUE video. Active dot is the
+            playlist index (active section mod N). */}
+        {N > 1 && (
           <div className="fixed right-6 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-3">
             {playlist.map((v, i) => (
               <button
@@ -284,8 +266,8 @@ export default function Home() {
                 className="rounded-full transition-all duration-300"
                 style={{
                   width: 8,
-                  height: i === activeIdx ? 28 : 8,
-                  background: i === activeIdx ? '#fff' : 'rgba(255,255,255,0.4)',
+                  height: i === playlistIdx ? 28 : 8,
+                  background: i === playlistIdx ? '#fff' : 'rgba(255,255,255,0.4)',
                   border: 'none',
                   padding: 0,
                   cursor: 'pointer',
@@ -328,10 +310,8 @@ export default function Home() {
         </button>
       </div>
 
-      {/* The blurb that used to sit centred in the footer — kept here as a
-          subtle mid-page tagline that fades out once the user starts scrolling.
-          Hidden behind the floating action pill so they don't overlap. */}
-      {activeIdx === 0 && (
+      {/* Tagline shown on the first video in the playlist (any copy). */}
+      {playlistIdx === 0 && (
         <FooterBlurb
           pageId="work"
           className="hidden md:block fixed bottom-20 left-1/2 -translate-x-1/2 z-20 text-[8px] leading-[1.5] tracking-[0.08em] uppercase max-w-md text-center pointer-events-none"
