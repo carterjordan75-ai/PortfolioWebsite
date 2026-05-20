@@ -92,26 +92,57 @@ export default function Home() {
     requestAnimationFrame(() => { container.style.scrollBehavior = '' })
   }, [N])
 
-  // Silent shift: if the active section is in copy 1 (idx < N) or copy 3
-  // (idx >= 2N), translate scrollTop by ±N sections so the user lives in the
-  // middle copy. Direct scrollTop assignment + temporary scroll-behavior:auto
-  // = invisible jump.
+  // Silent shift: if the user lands in a buffer copy, translate scrollTop by
+  // ±N sections so they live in the middle copy. CRITICAL: we wait for the
+  // CSS scroll-snap animation to FINISH before shifting — otherwise the
+  // teleport happens mid-snap and the user momentarily sees two sections
+  // overlap (the buffer copy sliding in + the middle copy popped in). We
+  // listen for the native `scrollend` event (Chrome 114+, Safari 17+, FF
+  // 109+); on older browsers we fall back to a debounced no-scroll-for-150ms
+  // timer.
   useEffect(() => {
     if (N === 0) return
     const container = scrollContainerRef.current
     if (!container) return
-    let shiftTo = -1
-    if (activeIdx < N) shiftTo = activeIdx + N
-    else if (activeIdx >= 2 * N) shiftTo = activeIdx - N
-    if (shiftTo < 0) return
-    const el = sectionRefs.current[shiftTo]
-    if (!el) return
-    const prev = container.style.scrollBehavior
-    container.style.scrollBehavior = 'auto'
-    container.scrollTop = el.offsetTop
-    requestAnimationFrame(() => { container.style.scrollBehavior = prev })
-    setActiveIdx(shiftTo)
-  }, [activeIdx, N])
+
+    const maybeShift = () => {
+      // Read the actual scroll position, not the React state — that way the
+      // shift is based on where the snap *settled*, not where the IO last
+      // fired (the IO often fires mid-animation).
+      const sectionHeight = container.clientHeight
+      if (sectionHeight <= 0) return
+      const settledIdx = Math.round(container.scrollTop / sectionHeight)
+      let shiftTo = -1
+      if (settledIdx < N) shiftTo = settledIdx + N
+      else if (settledIdx >= 2 * N) shiftTo = settledIdx - N
+      if (shiftTo < 0) return
+      const el = sectionRefs.current[shiftTo]
+      if (!el) return
+      const prev = container.style.scrollBehavior
+      container.style.scrollBehavior = 'auto'
+      container.scrollTop = el.offsetTop
+      requestAnimationFrame(() => { container.style.scrollBehavior = prev })
+      setActiveIdx(shiftTo)
+    }
+
+    // Prefer native scrollend if available (precise; fires once when scroll
+    // really stops). Always also attach a debounced scroll listener as a
+    // belt-and-suspenders fallback for browsers that don't support scrollend.
+    let scrollTimer: ReturnType<typeof setTimeout> | null = null
+    const onScroll = () => {
+      if (scrollTimer) clearTimeout(scrollTimer)
+      scrollTimer = setTimeout(maybeShift, 150)
+    }
+    container.addEventListener('scroll', onScroll, { passive: true })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(container as any).addEventListener('scrollend', maybeShift)
+    return () => {
+      container.removeEventListener('scroll', onScroll)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(container as any).removeEventListener('scrollend', maybeShift)
+      if (scrollTimer) clearTimeout(scrollTimer)
+    }
+  }, [N])
 
   // Keep every triple-playlist video playing continuously and synced.
   // Pausing the non-active copies was the source of the loop flicker:
