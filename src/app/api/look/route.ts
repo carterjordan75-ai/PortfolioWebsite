@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { put } from '@vercel/blob'
 import {
   listBlobs,
   readJsonBlob,
@@ -77,6 +78,77 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+
+    // Register a new gallery item by writing its meta blob. Called by the
+    // admin Look panel AFTER it has uploaded the file directly to Vercel
+    // Blob via /api/upload-token. Without this, the /api/look GET handler
+    // (which walks meta blobs) would never see the new item and it would
+    // vanish on reload.
+    if (body.action === 'add-item' && body.fileName && body.path) {
+      const metadata: MetaItem = {
+        fileName: body.fileName,
+        path: body.path,
+        url: body.path,
+        credits: body.credits || '',
+        link: body.link || '',
+        uploadedAt: new Date().toISOString(),
+      }
+      const metaPath = `${META_PREFIX}${body.fileName}.json`
+      await put(metaPath, JSON.stringify(metadata, null, 2), {
+        access: 'public',
+        contentType: 'application/json',
+        addRandomSuffix: false,
+        allowOverwrite: true,
+      })
+      // Prepend to the order so it shows first in the gallery.
+      const existing = (await readJsonBlob<string[] | null>(ORDER_KEY, null)) || []
+      const nextOrder = [body.fileName, ...existing.filter(f => f !== body.fileName)]
+      await writeJsonBlob(ORDER_KEY, nextOrder)
+      return NextResponse.json({ success: true, item: metadata })
+    }
+
+    // Patch an existing item's credits/link by rewriting its meta blob.
+    if (body.action === 'update-item' && body.fileName) {
+      const metaPath = `${META_PREFIX}${body.fileName}.json`
+      // Find the existing meta to merge into.
+      const blobs = await listBlobs(metaPath)
+      const found = blobs.find(b => b.pathname === metaPath)
+      let current: MetaItem = { fileName: body.fileName }
+      if (found) {
+        try {
+          const res = await fetch(found.url, { cache: 'no-store' })
+          if (res.ok) current = await res.json() as MetaItem
+        } catch {}
+      }
+      const updated: MetaItem = {
+        ...current,
+        fileName: body.fileName,
+        ...(body.credits !== undefined ? { credits: body.credits } : {}),
+        ...(body.link !== undefined ? { link: body.link } : {}),
+      }
+      await put(metaPath, JSON.stringify(updated, null, 2), {
+        access: 'public',
+        contentType: 'application/json',
+        addRandomSuffix: false,
+        allowOverwrite: true,
+      })
+      return NextResponse.json({ success: true, item: updated })
+    }
+
+    // Delete an item: removes the meta blob, the media file, and drops the
+    // fileName from the order list. Use this from the admin Delete button
+    // instead of /api/upload's DELETE (which expects a different request
+    // shape and only handles a subset of cleanup).
+    if (body.action === 'remove-item' && body.fileName) {
+      await deleteBlob(`${META_PREFIX}${body.fileName}.json`)
+      await deleteBlob(`media/look/${body.fileName}`)
+      // If the meta included a `path` that was a full URL, delete that too.
+      if (body.url) await deleteBlob(body.url)
+      const existing = (await readJsonBlob<string[] | null>(ORDER_KEY, null)) || []
+      const next = existing.filter(f => f !== body.fileName)
+      await writeJsonBlob(ORDER_KEY, next)
+      return NextResponse.json({ success: true })
+    }
 
     if (body.action === 'reorder' && Array.isArray(body.order)) {
       await writeJsonBlob(ORDER_KEY, body.order)

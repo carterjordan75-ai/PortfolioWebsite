@@ -1330,15 +1330,36 @@ function LookUploadPanel() {
     setStatus(null)
     try {
       const { url, fileName } = await uploadFileToBlob(selectedFile, 'look', credits, setStatus)
+      // The file is now in Blob, but /api/look GET walks meta blobs to find
+      // items — without registering the item server-side it would vanish on
+      // reload. Call /api/look with add-item to write the meta blob.
+      const regRes = await fetch('/api/look', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'add-item',
+          fileName,
+          path: url,
+          credits,
+          link,
+        }),
+      })
+      if (!regRes.ok) {
+        let detail = `HTTP ${regRes.status}`
+        try { detail += ': ' + (await regRes.text()).slice(0, 200) } catch {}
+        throw new Error(`Register failed (${detail})`)
+      }
       setStatus(`✓ Uploaded: ${fileName}`)
-      setExistingItems(prev => [{ fileName, path: url, credits }, ...prev])
+      setExistingItems(prev => [{ fileName, path: url, credits, link }, ...prev])
       setSelectedFile(null)
       setCredits('')
       setLink('')
       if (fileRef.current) fileRef.current.value = ''
     } catch (err) {
+      // Surface the actual reason rather than a generic "Upload failed".
+      const msg = err instanceof Error ? err.message : String(err)
       console.error('Look upload failed:', err)
-      setStatus('✗ Upload failed')
+      setStatus(`✗ Upload failed: ${msg}`)
     } finally {
       setUploading(false)
     }
@@ -1414,16 +1435,24 @@ function LookUploadPanel() {
                     e.stopPropagation()
                     if (!confirm('Delete this item?')) return
                     try {
-                      await fetch('/api/upload', {
-                        method: 'DELETE',
+                      const res = await fetch('/api/look', {
+                        method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ section: 'look', fileName: item.fileName }),
+                        body: JSON.stringify({
+                          action: 'remove-item',
+                          fileName: item.fileName,
+                          url: item.path,
+                        }),
                       })
+                      if (!res.ok) throw new Error(`HTTP ${res.status}`)
                       const updated = existingItems.filter((_, j) => j !== i)
                       setExistingItems(updated)
                       saveOrder(updated)
                       setStatus('✓ Deleted')
-                    } catch { setStatus('✗ Delete failed') }
+                    } catch (err) {
+                      const msg = err instanceof Error ? err.message : String(err)
+                      setStatus(`✗ Delete failed: ${msg}`)
+                    }
                   }}
                   className="px-2 py-0.5 rounded text-[6px] uppercase tracking-wider font-bold text-red-400/70 border border-red-400/20 hover:bg-red-400/10 transition-all"
                 >
@@ -1447,10 +1476,10 @@ function LookUploadPanel() {
                     placeholder="Credits"
                     onBlur={async (e) => {
                       const newCredits = e.target.value
-                      await fetch('/api/upload', {
-                        method: 'PATCH',
+                      await fetch('/api/look', {
+                        method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ section: 'look', fileName: item.fileName, credits: newCredits }),
+                        body: JSON.stringify({ action: 'update-item', fileName: item.fileName, credits: newCredits }),
                       })
                       setExistingItems(prev => prev.map((it, j) => j === i ? { ...it, credits: newCredits } : it))
                     }}
@@ -1462,10 +1491,10 @@ function LookUploadPanel() {
                     placeholder="Link URL"
                     onBlur={async (e) => {
                       const newLink = e.target.value
-                      await fetch('/api/upload', {
-                        method: 'PATCH',
+                      await fetch('/api/look', {
+                        method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ section: 'look', fileName: item.fileName, link: newLink }),
+                        body: JSON.stringify({ action: 'update-item', fileName: item.fileName, link: newLink }),
                       })
                       setExistingItems(prev => prev.map((it, j) => j === i ? { ...it, link: newLink } : it))
                     }}
