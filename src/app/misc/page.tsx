@@ -49,7 +49,12 @@ function MediaPanel({
   const [hasAudio, setHasAudio] = useState(false)
   // Gallery view — when true, the panel shows a grid of all items in this side
   // instead of the auto-cycling slideshow.
-  const [galleryView, setGalleryView] = useState(false)
+  // Default to gallery view (grid of all items) instead of single-item
+  // slideshow — otherwise newly uploaded items aren't visible until the
+  // auto-cycle reaches them. Users were reporting "missing media" because
+  // recent uploads sit at the end of the cycle queue. Grid shows everything
+  // at once; click the slideshow icon to switch.
+  const [galleryView, setGalleryView] = useState(true)
   // Which thumbnail (if any) is currently hovered in the gallery grid. Drives
   // a magnetic-repulsion effect on the surrounding tiles — every other tile
   // gets pushed away from the hovered one, with the push amount falling off
