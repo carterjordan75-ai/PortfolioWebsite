@@ -87,20 +87,109 @@ export default function Home() {
     })
   }, [activeIdx])
 
-  const goTo = (target: number) => {
+  // Custom snap-scroller. The browser's `scroll-behavior: smooth` is a slow
+  // ~500ms ease-in-out that feels sluggish for a vertical reel. This handler
+  // runs our own requestAnimationFrame loop with a tighter 350ms ease-out,
+  // and snaps to one section per wheel "burst" / arrow press so the page
+  // never lands between sections.
+  const animScrollRef = useRef<number | null>(null)
+  const isAnimatingRef = useRef(false)
+  const snapTo = (target: number) => {
+    const container = scrollContainerRef.current
     const el = sectionRefs.current[target]
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (!container || !el) return
+    if (animScrollRef.current) cancelAnimationFrame(animScrollRef.current)
+    const start = container.scrollTop
+    const distance = el.offsetTop - start
+    if (Math.abs(distance) < 1) return
+    const duration = 350
+    const startTime = performance.now()
+    const ease = (t: number) => 1 - Math.pow(1 - t, 3) // ease-out cubic
+    isAnimatingRef.current = true
+    const step = (now: number) => {
+      const progress = Math.min((now - startTime) / duration, 1)
+      container.scrollTop = start + distance * ease(progress)
+      if (progress < 1) {
+        animScrollRef.current = requestAnimationFrame(step)
+      } else {
+        animScrollRef.current = null
+        // Small cooldown so the wheel event burst that triggered us doesn't
+        // immediately fire another snap.
+        setTimeout(() => { isAnimatingRef.current = false }, 80)
+      }
+    }
+    animScrollRef.current = requestAnimationFrame(step)
   }
+
+  const goTo = (target: number) => snapTo(target)
+
+  // Wheel + touch input → one snap per gesture. We preventDefault on the
+  // wheel/touch events while the snap is animating so the user can't queue
+  // up multiple snaps from a single trackpad flick.
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container || playlist.length === 0) return
+
+    const handleWheel = (e: WheelEvent) => {
+      if (isAnimatingRef.current) { e.preventDefault(); return }
+      if (Math.abs(e.deltaY) < 8) return // ignore tiny scroll noise
+      e.preventDefault()
+      const dir = e.deltaY > 0 ? 1 : -1
+      const next = Math.max(0, Math.min(playlist.length - 1, activeIdx + dir))
+      if (next !== activeIdx) snapTo(next)
+    }
+    container.addEventListener('wheel', handleWheel, { passive: false })
+
+    // Touch: track start Y, on end compute swipe direction.
+    let touchStartY = 0
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0].clientY
+    }
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (isAnimatingRef.current) return
+      const dy = touchStartY - e.changedTouches[0].clientY
+      if (Math.abs(dy) < 40) return // ignore short taps
+      const dir = dy > 0 ? 1 : -1
+      const next = Math.max(0, Math.min(playlist.length - 1, activeIdx + dir))
+      if (next !== activeIdx) snapTo(next)
+    }
+    container.addEventListener('touchstart', handleTouchStart, { passive: true })
+    container.addEventListener('touchend', handleTouchEnd, { passive: true })
+
+    // Keyboard: arrows + page-down/up + space — same snap behaviour.
+    const handleKey = (e: KeyboardEvent) => {
+      if (isAnimatingRef.current) return
+      if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+        e.preventDefault()
+        const next = Math.min(playlist.length - 1, activeIdx + 1)
+        if (next !== activeIdx) snapTo(next)
+      } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+        e.preventDefault()
+        const next = Math.max(0, activeIdx - 1)
+        if (next !== activeIdx) snapTo(next)
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel)
+      container.removeEventListener('touchstart', handleTouchStart)
+      container.removeEventListener('touchend', handleTouchEnd)
+      window.removeEventListener('keydown', handleKey)
+      if (animScrollRef.current) cancelAnimationFrame(animScrollRef.current)
+    }
+  }, [activeIdx, playlist.length])
 
   return (
     <PageTransition>
       <PageLoader show={loading} mode="data" />
       <div
         ref={scrollContainerRef}
-        className="relative h-screen overflow-y-auto bg-black"
-        // CSS scroll-snap: each video section locks to the viewport so the
-        // page reads like a vertical reel rather than a free-scrolling list.
-        style={{ scrollSnapType: 'y mandatory', scrollBehavior: 'smooth' }}
+        className="relative h-screen overflow-y-auto overflow-x-hidden bg-black"
+        // Scroll is driven by our own snap handler (see useEffect with
+        // `handleWheel`). overscroll-contain stops the outer page from
+        // scrolling when the user hits the start/end of the reel.
+        style={{ overscrollBehavior: 'contain' }}
       >
         {/* Vertical stack of full-viewport video sections. Each section
             takes one viewport height and snaps to the top of the scroll
@@ -109,7 +198,7 @@ export default function Home() {
           <section
             key={`${v.src}-${i}`}
             ref={(el) => { sectionRefs.current[i] = el }}
-            className="relative w-full h-screen overflow-hidden bg-black snap-start snap-always"
+            className="relative w-full h-screen overflow-hidden bg-black"
           >
             <video
               src={v.src}
