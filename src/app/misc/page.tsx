@@ -49,12 +49,11 @@ function MediaPanel({
   const [hasAudio, setHasAudio] = useState(false)
   // Gallery view — when true, the panel shows a grid of all items in this side
   // instead of the auto-cycling slideshow.
-  // Default to gallery view (grid of all items) instead of single-item
-  // slideshow — otherwise newly uploaded items aren't visible until the
-  // auto-cycle reaches them. Users were reporting "missing media" because
-  // recent uploads sit at the end of the cycle queue. Grid shows everything
-  // at once; click the slideshow icon to switch.
-  const [galleryView, setGalleryView] = useState(true)
+  // Default to slideshow (full-side single item). Gallery icon toggles to
+  // grid. Previously default-on gallery view was a workaround for missing-
+  // media; the actual fix landed on /api/misc + project-media surfacing so
+  // we can go back to the cleaner slideshow on load.
+  const [galleryView, setGalleryView] = useState(false)
   // Which thumbnail (if any) is currently hovered in the gallery grid. Drives
   // a magnetic-repulsion effect on the surrounding tiles — every other tile
   // gets pushed away from the hovered one, with the push amount falling off
@@ -322,15 +321,16 @@ function MediaPanel({
         </div>
       )}
 
-      {/* Bottom left — prev arrow */}
+      {/* Bottom left — prev arrow. mix-blend-difference keeps it visible
+          against every video/image background. */}
       <button
         onClick={() => { prev(); resetTimer() }}
-        className="absolute bottom-4 left-4 z-10 w-10 h-10 rounded-full flex items-center justify-center text-white text-[14px] transition-all hover:scale-110 active:scale-95"
+        className="absolute bottom-4 left-4 z-10 w-10 h-10 rounded-full flex items-center justify-center text-[14px] transition-all hover:scale-110 active:scale-95"
         style={{
-          background: 'rgba(255,255,255,0.1)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          border: '1px solid rgba(255,255,255,0.15)',
+          color: '#ffffff',
+          background: 'transparent',
+          border: '1px solid rgba(255,255,255,0.85)',
+          mixBlendMode: 'difference',
         }}
       >
         ←
@@ -494,12 +494,15 @@ function MediaPanel({
           onClick={(e) => { e.stopPropagation(); setGalleryView(v => !v) }}
           className="w-10 h-10 rounded-full flex items-center justify-center hover:scale-110 active:scale-95"
           style={{
-            color: galleryView && !dark ? '#000000' : '#ffffff',
-            background: galleryView && !dark ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
-            border: `1px solid ${galleryView && !dark ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)'}`,
-            transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.18s ease-out, color 0.18s ease-out, border-color 0.18s ease-out',
+            // mix-blend: difference inverts the glyph against whatever's
+            // behind it — black on light backgrounds, white on dark — so
+            // the control stays visible against every video/image. No
+            // backdrop filter since blend-mode interacts badly with it.
+            color: '#ffffff',
+            background: 'transparent',
+            border: '1px solid rgba(255,255,255,0.85)',
+            mixBlendMode: 'difference',
+            transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
           }}
           aria-label={galleryView ? 'Switch to slideshow' : 'Switch to gallery'}
         >
@@ -535,14 +538,14 @@ function MediaPanel({
               exit={{ opacity: 0, scale: 0, width: 0 }}
               transition={{ duration: 0.42, ease: [0.34, 1.56, 0.64, 1] }}
               onClick={(e) => { e.stopPropagation(); setAudioOn(v => !v) }}
-              className="h-10 rounded-full flex items-center justify-center text-white hover:scale-110 active:scale-95"
+              className="h-10 rounded-full flex items-center justify-center hover:scale-110 active:scale-95"
               style={{
                 overflow: 'hidden',
                 flexShrink: 0,
-                background: 'rgba(255,255,255,0.1)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255,255,255,0.15)',
+                color: '#ffffff',
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.85)',
+                mixBlendMode: 'difference',
                 transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
               }}
               aria-label={audioOn ? 'Mute' : 'Unmute'}
@@ -584,12 +587,11 @@ function MediaPanel({
           onClick={onToggleExpand}
           className="w-10 h-10 rounded-full flex items-center justify-center hover:scale-110 active:scale-95"
           style={{
-            color: galleryView && !dark ? '#000000' : '#ffffff',
-            background: galleryView && !dark ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
-            border: `1px solid ${galleryView && !dark ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)'}`,
-            transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.18s ease-out, color 0.18s ease-out, border-color 0.18s ease-out',
+            color: '#ffffff',
+            background: 'transparent',
+            border: '1px solid rgba(255,255,255,0.85)',
+            mixBlendMode: 'difference',
+            transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
           }}
           aria-label={expanded ? 'Collapse' : 'Expand'}
         >
@@ -613,12 +615,12 @@ function MediaPanel({
       {!galleryView && (
         <button
           onClick={() => { next(); resetTimer() }}
-          className="absolute bottom-4 right-4 z-10 w-10 h-10 rounded-full flex items-center justify-center text-white text-[14px] transition-all hover:scale-110 active:scale-95"
+          className="absolute bottom-4 right-4 z-10 w-10 h-10 rounded-full flex items-center justify-center text-[14px] transition-all hover:scale-110 active:scale-95"
           style={{
-            background: 'rgba(255,255,255,0.1)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255,255,255,0.15)',
+            color: '#ffffff',
+            background: 'transparent',
+            border: '1px solid rgba(255,255,255,0.85)',
+            mixBlendMode: 'difference',
           }}
         >
           →
@@ -661,9 +663,22 @@ export default function ExperimentsPage() {
           media?: Array<{ name?: string; path?: string }>
         }
         const projects = (projData.projects || []) as AdminProj[]
+        // Set of client names that already have at least one misc entry —
+        // those projects are considered "represented" in misc, so we skip
+        // re-adding their project media (the misc list is the user-curated
+        // truth for them). Only projects with ZERO misc representation get
+        // their media auto-surfaced. This is what stops the same project
+        // appearing twice when historical mirror entries already exist.
+        const clientsInMisc = new Set(
+          miscItems
+            .map(m => (typeof m.title === 'string' ? m.title.trim() : ''))
+            .filter(Boolean),
+        )
         const featuredProjectItems: MediaItem[] = []
         for (const p of projects) {
           if (!p.featured) continue
+          const client = (p.client || p.title || '').trim()
+          if (client && clientsInMisc.has(client)) continue
           const media = p.media || []
           const tags = p.tags && p.tags.length > 0 ? p.tags : ['3D']
           for (const m of media) {
@@ -672,14 +687,13 @@ export default function ExperimentsPage() {
             featuredProjectItems.push({
               src: m.path,
               type: isVideo ? 'video' : 'image',
-              title: p.client || p.title || 'Featured',
+              title: client || 'Featured',
               year: Number(p.year) || new Date().getFullYear(),
               medium: tags,
             })
           }
         }
-        // Dedupe by src — misc entries take precedence (they have any
-        // user-edited title/medium overrides).
+        // Dedupe by src across the union, misc first.
         const seen = new Set(miscItems.map(m => m.src))
         const combined: MediaItem[] = [...miscItems]
         for (const it of featuredProjectItems) {
