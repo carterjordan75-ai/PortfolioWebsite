@@ -57,16 +57,29 @@ export default function LookPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  // Only render what the admin has uploaded. Triple the array so the
-  // infinite-scroll animation has enough content to loop seamlessly when
-  // there's a small number of items. If empty, allItems stays empty too.
-  const allItems = uploadedItems.length > 0
-    ? [...uploadedItems, ...uploadedItems, ...uploadedItems]
-    : []
+  // We only triple the list when there's enough content to make the
+  // infinite-scroll loop feel seamless — at least 12 items fills 3 rows of
+  // a 4-column grid which is what the auto-scroll animation needs. Below
+  // that threshold we render the items once at the top so a single upload
+  // doesn't look like an empty page.
+  const TRIPLE_THRESHOLD = 12
+  const shouldLoop = uploadedItems.length >= TRIPLE_THRESHOLD
+  const allItems = uploadedItems.length === 0
+    ? []
+    : shouldLoop
+      ? [...uploadedItems, ...uploadedItems, ...uploadedItems]
+      : uploadedItems
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
+    // Only auto-scroll + loop when there are enough items to loop. With a
+    // sparse gallery the loop would scroll past every item and land on
+    // empty space; better to just sit at the top and show what's there.
+    if (!shouldLoop) {
+      el.scrollTop = 0
+      return
+    }
 
     let lastTime = performance.now()
 
@@ -87,7 +100,7 @@ export default function LookPage() {
     el.scrollTop = el.scrollHeight / 3
     animRef.current = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(animRef.current)
-  }, [activeItem])
+  }, [activeItem, shouldLoop])
 
   useEffect(() => {
     const el = scrollRef.current
