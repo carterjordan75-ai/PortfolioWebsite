@@ -214,6 +214,16 @@ export default function ArchivePage() {
                   borderBottom: `2px solid ${borderColor}`,
                   background: isHovered ? color : 'transparent',
                   color: isHovered ? '#ffffff' : undefined,
+                  // Asymmetric transition — instant snap when the cursor
+                  // ENTERS the row, then a slow 1s ease-out when it leaves.
+                  // The transition property is set at the same time as the
+                  // new background, so the browser uses the new duration to
+                  // animate towards the new value. Combined with the fact
+                  // that each row's isHovered is independent, moving the
+                  // cursor across rows leaves a trail of fading highlights.
+                  transition: isHovered
+                    ? 'background 0.08s ease-out, color 0.08s ease-out'
+                    : 'background 1s ease-out, color 1s ease-out',
                 }}
                 onMouseEnter={() => setHoveredRow(`f-${project.slug}`)}
                 onMouseLeave={() => setHoveredRow(null)}
@@ -247,6 +257,9 @@ export default function ArchivePage() {
                     background: isHovered ? (dark ? '#ffffff' : '#000000') : 'transparent',
                     color: isHovered ? (dark ? '#000000' : '#ffffff') : undefined,
                     cursor: 'default',
+                    transition: isHovered
+                      ? 'background 0.08s ease-out, color 0.08s ease-out'
+                      : 'background 1s ease-out, color 1s ease-out',
                   }}
                   onMouseEnter={() => setHoveredRow(`a-${project.slug}`)}
                   onMouseLeave={() => setHoveredRow(null)}
@@ -272,7 +285,9 @@ export default function ArchivePage() {
                     borderBottom: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
                     background: isHovered ? hoverColor : 'transparent',
                     color: isHovered ? '#ffffff' : undefined,
-                    transition: 'background 0.05s ease, color 0.05s ease',
+                    transition: isHovered
+                      ? 'background 0.08s ease-out, color 0.08s ease-out'
+                      : 'background 1s ease-out, color 1s ease-out',
                   }}
                   onMouseEnter={() => setHoveredRow(`emp-${job.company}`)}
                   onMouseLeave={() => setHoveredRow(null)}
