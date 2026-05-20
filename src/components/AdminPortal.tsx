@@ -8,6 +8,7 @@ import { useEditMode } from '@/contexts/EditModeContext'
 import { downloadAssetsZip } from '@/lib/downloadZip'
 import { prepareForUpload, isMp4 } from '@/lib/convertVideo'
 import { deleteBlobUrls } from '@/lib/blobClient'
+import { mirrorToMisc } from '@/lib/miscMirror'
 
 const ADMIN_PASSWORD = '3432'
 
@@ -1009,6 +1010,21 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
                           try {
                             const { url, fileName } = await uploadFileToBlob(file, `projects/${slug}`, client, setStatus)
                             setMediaFiles(prev => [...prev, { name: fileName, path: url }])
+                            // Mirror to /misc when the project is featured —
+                            // same behaviour as the inline ProjectMediaPanel
+                            // drawer. Was missing from this code path which
+                            // is why uploads here weren't showing up in misc.
+                            if (featured) {
+                              const isVideoFile = /\.(mp4|webm|mov|m4v)$/i.test(fileName) || /\.(mp4|webm|mov|m4v)$/i.test(url)
+                              void mirrorToMisc({
+                                src: url,
+                                title: client,
+                                year: String(year),
+                                medium: (medium && medium.length > 0 ? medium : ['3D']),
+                                type: isVideoFile ? 'video' : 'image',
+                                fileName,
+                              })
+                            }
                           } catch (err) { console.error('Project media upload failed:', err) }
                         }
                         setUploadingMedia(false)

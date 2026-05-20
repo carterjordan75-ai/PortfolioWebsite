@@ -641,17 +641,56 @@ export default function ExperimentsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/misc')
-      .then(r => r.json())
-      .then(data => {
-        if (data.items?.length) {
-          const items = data.items as MediaItem[]
-          // KEEPING the medium-based split: left = Generative, right = everything else.
-          // Order is preserved exactly as it appears in the admin panel so the
-          // slideshow and gallery views both match the admin sequence.
-          setLeft(items.filter(isGenerative))
-          setRight(items.filter(m => !isGenerative(m)))
+    // Pull both /api/misc AND /api/projects so we can surface featured-project
+    // media on /misc even if the auto-mirror missed a batch (which was the
+    // case for the tiffany-holiday-campaign uploads before the AdminPortal
+    // upload path was wired to mirror). The union is deduped by `src`.
+    Promise.all([
+      fetch('/api/misc').then(r => r.json()).catch(() => ({ items: [] })),
+      fetch('/api/projects').then(r => r.json()).catch(() => ({ projects: [] })),
+    ])
+      .then(([miscData, projData]) => {
+        const miscItems = (miscData.items || []) as MediaItem[]
+        type AdminProj = {
+          slug?: string
+          client?: string
+          title?: string
+          year?: number | string
+          featured?: boolean
+          tags?: string[]
+          media?: Array<{ name?: string; path?: string }>
         }
+        const projects = (projData.projects || []) as AdminProj[]
+        const featuredProjectItems: MediaItem[] = []
+        for (const p of projects) {
+          if (!p.featured) continue
+          const media = p.media || []
+          const tags = p.tags && p.tags.length > 0 ? p.tags : ['3D']
+          for (const m of media) {
+            if (!m.path) continue
+            const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(m.path) || /\.(mp4|webm|mov|m4v)$/i.test(m.name || '')
+            featuredProjectItems.push({
+              src: m.path,
+              type: isVideo ? 'video' : 'image',
+              title: p.client || p.title || 'Featured',
+              year: Number(p.year) || new Date().getFullYear(),
+              medium: tags,
+            })
+          }
+        }
+        // Dedupe by src — misc entries take precedence (they have any
+        // user-edited title/medium overrides).
+        const seen = new Set(miscItems.map(m => m.src))
+        const combined: MediaItem[] = [...miscItems]
+        for (const it of featuredProjectItems) {
+          if (!seen.has(it.src)) {
+            combined.push(it)
+            seen.add(it.src)
+          }
+        }
+        if (combined.length === 0) return
+        setLeft(combined.filter(isGenerative))
+        setRight(combined.filter(m => !isGenerative(m)))
       })
       .catch(() => {})
       .finally(() => setLoading(false))
