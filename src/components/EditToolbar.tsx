@@ -17,7 +17,7 @@ export default function EditToolbar() {
       const pageKeys = ['info-page', 'look-page', 'experiments-page', 'work-page']
 
       let ok = 0
-      let failed: string[] = []
+      const failed: string[] = []
       for (const [slug, fields] of Object.entries(pendingChanges)) {
         if (pageKeys.includes(slug)) {
           const res = await fetch('/api/pages', {
