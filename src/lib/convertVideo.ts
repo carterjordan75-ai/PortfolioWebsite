@@ -160,9 +160,11 @@ export async function convertMp4ToWebm(
 
 /**
  * Pre-upload pass. Hand it a File:
- *   - If it's an MP4: converts it to WebM in the browser and returns the
- *     new File. On conversion error, logs and returns the original.
- *   - Otherwise: returns the file unchanged.
+ *   - MP4 → WebM (VP8) in the browser. Throws if encoder fails; caller's
+ *     try/catch falls back to uploading the original.
+ *   - JPG/PNG/BMP/TIFF/AVIF → WebP via canvas.toBlob. Same fallback.
+ *   - Anything else (WebP, GIF, SVG, HEIC, videos other than MP4) → passed
+ *     through unchanged.
  *
  * Pass `onStatus` to surface conversion progress in the UI.
  */
@@ -170,20 +172,39 @@ export async function prepareForUpload(
   file: File,
   onStatus?: (msg: string) => void,
 ): Promise<File> {
-  if (!isMp4(file)) return file
-  onStatus?.(`Preparing ${file.name}…`)
-  try {
-    const converted = await convertMp4ToWebm(
-      file,
-      (ratio) => onStatus?.(`Converting ${file.name} — ${Math.round(ratio * 100)}%`),
-      onStatus,
-    )
-    onStatus?.(`✓ Converted ${file.name} → ${converted.name}`)
-    return converted
-  } catch (err) {
-    console.error('MP4 → WebM conversion failed, uploading original:', err)
-    const msg = err instanceof Error ? err.message : String(err)
-    onStatus?.(`Conversion failed (${msg}) — uploading original`)
-    return file
+  if (isMp4(file)) {
+    onStatus?.(`Preparing ${file.name}…`)
+    try {
+      const converted = await convertMp4ToWebm(
+        file,
+        (ratio) => onStatus?.(`Converting ${file.name} — ${Math.round(ratio * 100)}%`),
+        onStatus,
+      )
+      onStatus?.(`✓ Converted ${file.name} → ${converted.name}`)
+      return converted
+    } catch (err) {
+      console.error('MP4 → WebM conversion failed, uploading original:', err)
+      const msg = err instanceof Error ? err.message : String(err)
+      onStatus?.(`Conversion failed (${msg}) — uploading original`)
+      return file
+    }
   }
+  // Lazy-import the image converter so the canvas/FileReader code doesn't
+  // touch the bundle on routes that never upload images.
+  const { isConvertibleImage, convertImageToWebp } = await import('./convertImage')
+  if (isConvertibleImage(file)) {
+    onStatus?.(`Converting ${file.name} to WebP…`)
+    try {
+      const converted = await convertImageToWebp(file)
+      const pct = file.size > 0 ? Math.round((1 - converted.size / file.size) * 100) : 0
+      onStatus?.(`✓ ${file.name} → ${converted.name}${pct > 0 ? ` (${pct}% smaller)` : ''}`)
+      return converted
+    } catch (err) {
+      console.error('Image → WebP conversion failed, uploading original:', err)
+      const msg = err instanceof Error ? err.message : String(err)
+      onStatus?.(`WebP conversion failed (${msg}) — uploading original`)
+      return file
+    }
+  }
+  return file
 }
