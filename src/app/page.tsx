@@ -17,7 +17,7 @@ type HomeVideo = {
 }
 
 export default function Home() {
-  const { fg, borderThick } = useDarkMode()
+  useDarkMode() // home page is dark-mode only; we don't read its colors but the hook keeps the context active.
 
   // Home-page video playlist. Source-of-truth is the admin panel
   // (pages.json → home-page.videos). Starts empty so nothing flashes from
@@ -87,31 +87,83 @@ export default function Home() {
     })
   }, [activeIdx])
 
-  // Dot nav: use scrollIntoView with native smooth behavior. The CSS
-  // scroll-snap-type on the container ensures the result locks to a section
-  // boundary even if smooth scroll undershoots / overshoots by a few pixels.
+  // Dot nav: native scrollIntoView. CSS scroll-snap snaps the result.
   const goTo = (target: number) => {
     const el = sectionRefs.current[target]
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  // Keyboard nav — arrow keys + page-up/down + space. CSS scroll-snap handles
-  // wheel/touch natively (with snap-stop: always for one-section-per-gesture).
+  // Loop wrap: when the user is on the last video and tries to advance, jump
+  // to the first video (and vice versa for scrolling up from the first). The
+  // jump is instant (no smooth) so the loop feels seamless — the user sees
+  // a snap into the next section without a long animation through the whole
+  // page height.
   useEffect(() => {
-    if (playlist.length === 0) return
+    const container = scrollContainerRef.current
+    if (!container || playlist.length < 2) return
+
+    const wrap = (dir: 1 | -1) => {
+      const targetIdx = dir > 0 ? 0 : playlist.length - 1
+      const el = sectionRefs.current[targetIdx]
+      if (!el) return
+      // Instant jump — no smooth scroll — so the wrap is invisible/snappy.
+      container.scrollTo({ top: el.offsetTop, behavior: 'instant' as ScrollBehavior })
+    }
+
+    const handleWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) < 12) return
+      const atLast = activeIdx === playlist.length - 1
+      const atFirst = activeIdx === 0
+      if (e.deltaY > 0 && atLast) {
+        e.preventDefault()
+        wrap(1)
+      } else if (e.deltaY < 0 && atFirst) {
+        e.preventDefault()
+        wrap(-1)
+      }
+    }
+    container.addEventListener('wheel', handleWheel, { passive: false })
+
+    let touchStartY = 0
+    const handleTouchStart = (e: TouchEvent) => { touchStartY = e.touches[0].clientY }
+    const handleTouchEnd = (e: TouchEvent) => {
+      const dy = touchStartY - e.changedTouches[0].clientY
+      if (Math.abs(dy) < 40) return
+      const atLast = activeIdx === playlist.length - 1
+      const atFirst = activeIdx === 0
+      if (dy > 0 && atLast) wrap(1)
+      else if (dy < 0 && atFirst) wrap(-1)
+    }
+    container.addEventListener('touchstart', handleTouchStart, { passive: true })
+    container.addEventListener('touchend', handleTouchEnd, { passive: true })
+
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
-        e.preventDefault()
-        const next = Math.min(playlist.length, activeIdx + 1)
-        if (next !== activeIdx) goTo(next)
+        if (activeIdx === playlist.length - 1) {
+          e.preventDefault()
+          wrap(1)
+        } else {
+          e.preventDefault()
+          goTo(activeIdx + 1)
+        }
       } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
-        e.preventDefault()
-        const next = Math.max(0, activeIdx - 1)
-        if (next !== activeIdx) goTo(next)
+        if (activeIdx === 0) {
+          e.preventDefault()
+          wrap(-1)
+        } else {
+          e.preventDefault()
+          goTo(activeIdx - 1)
+        }
       }
     }
     window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel)
+      container.removeEventListener('touchstart', handleTouchStart)
+      container.removeEventListener('touchend', handleTouchEnd)
+      window.removeEventListener('keydown', handleKey)
+    }
   }, [activeIdx, playlist.length])
 
   return (
@@ -227,85 +279,49 @@ export default function Home() {
           </div>
         )}
 
-        {/* Footer section — registered at sectionRefs[playlist.length] so the
-            snap handler can scroll to it as a target. Wheel/touch/key gestures
-            past the last video land here; the right-rail dots target videos
-            only (no dot for the footer itself). */}
-        <section
-          ref={(el) => { sectionRefs.current[playlist.length] = el }}
-          className="relative w-full h-screen overflow-hidden"
-          style={{ scrollSnapAlign: 'start', scrollSnapStop: 'always' }}
-        >
-          {playlist[Math.min(activeIdx, playlist.length - 1)]?.src && (
-            <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
-              <video
-                key={`bg-${playlist[Math.min(activeIdx, playlist.length - 1)].src}`}
-                src={playlist[Math.min(activeIdx, playlist.length - 1)].src}
-                autoPlay
-                muted
-                loop
-                playsInline
-                className="absolute inset-0 w-full h-full object-cover"
-                style={{ filter: 'blur(48px) saturate(1.4)', transform: 'scale(1.2)' }}
-              />
-            </div>
-          )}
-          {/* Footer is the shared glass-footer for material/blur, but we override
-              border-radius and margins so it spans the full page width with no curved
-              corners. All buttons + the blurb use the same `fg` color for uniformity. */}
-          <footer
-            className="relative px-6 md:px-10 py-5 glass-footer"
-            style={{ borderRadius: 0, margin: 0, color: fg }}
-          >
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex gap-3 flex-shrink-0">
-              <button
-                onClick={() => setShowEmail(true)}
-                className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform"
-                style={{ border: `1.5px solid ${borderThick}`, color: fg }}
-              >
-                Email
-              </button>
-              <a
-                href="https://instagram.com/jordanscarter"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform"
-                style={{ border: `1.5px solid ${borderThick}`, color: fg }}
-              >
-                Insta
-              </a>
-            </div>
-            <FooterBlurb
-              pageId="work"
-              className="hidden md:block text-[9px] leading-[1.5] tracking-[0.04em] uppercase max-w-2xl text-center"
-              style={{ color: fg }}
-            />
-            <div className="flex gap-3 flex-shrink-0">
-              <button
-                onClick={() => {
-                  // Scroll the snap container, not the window — the window
-                  // doesn't scroll in the vertical-snap layout.
-                  scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-                }}
-                className="w-14 h-14 rounded-full flex items-center justify-center text-[16px] hover:scale-105 transition-transform"
-                style={{ border: `1.5px solid ${borderThick}`, color: fg }}
-                aria-label="Back to top"
-              >
-                ↑
-              </button>
-              <button
-                onClick={() => setShowAdmin(true)}
-                className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform"
-                style={{ border: `1.5px solid ${borderThick}`, color: fg }}
-              >
-                © 2026
-              </button>
-            </div>
-          </div>
-          </footer>
-        </section>
       </div>
+
+      {/* Floating action overlay — bottom-center pill with the actions that
+          used to live in the footer section. Always visible on top of every
+          video so the user can email / open insta / hit admin from any frame
+          without needing to scroll out of the reel. The reel itself now
+          loops infinitely so there's no footer-as-end-of-scroll. */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+        <button
+          onClick={() => setShowEmail(true)}
+          className="w-11 h-11 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold backdrop-blur-md transition-all hover:scale-105"
+          style={{ background: 'rgba(0,0,0,0.45)', color: '#fff', border: '1px solid rgba(255,255,255,0.25)' }}
+        >
+          Email
+        </button>
+        <a
+          href="https://instagram.com/jordanscarter"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-11 h-11 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold backdrop-blur-md transition-all hover:scale-105"
+          style={{ background: 'rgba(0,0,0,0.45)', color: '#fff', border: '1px solid rgba(255,255,255,0.25)' }}
+        >
+          Insta
+        </a>
+        <button
+          onClick={() => setShowAdmin(true)}
+          className="w-11 h-11 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold backdrop-blur-md transition-all hover:scale-105"
+          style={{ background: 'rgba(0,0,0,0.45)', color: '#fff', border: '1px solid rgba(255,255,255,0.25)' }}
+        >
+          © 2026
+        </button>
+      </div>
+
+      {/* The blurb that used to sit centred in the footer — kept here as a
+          subtle mid-page tagline that fades out once the user starts scrolling.
+          Hidden behind the floating action pill so they don't overlap. */}
+      {activeIdx === 0 && (
+        <FooterBlurb
+          pageId="work"
+          className="hidden md:block fixed bottom-20 left-1/2 -translate-x-1/2 z-20 text-[8px] leading-[1.5] tracking-[0.08em] uppercase max-w-md text-center pointer-events-none"
+          style={{ color: 'rgba(255,255,255,0.55)', textShadow: '0 1px 6px rgba(0,0,0,0.6)', transition: 'opacity 0.4s' }}
+        />
+      )}
 
       <EmailPopup show={showEmail} onClose={() => setShowEmail(false)} />
       <AdminPortal show={showAdmin} onClose={() => setShowAdmin(false)} />
