@@ -106,8 +106,22 @@ export default function Home() {
       const targetIdx = dir > 0 ? 0 : playlist.length - 1
       const el = sectionRefs.current[targetIdx]
       if (!el) return
-      // Instant jump — no smooth scroll — so the wrap is invisible/snappy.
-      container.scrollTo({ top: el.offsetTop, behavior: 'instant' as ScrollBehavior })
+      // Force the wrap to be truly instant. The container has CSS
+      // scroll-behavior: smooth (for the dot-nav animations) which would
+      // otherwise turn this jump into a 500ms ride past every section in
+      // between, making the last and first videos look like they're
+      // flickering/overlapping. Temporarily flip the CSS to auto, set
+      // scrollTop directly, then restore.
+      const prev = container.style.scrollBehavior
+      container.style.scrollBehavior = 'auto'
+      container.scrollTop = el.offsetTop
+      // Restore on next frame so any in-flight smooth scroll request from
+      // a previous gesture doesn't get applied to the wrapped position.
+      requestAnimationFrame(() => { container.style.scrollBehavior = prev || '' })
+      // Reflect the new active section immediately so the wheel-handler
+      // closure sees the updated index (avoids double-wrap on a fast
+      // repeated wheel gesture).
+      setActiveIdx(targetIdx)
     }
 
     const handleWheel = (e: WheelEvent) => {
@@ -175,12 +189,14 @@ export default function Home() {
         // Native scroll-snap-y: every wheel / touch / keyboard scroll lands
         // on a section boundary. `scroll-snap-stop: always` (set per-section
         // below) limits each gesture to advancing by exactly one section, so
-        // a fast trackpad flick can't skip past a video. The keyboard arrow
-        // handler above uses scrollIntoView smooth which the browser also
-        // snap-aligns.
+        // a fast trackpad flick can't skip past a video. We intentionally
+        // DON'T set scroll-behavior: smooth here — that would slow the native
+        // snap from ~200ms to ~500ms and (worse) would override our explicit
+        // instant scroll in the loop-wrap handler. The dot-nav handler uses
+        // scrollIntoView with smooth explicitly so its animation is still
+        // smooth even without the CSS default.
         style={{
           scrollSnapType: 'y mandatory',
-          scrollBehavior: 'smooth',
           overscrollBehavior: 'contain',
         }}
       >
