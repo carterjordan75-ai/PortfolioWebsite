@@ -113,21 +113,47 @@ export default function Home() {
     setActiveIdx(shiftTo)
   }, [activeIdx, N])
 
-  // Play the active section's video, pause all others. Saves CPU + means
-  // each scroll into a section restarts the video at frame 0 (visually
-  // crisper than mid-clip).
+  // Keep every triple-playlist video playing continuously and synced.
+  // Pausing the non-active copies was the source of the loop flicker:
+  // when the silent-shift teleported the user from copy 3 to copy 2 of
+  // the same video, copy 3 was at currentTime=X (mid-clip) but copy 2
+  // had been paused at 0 — the jump from X to 0 was visible.
+  // Strategy: make every video play(), then in a separate pass force
+  // each playlist[k] copy across the three sections to share the same
+  // currentTime, taking the FURTHEST-along copy as the reference. This
+  // keeps the three copies of every video in lock-step so the shift is
+  // visually invisible. Re-runs on activeIdx so we re-sync after every
+  // navigation.
   useEffect(() => {
-    sectionRefs.current.forEach((sec, i) => {
+    if (N === 0) return
+    // Phase 1: ensure every video is playing.
+    sectionRefs.current.forEach(sec => {
       if (!sec) return
       const v = sec.querySelector('video')
-      if (!v) return
-      if (i === activeIdx) {
-        v.play().catch(() => {})
-      } else {
-        v.pause()
-      }
+      v?.play().catch(() => {})
     })
-  }, [activeIdx])
+    // Phase 2: sync currentTime across the three copies of each video.
+    for (let k = 0; k < N; k++) {
+      const copies: HTMLVideoElement[] = []
+      for (let c = 0; c < 3; c++) {
+        const sec = sectionRefs.current[k + c * N]
+        const v = sec?.querySelector('video') as HTMLVideoElement | null
+        if (v) copies.push(v)
+      }
+      if (copies.length < 2) continue
+      // Use the active section's currentTime as reference when it's one
+      // of the copies (so on shift, we sync to the user's last visible
+      // playback position).
+      const activeCopy = copies.find((_, idx) => {
+        const sectionIdx = k + idx * N
+        return sectionIdx === activeIdx
+      })
+      const refTime = (activeCopy ?? copies.reduce((max, v) => v.currentTime > max.currentTime ? v : max, copies[0])).currentTime
+      for (const v of copies) {
+        if (Math.abs(v.currentTime - refTime) > 0.1) v.currentTime = refTime
+      }
+    }
+  }, [activeIdx, N])
 
   // playlist-index for UI (which dot to highlight, etc.) — wraps the tripled
   // section index back into 0..N-1.
@@ -193,7 +219,7 @@ export default function Home() {
           >
             <video
               src={v.src}
-              autoPlay={i === N}
+              autoPlay
               muted
               loop
               playsInline
