@@ -130,12 +130,19 @@ export default function Home() {
     const container = scrollContainerRef.current
     if (!container || playlist.length === 0) return
 
+    // Always block native scroll. The decision whether to actually snap
+    // happens below. Tiny wheel deltas (e.g. trackpad inertia tails) are
+    // ignored for snapping but still consumed so they can't accumulate.
     const handleWheel = (e: WheelEvent) => {
-      if (isAnimatingRef.current) { e.preventDefault(); return }
-      if (Math.abs(e.deltaY) < 8) return // ignore tiny scroll noise
       e.preventDefault()
+      if (isAnimatingRef.current) return
+      if (Math.abs(e.deltaY) < 12) return
       const dir = e.deltaY > 0 ? 1 : -1
-      const next = Math.max(0, Math.min(playlist.length - 1, activeIdx + dir))
+      // playlist.length is the max valid index — that targets the footer
+      // section (last entry in sectionRefs), so users can scroll past the
+      // last video into the footer.
+      const max = playlist.length // not length-1 — the footer takes index `length`
+      const next = Math.max(0, Math.min(max, activeIdx + dir))
       if (next !== activeIdx) snapTo(next)
     }
     container.addEventListener('wheel', handleWheel, { passive: false })
@@ -150,7 +157,7 @@ export default function Home() {
       const dy = touchStartY - e.changedTouches[0].clientY
       if (Math.abs(dy) < 40) return // ignore short taps
       const dir = dy > 0 ? 1 : -1
-      const next = Math.max(0, Math.min(playlist.length - 1, activeIdx + dir))
+      const next = Math.max(0, Math.min(playlist.length, activeIdx + dir))
       if (next !== activeIdx) snapTo(next)
     }
     container.addEventListener('touchstart', handleTouchStart, { passive: true })
@@ -161,7 +168,7 @@ export default function Home() {
       if (isAnimatingRef.current) return
       if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
         e.preventDefault()
-        const next = Math.min(playlist.length - 1, activeIdx + 1)
+        const next = Math.min(playlist.length, activeIdx + 1)
         if (next !== activeIdx) snapTo(next)
       } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
         e.preventDefault()
@@ -185,11 +192,12 @@ export default function Home() {
       <PageLoader show={loading} mode="data" />
       <div
         ref={scrollContainerRef}
-        className="relative h-screen overflow-y-auto overflow-x-hidden bg-black"
-        // Scroll is driven by our own snap handler (see useEffect with
-        // `handleWheel`). overscroll-contain stops the outer page from
-        // scrolling when the user hits the start/end of the reel.
-        style={{ overscrollBehavior: 'contain' }}
+        className="relative h-screen overflow-hidden bg-black"
+        // Native scrolling is fully disabled — every scroll-equivalent gesture
+        // (wheel, touch, keyboard) is intercepted in the useEffect below and
+        // routed through our requestAnimationFrame snap animator. Without
+        // overflow:hidden the browser would respond to tiny wheel deltas on
+        // its own and the page would settle between sections.
       >
         {/* Vertical stack of full-viewport video sections. Each section
             takes one viewport height and snaps to the top of the scroll
@@ -285,15 +293,19 @@ export default function Home() {
           </div>
         )}
 
-        {/* Footer band — sits below the last video section. The blurred backdrop
-            uses whichever video is currently active. Not snap-aligned so the
-            user lands on it naturally after the last video. */}
-        <div className="relative">
-          {playlist[activeIdx]?.src && (
+        {/* Footer section — registered at sectionRefs[playlist.length] so the
+            snap handler can scroll to it as a target. Wheel/touch/key gestures
+            past the last video land here; the right-rail dots target videos
+            only (no dot for the footer itself). */}
+        <section
+          ref={(el) => { sectionRefs.current[playlist.length] = el }}
+          className="relative w-full h-screen overflow-hidden"
+        >
+          {playlist[Math.min(activeIdx, playlist.length - 1)]?.src && (
             <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
               <video
-                key={`bg-${playlist[activeIdx].src}`}
-                src={playlist[activeIdx].src}
+                key={`bg-${playlist[Math.min(activeIdx, playlist.length - 1)].src}`}
+                src={playlist[Math.min(activeIdx, playlist.length - 1)].src}
                 autoPlay
                 muted
                 loop
@@ -357,7 +369,7 @@ export default function Home() {
             </div>
           </div>
           </footer>
-        </div>
+        </section>
       </div>
 
       <EmailPopup show={showEmail} onClose={() => setShowEmail(false)} />

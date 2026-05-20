@@ -57,29 +57,24 @@ export default function LookPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  // We only triple the list when there's enough content to make the
-  // infinite-scroll loop feel seamless — at least 12 items fills 3 rows of
-  // a 4-column grid which is what the auto-scroll animation needs. Below
-  // that threshold we render the items once at the top so a single upload
-  // doesn't look like an empty page.
-  const TRIPLE_THRESHOLD = 12
-  const shouldLoop = uploadedItems.length >= TRIPLE_THRESHOLD
-  const allItems = uploadedItems.length === 0
-    ? []
-    : shouldLoop
-      ? [...uploadedItems, ...uploadedItems, ...uploadedItems]
-      : uploadedItems
+  // Repeat the uploaded items enough times to make the infinite-scroll loop
+  // feel continuous. With a dozen+ uploads we triple them (existing behaviour);
+  // with fewer uploads we multiply more aggressively so 1-2 uploads still
+  // produce a scrollable, looping gallery instead of three sad cells in the
+  // top-left.
+  const allItems = (() => {
+    if (uploadedItems.length === 0) return []
+    // Aim for ~36 total cells (≈9 rows in the 4-col grid → easy to loop).
+    const multiplier = Math.max(3, Math.ceil(36 / uploadedItems.length))
+    const out: GalleryItem[] = []
+    for (let i = 0; i < multiplier; i++) out.push(...uploadedItems)
+    return out
+  })()
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    // Only auto-scroll + loop when there are enough items to loop. With a
-    // sparse gallery the loop would scroll past every item and land on
-    // empty space; better to just sit at the top and show what's there.
-    if (!shouldLoop) {
-      el.scrollTop = 0
-      return
-    }
+    if (uploadedItems.length === 0) return
 
     let lastTime = performance.now()
 
@@ -100,7 +95,7 @@ export default function LookPage() {
     el.scrollTop = el.scrollHeight / 3
     animRef.current = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(animRef.current)
-  }, [activeItem, shouldLoop])
+  }, [activeItem, uploadedItems.length])
 
   useEffect(() => {
     const el = scrollRef.current
