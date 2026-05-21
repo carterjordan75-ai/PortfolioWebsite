@@ -321,16 +321,18 @@ function MediaPanel({
         </div>
       )}
 
-      {/* Bottom left — prev arrow. mix-blend-difference keeps it visible
-          against every video/image background. */}
+      {/* Bottom left — prev arrow. Solid mode-aware pill so it stays
+          visible against every video/image frame. */}
       <button
         onClick={() => { prev(); resetTimer() }}
         className="absolute bottom-4 left-4 z-10 w-10 h-10 rounded-full flex items-center justify-center text-[14px] transition-all hover:scale-110 active:scale-95"
         style={{
-          color: '#ffffff',
-          background: 'transparent',
-          border: '1px solid rgba(255,255,255,0.85)',
-          mixBlendMode: 'difference',
+          background: dark ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.78)',
+          color: dark ? '#000000' : '#ffffff',
+          border: `1px solid ${dark ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.12)'}`,
+          backdropFilter: 'blur(20px) saturate(140%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(140%)',
+          boxShadow: dark ? '0 4px 24px rgba(0,0,0,0.18)' : '0 4px 24px rgba(0,0,0,0.45)',
         }}
       >
         ←
@@ -487,21 +489,35 @@ function MediaPanel({
           between Gallery and Expand whenever the current media has audio —
           `layout` on the surrounding buttons makes them glide apart smoothly
           rather than jumping. */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex gap-3 items-center">
+      {/* Bottom controls — wrapped in a single solid pill that's the inverse
+          of the page mode, so the buttons inside stay readable against any
+          backdrop (gallery thumbnails, video frames, anything). The pill
+          itself has a backdrop blur to soften noisy content underneath. */}
+      <div
+        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex gap-2 items-center px-2 py-2 rounded-full"
+        style={{
+          background: dark ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.78)',
+          color: dark ? '#000000' : '#ffffff',
+          border: `1px solid ${dark ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.12)'}`,
+          backdropFilter: 'blur(20px) saturate(140%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(140%)',
+          boxShadow: dark
+            ? '0 4px 24px rgba(0,0,0,0.18)'
+            : '0 4px 24px rgba(0,0,0,0.45)',
+        }}
+      >
         <motion.button
           layout
           transition={{ layout: { duration: 0.42, ease: [0.34, 1.56, 0.64, 1] } }}
           onClick={(e) => { e.stopPropagation(); setGalleryView(v => !v) }}
-          className="w-10 h-10 rounded-full flex items-center justify-center hover:scale-110 active:scale-95"
+          className="w-9 h-9 rounded-full flex items-center justify-center hover:scale-110 active:scale-95"
           style={{
-            // mix-blend: difference inverts the glyph against whatever's
-            // behind it — black on light backgrounds, white on dark — so
-            // the control stays visible against every video/image. No
-            // backdrop filter since blend-mode interacts badly with it.
-            color: '#ffffff',
+            // Icons inherit the pill's `color` — the pill is the inverse
+            // of the page mode, so this stays readable regardless of what
+            // gallery tile or video frame happens to be behind it.
+            color: 'inherit',
             background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.85)',
-            mixBlendMode: 'difference',
+            border: 'none',
             transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
           }}
           aria-label={galleryView ? 'Switch to slideshow' : 'Switch to gallery'}
@@ -534,18 +550,17 @@ function MediaPanel({
               key="audio-toggle"
               layout
               initial={{ opacity: 0, scale: 0, width: 0 }}
-              animate={{ opacity: 1, scale: 1, width: 40 }}
+              animate={{ opacity: 1, scale: 1, width: 36 }}
               exit={{ opacity: 0, scale: 0, width: 0 }}
               transition={{ duration: 0.42, ease: [0.34, 1.56, 0.64, 1] }}
               onClick={(e) => { e.stopPropagation(); setAudioOn(v => !v) }}
-              className="h-10 rounded-full flex items-center justify-center hover:scale-110 active:scale-95"
+              className="h-9 rounded-full flex items-center justify-center hover:scale-110 active:scale-95"
               style={{
                 overflow: 'hidden',
                 flexShrink: 0,
-                color: '#ffffff',
+                color: 'inherit',
                 background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.85)',
-                mixBlendMode: 'difference',
+                border: 'none',
                 transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
               }}
               aria-label={audioOn ? 'Mute' : 'Unmute'}
@@ -557,7 +572,7 @@ function MediaPanel({
                       key={i}
                       className="w-[2px] rounded-full"
                       style={{
-                        background: '#ffffff',
+                        background: 'currentColor',
                         animationName: 'navAudioBar',
                         animationDuration: '0.7s',
                         animationTimingFunction: 'ease-in-out',
@@ -585,12 +600,11 @@ function MediaPanel({
           layout
           transition={{ layout: { duration: 0.42, ease: [0.34, 1.56, 0.64, 1] } }}
           onClick={onToggleExpand}
-          className="w-10 h-10 rounded-full flex items-center justify-center hover:scale-110 active:scale-95"
+          className="w-9 h-9 rounded-full flex items-center justify-center hover:scale-110 active:scale-95"
           style={{
-            color: '#ffffff',
+            color: 'inherit',
             background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.85)',
-            mixBlendMode: 'difference',
+            border: 'none',
             transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
           }}
           aria-label={expanded ? 'Collapse' : 'Expand'}
@@ -617,10 +631,12 @@ function MediaPanel({
           onClick={() => { next(); resetTimer() }}
           className="absolute bottom-4 right-4 z-10 w-10 h-10 rounded-full flex items-center justify-center text-[14px] transition-all hover:scale-110 active:scale-95"
           style={{
-            color: '#ffffff',
-            background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.85)',
-            mixBlendMode: 'difference',
+            background: dark ? 'rgba(255,255,255,0.92)' : 'rgba(0,0,0,0.78)',
+            color: dark ? '#000000' : '#ffffff',
+            border: `1px solid ${dark ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.12)'}`,
+            backdropFilter: 'blur(20px) saturate(140%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(140%)',
+            boxShadow: dark ? '0 4px 24px rgba(0,0,0,0.18)' : '0 4px 24px rgba(0,0,0,0.45)',
           }}
         >
           →
