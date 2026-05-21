@@ -139,11 +139,13 @@ export default function Navigation() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [showInfo, infoDismissable])
 
-  // Auto-restore the header when leaving the home page — otherwise a visitor
-  // who minimized at `/` and navigated to `/info` would land with no header.
+  // Pages where the minimize affordance is available — currently home and
+  // /misc. On any other page, auto-restore so a visitor who minimized
+  // somewhere supported then navigated away doesn't land with no header.
+  const canMinimize = isWork || isExperiments
   useEffect(() => {
-    if (!isWork && headerMinimized) setHeaderMinimized(false)
-  }, [isWork, headerMinimized])
+    if (!canMinimize && headerMinimized) setHeaderMinimized(false)
+  }, [canMinimize, headerMinimized])
 
   // Audio lifecycle for the home page:
   // - On entry: ensure the singleton ambient drone is playing. If a fresh
@@ -298,9 +300,9 @@ export default function Navigation() {
               </button>
             )}
           </div>
-          {/* Minimize control — HOME PAGE ONLY. Sits below the info/audio cluster.
-              Just a dash line, no circle. */}
-          {isWork && (
+          {/* Minimize control — home + /misc. Sits below the info/audio
+              cluster. Just a dash line, no circle. */}
+          {canMinimize && (
             <button
               onClick={() => setHeaderMinimized(true)}
               aria-label="Minimize header"
