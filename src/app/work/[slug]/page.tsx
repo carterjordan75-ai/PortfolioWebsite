@@ -72,6 +72,16 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
     setViewCount(current)
   }, [params.slug])
 
+  // Escape closes the expanded-media lightbox, same as clicking off does.
+  useEffect(() => {
+    if (expandedMedia === null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExpandedMedia(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expandedMedia])
+
   // Mirror the latest admin media into local state — used by the inline
   // media manager + by getProjectMedia() when rendering the page.
   useEffect(() => {
@@ -476,6 +486,11 @@ For licensing inquiries: carterjordan75@gmail.com
                 </div>
               ) : (
                 (() => {
+                  // Index of the first VIDEO item in the list — that's the
+                  // one that should start with audio on (browser permitting).
+                  const firstVideoIdx = (localMedia ?? []).findIndex(
+                    (m) => m.path && classifyMedia(m.path) === 'video',
+                  )
                   // Walk the list and batch consecutive same-rowId items.
                   type Row = { items: Array<{ item: NonNullable<typeof localMedia>[number]; idx: number }>; rowId?: string }
                   const rows: Row[] = []
@@ -517,6 +532,7 @@ For licensing inquiries: carterjordan75@gmail.com
                             mediaSrc={item.path}
                             mediaType={mediaType}
                             objectPos={objectPos}
+                            initialAudioOn={idx === firstVideoIdx}
                           />
                         </div>
                       )
@@ -671,17 +687,41 @@ For licensing inquiries: carterjordan75@gmail.com
 // `idx` and `dark` are part of the public API for call sites that pass them
 // (handy for future hover states / theming), but not currently consumed inside —
 // underscore-prefix keeps ESLint happy.
-function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, objectPos }: {
+function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, objectPos, initialAudioOn }: {
   idx: number; aspect: string; label: string; onExpand: () => void; dark: boolean;
   mediaSrc?: string; mediaType?: 'video' | 'image'; objectPos?: string;
+  initialAudioOn?: boolean;
 }) {
   const pos = objectPos || 'center center'
   // Each video owns its own muted state — different clips can have different
-  // audio so a global toggle would mix them in the wrong way. Default muted
-  // so autoplay isn't blocked by the browser; the corner button lets the
-  // viewer enable sound per-video.
-  const [muted, setMuted] = useState(true)
+  // audio so a global toggle would mix them in the wrong way. The first
+  // video on a project page starts UNMUTED if the parent passes
+  // initialAudioOn=true (browser autoplay-with-sound policy permitting; if
+  // it blocks the play, we retry muted on the first user gesture).
+  const [muted, setMuted] = useState(!initialAudioOn)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  // If the browser blocks unmuted autoplay, fall back to muted and remember
+  // so a single click anywhere on the page retries the play with sound.
+  useEffect(() => {
+    if (mediaType !== 'video') return
+    const v = videoRef.current
+    if (!v) return
+    if (!initialAudioOn) return
+    // Try to play unmuted. If blocked, mute and re-arm a one-shot listener
+    // that unmutes on the next user interaction.
+    v.play().catch(() => {
+      setMuted(true)
+      const retry = () => {
+        setMuted(false)
+        v.play().catch(() => {})
+        document.removeEventListener('click', retry)
+        document.removeEventListener('keydown', retry)
+      }
+      document.addEventListener('click', retry, { once: true })
+      document.addEventListener('keydown', retry, { once: true })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mediaSrc])
   return (
     // maxHeight cap so a 16:9 item in the wide media column doesn't fill the
     // viewport on big screens — visually anchored to ~85% of viewport height,
@@ -752,7 +792,26 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
           {muted ? (
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
           ) : (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+            // Three animated bars — matches the home page ambient-audio
+            // toggle so the visual language is consistent across the site.
+            <span className="flex gap-[2px] items-center" style={{ height: '13px' }}>
+              {[0, 1, 2].map(i => (
+                <span
+                  key={i}
+                  className="w-[2px] rounded-full"
+                  style={{
+                    background: 'currentColor',
+                    height: '4px',
+                    animationName: 'navAudioBar',
+                    animationDuration: '0.7s',
+                    animationTimingFunction: 'ease-in-out',
+                    animationDelay: `${i * 0.12}s`,
+                    animationIterationCount: 'infinite',
+                    animationDirection: 'alternate',
+                  }}
+                />
+              ))}
+            </span>
           )}
         </button>
       )}

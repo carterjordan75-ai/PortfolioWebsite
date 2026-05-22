@@ -172,13 +172,21 @@ function ArchivePageInner() {
 
   return (
     <PageTransition>
-      {/* Full-page theme wrapper — controls nav + page colors */}
+      {/* Full-page theme wrapper — controls nav + page colors. Flex column
+          so the footer (which is the last child of <main>) sits at the
+          viewport bottom even when the project list is short. */}
       <div
         className={dark ? 'archive-theme-dark' : 'archive-theme-light'}
-        style={{ background: bg, color: fg, minHeight: '100vh' }}
+        style={{
+          background: bg,
+          color: fg,
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
       >
 
-        <main className="pt-28 md:pt-24 pb-0">
+        <main className="pt-28 md:pt-24 pb-0" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
 
           {/* Subtle stats in square brackets — split left/right. Gen view
               gets a small label + an escape hatch back to the full index. */}
@@ -350,9 +358,11 @@ function ArchivePageInner() {
             })}
           </div>
 
-          {/* Footer */}
+          {/* Footer — `mt-auto` pushes it to the viewport bottom whenever
+              the project list is shorter than one screen (typical for the
+              Gen view). */}
           <footer
-            className="mt-2 px-6 md:px-10 py-5 glass-footer"
+            className="mt-auto px-6 md:px-10 py-5 glass-footer"
           >
             <div className="flex items-center justify-between gap-4">
               <div className="flex gap-3 flex-shrink-0">
