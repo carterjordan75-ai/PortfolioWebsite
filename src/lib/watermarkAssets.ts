@@ -4,9 +4,10 @@
  *   - Images (jpg / png / webp / etc): loaded into a canvas, the XOXO logo
  *     is tiled across the surface at low opacity rotated 30°, and the
  *     result is exported in the SAME format the source was in.
- *   - Videos (mp4 / webm / mov): re-encoded via ffmpeg.wasm with an
- *     overlay filter that places the XOXO logo in the bottom-right at
- *     ~30% opacity. Audio is copied without re-encode.
+ *   - Videos (mp4 / webm / mov): the SAME tiled-diagonal pattern is
+ *     pre-rendered onto a transparent PNG at the video's resolution,
+ *     then ffmpeg.wasm overlays it over the whole frame and re-encodes.
+ *     Audio is copied without re-encode.
  *
  * Each call returns a Blob; the caller stitches them into a ZIP via
  * jszip and triggers the browser download.
@@ -17,7 +18,6 @@ const VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i
 const LOGO_URL = '/assets/Logos/xoxo_Logo_001.png'
 
 let cachedLogoImage: HTMLImageElement | null = null
-let cachedLogoBytes: Uint8Array | null = null
 
 async function loadLogoImage(): Promise<HTMLImageElement> {
   if (cachedLogoImage) return cachedLogoImage
@@ -32,12 +32,49 @@ async function loadLogoImage(): Promise<HTMLImageElement> {
   return img
 }
 
-async function loadLogoBytes(): Promise<Uint8Array> {
-  if (cachedLogoBytes) return cachedLogoBytes
-  const res = await fetch(LOGO_URL)
-  if (!res.ok) throw new Error('Could not fetch logo bytes')
-  cachedLogoBytes = new Uint8Array(await res.arrayBuffer())
-  return cachedLogoBytes
+/**
+ * Probe a video URL for its native pixel dimensions by loading the
+ * metadata into a hidden <video> element. Used so the video watermark
+ * overlay can be generated at the exact video resolution.
+ */
+async function probeVideoDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const v = document.createElement('video')
+    v.crossOrigin = 'anonymous'
+    v.preload = 'metadata'
+    v.muted = true
+    v.onloadedmetadata = () => {
+      const w = v.videoWidth
+      const h = v.videoHeight
+      v.removeAttribute('src')
+      try { v.load() } catch {}
+      if (!w || !h) reject(new Error('Could not determine video dimensions'))
+      else resolve({ width: w, height: h })
+    }
+    v.onerror = () => reject(new Error('Could not read video metadata'))
+    v.src = src
+  })
+}
+
+/**
+ * Render the SAME tiled diagonal watermark used on still images onto a
+ * fully transparent canvas at the requested dimensions, then export it
+ * as PNG bytes for ffmpeg. This is what guarantees video + image
+ * watermarks look identical: same logo size relative to surface, same
+ * spacing, same rotation, same opacity.
+ */
+async function buildTiledWatermarkPngBytes(width: number, height: number): Promise<Uint8Array> {
+  const logo = await loadLogoImage()
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas 2D context not available for watermark overlay')
+  drawTiledWatermark(ctx, width, height, logo)
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob returned null for watermark PNG')), 'image/png')
+  })
+  return new Uint8Array(await blob.arrayBuffer())
 }
 
 function pickImageMime(filename: string): { type: string; ext: string } {
@@ -154,28 +191,19 @@ export async function watermarkVideo(
   const outExt = ext === 'mov' ? 'mp4' : ext
   const outputName = `output.${outExt}`
 
-  await ffmpeg.writeFile(inputName, await fetchFile(src))
-  await ffmpeg.writeFile('logo.png', await loadLogoBytes())
+  // Generate a watermark overlay PNG sized to the exact video dimensions,
+  // using the SAME tiled-diagonal logic as still images. This avoids
+  // ffmpeg's `iw` referring to the logo's native width (which made the
+  // old approach scale the logo against itself rather than the video, so
+  // it ended up tiny). With a pre-baked full-frame overlay, ffmpeg only
+  // has to alpha-blend one layer onto the video.
+  const { width: vw, height: vh } = await probeVideoDimensions(src)
+  const wmBytes = await buildTiledWatermarkPngBytes(vw, vh)
 
-  // Overlay filter: scale logo to ~8% of video width, opacity 0.22 via
-  // colorchannelmixer, then stamp it in a 4×3 grid across the frame so
-  // the watermark is harder to crop out of any one section.
-  const cols = [0.125, 0.375, 0.625, 0.875]
-  const rows = [0.20, 0.50, 0.80]
-  const positions: Array<[number, number]> = []
-  for (const ry of rows) for (const rx of cols) positions.push([rx, ry])
-  const N = positions.length
-  const splitLabels = positions.map((_, i) => `[w${i + 1}]`).join('')
-  const overlayChain = positions
-    .map(([rx, ry], i) => {
-      const inLabel = i === 0 ? '[0:v]' : `[s${i}]`
-      const outLabel = i === N - 1 ? '' : `[s${i + 1}]`
-      return `${inLabel}[w${i + 1}]overlay=W*${rx}-w/2:H*${ry}-h/2${outLabel}`
-    })
-    .join(';')
-  const filter =
-    `[1:v]scale=iw*0.08:-1,format=rgba,colorchannelmixer=aa=0.22,split=${N}${splitLabels};` +
-    overlayChain
+  await ffmpeg.writeFile(inputName, await fetchFile(src))
+  await ffmpeg.writeFile('wm.png', wmBytes)
+
+  const filter = '[0:v][1:v]overlay=0:0'
   // Codec per container: VP8 for webm, H.264 for mp4/mov.
   const isWebm = outExt === 'webm'
   const videoCodec = isWebm
@@ -183,7 +211,7 @@ export async function watermarkVideo(
     : ['-c:v', 'libx264', '-preset', 'fast', '-crf', '23']
   await ffmpeg.exec([
     '-i', inputName,
-    '-i', 'logo.png',
+    '-i', 'wm.png',
     '-filter_complex', filter,
     ...videoCodec,
     '-c:a', 'copy',
@@ -195,7 +223,7 @@ export async function watermarkVideo(
     throw new Error('ffmpeg produced empty output')
   }
   try { await ffmpeg.deleteFile(inputName) } catch {}
-  try { await ffmpeg.deleteFile('logo.png') } catch {}
+  try { await ffmpeg.deleteFile('wm.png') } catch {}
   try { await ffmpeg.deleteFile(outputName) } catch {}
   try { ffmpeg.terminate() } catch {}
 
