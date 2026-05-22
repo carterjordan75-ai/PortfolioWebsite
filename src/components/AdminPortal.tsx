@@ -9,6 +9,7 @@ import { downloadAssetsZip } from '@/lib/downloadZip'
 import { prepareForUpload, isMp4 } from '@/lib/convertVideo'
 import { deleteBlobUrls } from '@/lib/blobClient'
 import { mirrorToMisc } from '@/lib/miscMirror'
+import MediaLibraryPicker from './MediaLibraryPicker'
 
 const ADMIN_PASSWORD = '3432'
 
@@ -289,6 +290,11 @@ type AdminProject = {
   thumbnail?: string
   heroMedia?: string
   media?: { name: string; path: string }[]
+  // Bucket key for the Index hover dropdown + the admin list grouping.
+  // 'gen' = generative; anything else (undefined) is treated as '3d'.
+  category?: string
+  logoPath?: string
+  hideLogo?: boolean
 }
 
 function EditOnPageButton({ path, onClose }: { path: string; onClose: () => void }) {
@@ -655,6 +661,14 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
   const [showLogoOnAbout, setShowLogoOnAbout] = useState(true)
   const [hideLogo, setHideLogo] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
+  // Bucket for the Index hover dropdown + admin list grouping.
+  const [category, setCategory] = useState<'3d' | 'gen'>('3d')
+  // Library picker for the project editor — same picker the inline drawer
+  // uses, so the user can avoid re-uploading files that already live in
+  // home-videos / misc / another project.
+  const [libraryOpen, setLibraryOpen] = useState(false)
+  // Layout: 'list' = flat table; 'grid' = thumbnail cards with hero media.
+  const [listView, setListView] = useState<'list' | 'grid'>('list')
 
   const mediumOptions = ['Motion', '3D', 'Generative', 'Illustration']
 
@@ -672,7 +686,7 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
     setClient(''); setTitle(''); setYear(new Date().getFullYear())
     setMedium([]); setFeatured(false); setBrief(''); setRole('')
     setEditingSlug(null); setShowForm(false); setMediaFiles([])
-    setLogoPath(''); setShowLogoOnAbout(true); setHideLogo(false)
+    setLogoPath(''); setShowLogoOnAbout(true); setHideLogo(false); setCategory('3d')
   }
 
   const handleSave = async () => {
@@ -695,8 +709,9 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
       project.logoPath = logoPath
       project.showLogoOnAbout = showLogoOnAbout
     }
-    // Always persist hideLogo (it's a deliberate toggle, even when false)
+    // Always persist hideLogo + category (deliberate toggles, even at default)
     project.hideLogo = hideLogo
+    project.category = category
     const action = editingSlug ? 'update' : 'add'
     try {
       const res = await fetch('/api/projects', {
@@ -767,6 +782,7 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
     setLogoPath((p as Record<string, unknown>).logoPath as string || '')
     setShowLogoOnAbout((p as Record<string, unknown>).showLogoOnAbout !== false)
     setHideLogo(Boolean((p as Record<string, unknown>).hideLogo))
+    setCategory(((p as Record<string, unknown>).category as '3d' | 'gen') === 'gen' ? 'gen' : '3d')
     originalAssetsRef.current = {
       mediaPaths: (p.media || []).map(m => m.path).filter(Boolean),
       logoPath: ((p as Record<string, unknown>).logoPath as string) || '',
@@ -907,6 +923,28 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
+          {/* Bucket — drives both the Index hover dropdown grouping and the
+              section this project appears under in the admin list. */}
+          <div>
+            <label className={labelStyle}>Bucket</label>
+            <div className="flex gap-1.5 mt-1">
+              {(['gen', '3d'] as const).map(c => (
+                <button
+                  key={c}
+                  onClick={() => setCategory(c)}
+                  className="px-3 py-1.5 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold transition-all"
+                  style={{
+                    background: category === c ? (c === 'gen' ? 'rgba(167,139,250,0.22)' : 'rgba(244,114,182,0.22)') : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${category === c ? (c === 'gen' ? 'rgba(167,139,250,0.55)' : 'rgba(244,114,182,0.55)') : 'rgba(255,255,255,0.08)'}`,
+                    color: category === c ? '#fff' : 'rgba(255,255,255,0.4)',
+                  }}
+                >
+                  {c === 'gen' ? 'Generative' : '3D / Motion'}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Client Logo */}
           <div>
             <label className={labelStyle}>Client Logo</label>
@@ -1009,6 +1047,14 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
                 <p className="text-white/20 text-[7px] mb-2">Upload images and videos. Drag to reorder. First item becomes the hero.</p>
 
                 <div className="flex items-center gap-3 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setLibraryOpen(true)}
+                    className="px-4 py-2 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold text-blue-300/80 border border-blue-300/30 hover:bg-blue-400/10 hover:text-blue-300 transition-all"
+                    title="Pick existing files from the site library instead of re-uploading"
+                  >
+                    ⌕ From Library
+                  </button>
                   <label className="px-4 py-2 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold text-white/50 border border-white/15 cursor-pointer hover:border-white/30 hover:text-white/70 transition-all">
                     {uploadingMedia ? 'Uploading...' : '+ Add Media'}
                     <input
@@ -1115,56 +1161,158 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* Project list */}
-      <div className="space-y-0">
-        <div className="flex items-center text-[7px] uppercase tracking-[0.15em] text-white/25 pb-2 border-b border-white/8 mb-1">
-          <span className="w-[28%]">Client</span>
-          <span className="w-[32%]">Project</span>
-          <span className="w-[12%]">Year</span>
-          <span className="w-[15%]">Medium</span>
-          <span className="w-[13%] text-right">Actions</span>
-        </div>
+      {/* Project list — grouped by category (GEN first, then 3D), with a
+          list / grid view toggle. Group order matches the public Index
+          dropdown so what you see here lines up with what visitors see. */}
+      {(() => {
+        const sorted = [...projects].sort((a, b) => b.year - a.year)
+        const genProjects = sorted.filter(p => p.category === 'gen')
+        const threeDProjects = sorted.filter(p => p.category !== 'gen')
 
-        {loading && <p className="text-white/20 text-[9px] py-4 text-center">Loading...</p>}
-
-        {[...projects].sort((a, b) => b.year - a.year).map((p) => (
-          <div
-            key={p.slug}
-            className="flex items-center py-2 border-b border-white/5 hover:bg-white/3 transition-colors group"
-          >
-            <span className="w-[28%] text-white/80 text-[10px] font-bold uppercase truncate pr-2">
-              {p.featured && <span className="text-pink-400 mr-1">★</span>}
-              {p.client}
-            </span>
-            <span className="w-[32%] text-white/50 text-[9px] truncate pr-2">{p.title}</span>
-            <span className="w-[12%] text-white/40 text-[9px] font-mono">{p.year}</span>
-            <span className="w-[15%] text-white/30 text-[7px] uppercase">{p.tags?.join(' / ')}</span>
-            <span className="w-[13%] flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+        const renderProject = (p: AdminProject) => {
+          const heroMedia = p.heroMedia || p.thumbnail || p.media?.[0]?.path
+          const isVideo = heroMedia ? /\.(mp4|webm|mov|m4v)$/i.test(heroMedia) : false
+          if (listView === 'grid') {
+            return (
               <button
+                key={p.slug}
                 onClick={() => startEdit(p)}
-                className="text-white/40 text-[8px] hover:text-white transition-colors"
+                className="relative aspect-square rounded-lg overflow-hidden bg-black border border-white/10 hover:border-white/30 transition-all group text-left"
               >
-                Edit
+                {heroMedia && (isVideo ? (
+                  <video src={heroMedia} muted loop playsInline className="absolute inset-0 w-full h-full object-cover" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={heroMedia} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                ))}
+                {!heroMedia && (
+                  <div className="absolute inset-0 flex items-center justify-center text-white/20 text-[8px] uppercase tracking-[0.15em]">
+                    no hero
+                  </div>
+                )}
+                {/* Bottom-fade overlay with client + project name */}
+                <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 to-transparent">
+                  <div className="flex items-center gap-1 mb-0.5">
+                    {p.featured && <span className="text-pink-400 text-[8px]">★</span>}
+                    <span className="text-white text-[9px] font-bold uppercase tracking-[0.08em] truncate">{p.client}</span>
+                  </div>
+                  <p className="text-white/55 text-[8px] truncate">{p.title}</p>
+                  <p className="text-white/35 text-[7px] font-mono mt-0.5">{p.year}</p>
+                </div>
+                {/* Delete shortcut — top-right, only on hover */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDelete(p.slug) }}
+                  className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/65 text-red-400/70 hover:text-red-400 text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-label="Delete"
+                >✕</button>
               </button>
-              <button
-                onClick={() => handleDelete(p.slug)}
-                className="text-red-400/40 text-[8px] hover:text-red-400 transition-colors"
-              >
-                ✕
-              </button>
-            </span>
-          </div>
-        ))}
+            )
+          }
+          return (
+            <div
+              key={p.slug}
+              className="flex items-center py-2 border-b border-white/5 hover:bg-white/3 transition-colors group"
+            >
+              <span className="w-[28%] text-white/80 text-[10px] font-bold uppercase truncate pr-2">
+                {p.featured && <span className="text-pink-400 mr-1">★</span>}
+                {p.client}
+              </span>
+              <span className="w-[32%] text-white/50 text-[9px] truncate pr-2">{p.title}</span>
+              <span className="w-[12%] text-white/40 text-[9px] font-mono">{p.year}</span>
+              <span className="w-[15%] text-white/30 text-[7px] uppercase">{p.tags?.join(' / ')}</span>
+              <span className="w-[13%] flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={() => startEdit(p)} className="text-white/40 text-[8px] hover:text-white">Edit</button>
+                <button onClick={() => handleDelete(p.slug)} className="text-red-400/40 text-[8px] hover:text-red-400">✕</button>
+              </span>
+            </div>
+          )
+        }
 
-        {!loading && projects.length === 0 && (
-          <div className="text-center py-6">
-            <p className="text-white/15 text-[9px]">No projects found. Server may have been down.</p>
-            <button onClick={loadProjects} className="mt-2 px-4 py-1.5 rounded-full text-[8px] uppercase tracking-[0.12em] text-white/40 border border-white/15 hover:border-white/30 transition-all">
-              Reload
-            </button>
+        const Section = ({ title, items, accent }: { title: string; items: AdminProject[]; accent: string }) => (
+          <div className="mb-6">
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+              <h3 className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: accent }}>
+                {title} <span className="text-white/30 ml-1">{items.length}</span>
+              </h3>
+            </div>
+            {items.length === 0 ? (
+              <p className="text-white/20 text-[9px] py-3 text-center">No {title.toLowerCase()} projects yet.</p>
+            ) : listView === 'grid' ? (
+              <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
+                {items.map(renderProject)}
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center text-[7px] uppercase tracking-[0.15em] text-white/25 pb-2 border-b border-white/8 mb-1">
+                  <span className="w-[28%]">Client</span>
+                  <span className="w-[32%]">Project</span>
+                  <span className="w-[12%]">Year</span>
+                  <span className="w-[15%]">Medium</span>
+                  <span className="w-[13%] text-right">Actions</span>
+                </div>
+                {items.map(renderProject)}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        )
+
+        return (
+          <div>
+            {/* View toggle — top-right above sections. */}
+            <div className="flex items-center justify-end mb-2">
+              <div className="inline-flex rounded-full border border-white/15 overflow-hidden">
+                {(['list', 'grid'] as const).map(v => (
+                  <button
+                    key={v}
+                    onClick={() => setListView(v)}
+                    className="px-3 py-1 text-[8px] uppercase tracking-[0.12em] font-bold transition-colors"
+                    style={{
+                      background: listView === v ? 'rgba(255,255,255,0.15)' : 'transparent',
+                      color: listView === v ? '#fff' : 'rgba(255,255,255,0.5)',
+                    }}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {loading && <p className="text-white/20 text-[9px] py-4 text-center">Loading...</p>}
+            {!loading && projects.length === 0 && (
+              <div className="text-center py-6">
+                <p className="text-white/15 text-[9px]">No projects found. Server may have been down.</p>
+                <button onClick={loadProjects} className="mt-2 px-4 py-1.5 rounded-full text-[8px] uppercase tracking-[0.12em] text-white/40 border border-white/15 hover:border-white/30 transition-all">
+                  Reload
+                </button>
+              </div>
+            )}
+            {!loading && projects.length > 0 && (
+              <>
+                <Section title="Generative" items={genProjects} accent="rgb(167, 139, 250)" />
+                <Section title="3D & Motion" items={threeDProjects} accent="rgb(244, 114, 182)" />
+              </>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* Library picker — opens when "⌕ From Library" is clicked inside the
+          project editor. Selected items get appended to mediaFiles with their
+          existing Blob URLs (no re-upload), and the mirror-to-misc step is
+          skipped because those items already live wherever they came from. */}
+      <MediaLibraryPicker
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        onSelect={(picks) => {
+          if (picks.length === 0) return
+          setMediaFiles(prev => [
+            ...prev,
+            ...picks.map(p => ({ name: p.name, path: p.url })),
+          ])
+          setStatus(`✓ Added ${picks.length} from library`)
+          setTimeout(() => setStatus(null), 1800)
+        }}
+      />
     </div>
   )
 }
