@@ -495,9 +495,15 @@ For licensing inquiries: carterjordan75@gmail.com
                       const objectPos = (item as { objectPos?: string }).objectPos || 'center center'
                       // Wrap in a width container so widthPct < 100 produces a
                       // smaller, centered media block. 100 = full-width (no
-                      // visible wrapping behaviour).
+                      // visible wrapping behaviour). Use marginLeft/Right
+                      // ONLY — the shorthand `margin: '0 auto'` was zeroing
+                      // out the top/bottom margins, which clobbered the
+                      // parent's `space-y-4` gap between items.
                       return (
-                        <div key={`r${ri}`} style={{ width: `${widthPct}%`, margin: '0 auto' }}>
+                        <div
+                          key={`r${ri}`}
+                          style={{ width: `${widthPct}%`, marginLeft: 'auto', marginRight: 'auto' }}
+                        >
                           <MediaBlock
                             idx={idx}
                             aspect={aspect}
@@ -680,7 +686,14 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
     // since aspectRatio drives the size, this clamps the larger dimension.
     <div
       className="relative group bg-black overflow-hidden cursor-pointer w-full"
-      style={{ aspectRatio: aspect, maxHeight: '85vh', margin: '0 auto' }}
+      style={{
+        aspectRatio: aspect,
+        maxHeight: '85vh',
+        // Horizontal centering only — never set top/bottom margin here,
+        // it'd clobber the parent's space-y gap between items.
+        marginLeft: 'auto',
+        marginRight: 'auto',
+      }}
       onClick={onExpand}
     >
       {mediaSrc && mediaType === 'video' && (
