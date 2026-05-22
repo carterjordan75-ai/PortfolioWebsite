@@ -38,6 +38,13 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   const [expandedMedia, setExpandedMedia] = useState<number | null>(null)
   const [viewCount, setViewCount] = useState(0)
   const [downloading, setDownloading] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState<{
+    phase: 'image' | 'video' | 'zip'
+    name: string
+    idx: number
+    total: number
+    ratio?: number
+  } | null>(null)
   const leftPanelRef = useRef<HTMLDivElement>(null)
   const [adminProject, setAdminProject] = useState<Record<string, unknown> | null>(null)
   const [adminLoading, setAdminLoading] = useState(!codeProject)
@@ -139,122 +146,70 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
 
   const handleDownload = async () => {
     setDownloading(true)
+    setDownloadProgress(null)
     try {
-      const [{ default: JSZip }, { default: html2canvas }] = await Promise.all([
+      const [{ default: JSZip }, { watermarkImage, watermarkVideo, isVideoFile }] = await Promise.all([
         import('jszip'),
-        import('html2canvas'),
+        import('@/lib/watermarkAssets'),
       ])
       const zip = new JSZip()
-      const folder = zip.folder(`${project.client.replace(/[^a-zA-Z0-9]/g, '_')}_${project.year}_JordanCarter`)!
+      const folderName = `${project.client.replace(/[^a-zA-Z0-9]/g, '_')}_${project.year}_XOXO`
+      const folder = zip.folder(folderName)!
 
-      // 1. Capture left panel as .webp
-      if (leftPanelRef.current) {
-        const canvas = await html2canvas(leftPanelRef.current, {
-          backgroundColor: '#f5f5f0',
-          scale: 2,
-          useCORS: true,
-        })
-        // Add watermark
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          ctx.globalAlpha = 0.08
-          ctx.font = 'bold 40px sans-serif'
-          ctx.fillStyle = '#000000'
-          ctx.save()
-          ctx.translate(canvas.width / 2, canvas.height / 2)
-          ctx.rotate(-Math.PI / 6)
-          for (let y = -canvas.height; y < canvas.height; y += 120) {
-            for (let x = -canvas.width; x < canvas.width; x += 500) {
-              ctx.fillText('© JORDAN CARTER', x, y)
-            }
-          }
-          ctx.restore()
-          ctx.globalAlpha = 1
+      // Collect every uploaded media item that has a real src.
+      const items = (localMedia ?? [])
+        .map((m, i) => ({ name: m.name || `${String(i + 1).padStart(2, '0')}`, path: m.path }))
+        .filter((m): m is { name: string; path: string } => !!m.path)
+
+      const total = items.length || 1
+      let done = 0
+
+      for (const item of items) {
+        const fname = item.name || item.path.split('/').pop() || 'file'
+        setDownloadProgress({ phase: isVideoFile(fname) ? 'video' : 'image', name: fname, idx: done, total })
+        try {
+          const { blob, outName } = isVideoFile(fname)
+            ? await watermarkVideo(item.path, fname, (r) => setDownloadProgress({ phase: 'video', name: fname, idx: done, total, ratio: r }))
+            : await watermarkImage(item.path, fname)
+          folder.file(`${String(done + 1).padStart(2, '0')}_${outName}`, blob)
+        } catch (err) {
+          console.error('Watermark failed for', fname, err)
+          // Fall back to the unwatermarked original so the user still gets
+          // SOMETHING for that slot — better than silently skipping.
+          try {
+            const res = await fetch(item.path)
+            const blob = await res.blob()
+            folder.file(`${String(done + 1).padStart(2, '0')}_unwatermarked_${fname}`, blob)
+          } catch {}
         }
-        const webpBlob = await new Promise<Blob>((resolve) =>
-          canvas.toBlob((b) => resolve(b!), 'image/webp', 0.92)
-        )
-        folder.file('project_info.webp', webpBlob)
+        done++
       }
 
-      // 2. Generate encrypted placeholder media files with copyright
-      const mediaCount = allMedia.length
-      for (let i = 0; i < mediaCount; i++) {
-        const label = allMedia[i]?.label || String(i + 1).padStart(2, '0')
-        // Create a canvas with copyright watermark as placeholder
-        const c = document.createElement('canvas')
-        c.width = 1920
-        c.height = 1080
-        const ctx = c.getContext('2d')!
-        ctx.fillStyle = '#111111'
-        ctx.fillRect(0, 0, 1920, 1080)
-        // Center label
-        ctx.fillStyle = '#333333'
-        ctx.font = 'bold 72px sans-serif'
-        ctx.textAlign = 'center'
-        ctx.fillText(`${project.client} — ${label}`, 960, 520)
-        ctx.font = '24px sans-serif'
-        ctx.fillStyle = '#222222'
-        ctx.fillText(`© ${new Date().getFullYear()} Jordan Carter. All rights reserved.`, 960, 580)
-        // Diagonal watermark
-        ctx.globalAlpha = 0.04
-        ctx.font = 'bold 36px sans-serif'
-        ctx.fillStyle = '#ffffff'
-        ctx.save()
-        ctx.translate(960, 540)
-        ctx.rotate(-Math.PI / 6)
-        for (let y = -1200; y < 1200; y += 100) {
-          for (let x = -1600; x < 1600; x += 450) {
-            ctx.fillText('JORDAN CARTER ©', x, y)
-          }
-        }
-        ctx.restore()
-        ctx.globalAlpha = 1
-
-        const blob = await new Promise<Blob>((resolve) =>
-          c.toBlob((b) => resolve(b!), 'image/webp', 0.85)
-        )
-        folder.file(`media_${label.replace(/\./g, '-')}.webp`, blob)
-      }
-
-      // 3. LICENSE.txt
-      const hash = btoa(`JC-${params.slug}-${Date.now()}-ENCRYPTED`).replace(/=/g, '')
-      const license = `════════════════════════════════════════════════
-© ${new Date().getFullYear()} JORDAN CARTER — ALL RIGHTS RESERVED
-════════════════════════════════════════════════
+      // LICENSE.txt — basic copyright notice.
+      const license = `© ${new Date().getFullYear()} JORDAN CARTER / XOXO — ALL RIGHTS RESERVED
 
 Project: ${project.client} — ${project.title}
 Year: ${project.year}
-Role: ${project.role}
+${project.role ? `Role: ${project.role}\n` : ''}
+This media package is watermarked and distributed for review only.
+Unauthorized redistribution, modification or commercial use is prohibited.
 
-This media package is encrypted and watermarked.
-Unauthorized distribution, reproduction, or modification
-of any files in this package is strictly prohibited.
-
-License holder: [AUTHORIZED VIEWER]
-Download timestamp: ${new Date().toISOString()}
-Encryption hash: ${hash}
-Verification: https://jordanscarter.com/verify/${hash.slice(0, 16)}
-
-All media files contain invisible watermarking tied to
-this license. Any breach is traceable and actionable.
-
-For licensing inquiries: carterjordan75@gmail.com
-════════════════════════════════════════════════`
+Contact: carterjordan75@gmail.com`
       folder.file('LICENSE.txt', license)
 
-      // Generate and download ZIP
+      setDownloadProgress({ phase: 'zip', name: '', idx: total, total })
       const content = await zip.generateAsync({ type: 'blob' })
       const url = URL.createObjectURL(content)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${project.client.replace(/[^a-zA-Z0-9]/g, '_')}_${project.year}_JordanCarter.zip`
+      a.download = `${folderName}.zip`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
       console.error('Download failed:', err)
     } finally {
       setDownloading(false)
+      setDownloadProgress(null)
     }
   }
 
@@ -300,19 +255,35 @@ For licensing inquiries: carterjordan75@gmail.com
                   </>
                 )}
 
-                {/* Download button — pill style */}
+                {/* Download button — pill style. Watermarks every media
+                    item (XOXO logo, tiled on images / bottom-right on
+                    videos) before bundling into a ZIP. Videos are
+                    re-encoded via ffmpeg.wasm so the progress label
+                    surfaces per-file ratio while encoding. */}
                 <button
                   className="ml-auto mr-3 flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] tracking-[0.1em] uppercase font-bold transition-all hover:scale-105 active:scale-95"
                   style={{
                     border: `1.5px solid ${dark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)'}`,
                     background: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                    opacity: downloading ? 0.5 : 1,
+                    opacity: downloading ? 0.85 : 1,
                     pointerEvents: downloading ? 'none' : 'auto',
                   }}
                   onClick={handleDownload}
                   disabled={downloading}
+                  title="Download all assets with an XOXO watermark"
                 >
-                  <span style={{ fontSize: '11px' }}>{downloading ? '⏳' : '↓'}</span> {downloading ? 'Packing...' : 'Download'}
+                  <span style={{ fontSize: '11px' }}>{downloading ? '⏳' : '↓'}</span>{' '}
+                  {!downloading && 'Download'}
+                  {downloading && downloadProgress && downloadProgress.phase === 'zip' && 'Zipping…'}
+                  {downloading && downloadProgress && downloadProgress.phase === 'video' && (
+                    `Video ${downloadProgress.idx + 1}/${downloadProgress.total}${
+                      typeof downloadProgress.ratio === 'number' ? ` ${Math.round(downloadProgress.ratio * 100)}%` : ''
+                    }`
+                  )}
+                  {downloading && downloadProgress && downloadProgress.phase === 'image' && (
+                    `Image ${downloadProgress.idx + 1}/${downloadProgress.total}`
+                  )}
+                  {downloading && !downloadProgress && 'Starting…'}
                 </button>
 
                 <span className="text-[10px] tracking-[0.15em] uppercase">featured</span>
