@@ -21,14 +21,17 @@ import seedMisc from '../../../../data/misc.json'
 const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
 export const dynamic = 'force-dynamic'
 
-// Walk an arbitrary JSON value and collect any string that looks like an
-// HTTPS URL hosted on Vercel Blob (vercel-storage.com / blob.vercel-storage).
+// Walk an arbitrary JSON value and collect any string that looks like a
+// media reference — either an https URL on Vercel Blob OR a local
+// /assets/... path. Both contribute to "what's referenced by admin state"
+// and both are surfaced as library items so the user can reuse them when
+// adding media to a new project.
 function collectUrls(node: unknown, out: Set<string>): void {
   if (!node) return
   if (typeof node === 'string') {
-    if (/^https?:\/\/[^/]*(vercel-storage|public\.blob\.vercel)/.test(node)) {
-      out.add(node)
-    }
+    const isBlob = /^https?:\/\/[^/]*(vercel-storage|public\.blob\.vercel)/.test(node)
+    const isLocalAsset = /^\/assets\/[^?#]+\.(jpe?g|png|gif|webp|avif|svg|mp4|webm|mov|m4v)$/i.test(node)
+    if (isBlob || isLocalAsset) out.add(node)
     return
   }
   if (Array.isArray(node)) {
@@ -86,10 +89,12 @@ export async function GET() {
     const all: Item[] = []
     let cursor: string | undefined
     let totalBytes = 0
+    const seenBlobUrls = new Set<string>()
     do {
       const page = await list({ cursor, limit: 1000 })
       for (const b of page.blobs) {
         totalBytes += b.size
+        seenBlobUrls.add(b.url)
         all.push({
           pathname: b.pathname,
           url: b.url,
@@ -100,6 +105,22 @@ export async function GET() {
       }
       cursor = page.cursor
     } while (cursor)
+
+    // Surface any /assets/<...> URLs found in admin state as virtual library
+    // items so static-file references (like the bonfire home video that lives
+    // in public/assets/home-videos/) can be picked from the library. Size
+    // and uploadedAt are unknown for these so we leave them at 0 / undefined.
+    for (const url of Array.from(refs)) {
+      if (url.startsWith('/assets/') && !seenBlobUrls.has(url)) {
+        const pathname = url.replace(/^\//, '') // 'assets/home-videos/foo.webm'
+        all.push({
+          pathname,
+          url,
+          size: 0,
+          referenced: true,
+        })
+      }
+    }
 
     // Largest first by default — most useful for cleanup.
     all.sort((a, b) => b.size - a.size)

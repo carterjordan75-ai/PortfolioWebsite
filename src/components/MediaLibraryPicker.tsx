@@ -67,6 +67,11 @@ export default function MediaLibraryPicker({
   const [filter, setFilter] = useState('')
   const [section, setSection] = useState<string>('all')
   const [typeFilter, setTypeFilter] = useState<'all' | 'video' | 'image'>('all')
+  // Default-on so we hide orphan duplicates by default. Unchecking shows
+  // every Blob in the store including unreferenced ones (useful if the
+  // user knows there's a file they want that no admin state currently
+  // points at).
+  const [referencedOnly, setReferencedOnly] = useState(true)
 
   // Fetch once per open. Reuses the existing /api/storage-list endpoint that
   // the admin Storage panel uses, so any blob in the store is pickable.
@@ -97,12 +102,13 @@ export default function MediaLibraryPicker({
   const visible = useMemo(() => {
     const q = filter.toLowerCase().trim()
     return items
+      .filter(it => !referencedOnly || it.referenced)
       .filter(it => section === 'all' || sectionOf(it.pathname) === section)
       .filter(it => typeFilter === 'all'
         || (typeFilter === 'video' && VIDEO_EXT.test(it.pathname))
         || (typeFilter === 'image' && !VIDEO_EXT.test(it.pathname)))
       .filter(it => !q || it.pathname.toLowerCase().includes(q))
-  }, [items, filter, section, typeFilter])
+  }, [items, filter, section, typeFilter, referencedOnly])
 
   const toggle = (url: string) => {
     setSelected(prev => {
@@ -194,6 +200,18 @@ export default function MediaLibraryPicker({
                 <option value="video" className="bg-zinc-900">videos</option>
                 <option value="image" className="bg-zinc-900">images</option>
               </select>
+              {/* Default-on. Hides orphan blobs (leftovers from re-uploads,
+                  files no admin state currently references). Uncheck to
+                  rummage through the full Blob store. */}
+              <label className="flex items-center gap-1.5 text-white/65 cursor-pointer select-none text-[9px]">
+                <input
+                  type="checkbox"
+                  checked={referencedOnly}
+                  onChange={(e) => setReferencedOnly(e.target.checked)}
+                  className="accent-blue-400"
+                />
+                In-use only
+              </label>
             </div>
 
             {/* Bulk toolbar */}
@@ -241,13 +259,26 @@ export default function MediaLibraryPicker({
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={it.url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
                       )}
-                      {/* Tag indicating section + size */}
+                      {/* Tag indicating section + size. Orphan badge shows
+                          for unreferenced Blobs (only visible when "In-use
+                          only" is unchecked). */}
                       <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 flex items-center justify-between bg-gradient-to-t from-black/85 to-transparent">
                         <span className="text-[7px] uppercase tracking-[0.08em] text-white/80 font-bold truncate">
                           {sectionOf(it.pathname)}
                         </span>
-                        <span className="text-[7px] text-white/50 ml-1 flex-shrink-0">{formatSize(it.size)}</span>
+                        <span className="text-[7px] text-white/50 ml-1 flex-shrink-0">
+                          {it.size > 0 ? formatSize(it.size) : 'static'}
+                        </span>
                       </div>
+                      {!it.referenced && (
+                        <div
+                          className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-sm text-[6px] uppercase tracking-[0.1em] font-bold"
+                          style={{ background: 'rgba(245,158,11,0.85)', color: '#000' }}
+                          title="No admin state currently references this file"
+                        >
+                          orphan
+                        </div>
+                      )}
                       {/* Selected indicator */}
                       <div
                         className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center transition-all"
