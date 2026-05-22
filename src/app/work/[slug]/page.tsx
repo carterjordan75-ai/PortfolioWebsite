@@ -451,9 +451,12 @@ For licensing inquiries: carterjordan75@gmail.com
             </div>
           </div>
 
-          {/* RIGHT — 2/3 — Media with expand */}
+          {/* RIGHT — 2/3 — Media with expand. Gap between stacked items is
+              4 (16px) and grouped-row gap is 3 (12px) so consecutive media
+              don't read as a single edge-to-edge block. The page background
+              shows through the gaps, providing a clean visual separator. */}
           <div className="w-full md:w-[67%] overflow-y-auto relative">
-            <div className="p-3 md:p-4 space-y-3">
+            <div className="p-3 md:p-4 space-y-4">
 
               {/* Dynamic feed of admin-uploaded media. Consecutive items
                   sharing a `rowId` collapse into one flex row (each at its
@@ -510,7 +513,7 @@ For licensing inquiries: carterjordan75@gmail.com
                     }
                     // Grouped row: flex container, each child takes equal share.
                     return (
-                      <div key={`r${ri}`} className="flex gap-2 items-start">
+                      <div key={`r${ri}`} className="flex gap-3 items-start">
                         {row.items.map(({ item, idx }) => {
                           const mediaType: 'video' | 'image' = classifyMedia(item.path!)
                           const aspect = (item as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
