@@ -20,6 +20,9 @@ export type Project = {
   // Bucket inside the Index hover dropdown — '3d' (default) or 'gen' (generative).
   // New "GEN" projects should set this to 'gen' so they surface under the GEN tab.
   category?: '3d' | 'gen'
+  // Skip the client-logo area on the project page. Default false. Set true
+  // for Generative / personal projects that don't have a client logo.
+  hideLogo?: boolean
 }
 
 export const projects: Project[] = [
@@ -34,6 +37,7 @@ export const projects: Project[] = [
     thumbnail: '/placeholder/thumb-1.svg',
     heroMedia: '/placeholder/hero-1.svg',
     category: 'gen',
+    hideLogo: true,
   },
   {
     slug: 'proper-motion-generative',

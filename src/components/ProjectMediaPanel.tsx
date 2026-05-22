@@ -7,6 +7,7 @@ import { downloadAssetsZip } from '@/lib/downloadZip'
 import { prepareForUpload } from '@/lib/convertVideo'
 import { deleteBlobUrls } from '@/lib/blobClient'
 import { mirrorToMisc } from '@/lib/miscMirror'
+import MediaLibraryPicker from './MediaLibraryPicker'
 
 /**
  * In-page media manager for a single featured project.
@@ -122,6 +123,10 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
   // checkbox says at the time of upload is what runs.
   const [mirrorOn, setMirrorOn] = useState<boolean>(!!mirror)
   const [mirrorTagsInput, setMirrorTagsInput] = useState<string>('3D')
+  // Library picker — opens a left-side drawer of every existing Blob so the
+  // user can reuse media without re-uploading (e.g. surface a home video in
+  // a new project).
+  const [libraryOpen, setLibraryOpen] = useState(false)
 
   // Stable short id for a new row group
   const makeRowId = () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -319,6 +324,21 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     }
   }
 
+  // Only cascade-delete a Blob URL if it lives in THIS project's own media
+  // folder — i.e. it was uploaded directly to this project. Items pulled in
+  // via the library picker have URLs in other folders (media/home-videos/,
+  // media/Misc/, media/projects/<other-slug>/) and are still referenced by
+  // their original location, so we leave their Blobs alone.
+  const isOwnedBlob = (url?: string): boolean => {
+    if (!url) return false
+    try {
+      const u = new URL(url)
+      return u.pathname.includes(`/media/projects/${slug}/`)
+    } catch {
+      return false
+    }
+  }
+
   const handleReplace = async (idx: number, file: File) => {
     setUploadingIdx(idx)
     setStatus(null)
@@ -327,8 +347,8 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     if (item) {
       const next = media.map((m, i) => i === idx ? item : m)
       await persist(next)
-      // Old file is no longer referenced — free its Blob.
-      void deleteBlobUrls([oldUrl])
+      // Free the old Blob only if it belonged to this project.
+      if (isOwnedBlob(oldUrl)) void deleteBlobUrls([oldUrl])
       setStatus('✓ Replaced')
     } else {
       setStatus('✗ Replace failed')
@@ -342,8 +362,19 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     const removed = media[idx]?.path
     const next = media.filter((_, i) => i !== idx)
     await persist(next)
-    // Project state saved — now free the Blob.
-    void deleteBlobUrls([removed])
+    // Only free the Blob if this project owns it. Library picks stay alive.
+    if (isOwnedBlob(removed)) void deleteBlobUrls([removed])
+  }
+
+  // Library picker added items — appended to the project's media list with
+  // their existing URLs. No upload happens; the same Blob URL is now
+  // referenced from both the original location and this project.
+  const handleLibraryPick = async (picks: { name: string; url: string }[]) => {
+    if (picks.length === 0) return
+    const next = [...media, ...picks.map(p => ({ name: p.name, path: p.url }))]
+    await persist(next)
+    setStatus(`✓ Added ${picks.length} from library`)
+    setTimeout(() => setStatus(null), 1800)
   }
 
   const handleReorder = async (from: number, to: number) => {
@@ -694,15 +725,34 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
                   if (replaceFileRef.current) replaceFileRef.current.value = ''
                 }}
               />
-              <button
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                className="w-full py-2.5 rounded-full text-[9px] uppercase tracking-[0.12em] font-bold text-white/80 border border-white/20 hover:bg-white/5 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50"
-              >
-                {uploading ? 'Uploading…' : '+ Add media (multi-select OK)'}
-              </button>
+              {/* Two-button row: upload new vs pick from library. The
+                  library opens a left-side drawer with every existing Blob
+                  so the user can reuse media (home videos in a Gen project,
+                  another project's clip, etc.) without re-uploading. */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  className="flex-1 py-2.5 rounded-full text-[9px] uppercase tracking-[0.12em] font-bold text-white/80 border border-white/20 hover:bg-white/5 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50"
+                >
+                  {uploading ? 'Uploading…' : '+ Add new'}
+                </button>
+                <button
+                  onClick={() => setLibraryOpen(true)}
+                  disabled={uploading}
+                  className="flex-1 py-2.5 rounded-full text-[9px] uppercase tracking-[0.12em] font-bold text-blue-300/85 border border-blue-300/30 hover:bg-blue-400/10 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50"
+                  title="Pick existing media from the library — reuses the Blob URL, no re-upload"
+                >
+                  ⌕ From library
+                </button>
+              </div>
             </div>
           </motion.aside>
+          <MediaLibraryPicker
+            open={libraryOpen}
+            onClose={() => setLibraryOpen(false)}
+            onSelect={handleLibraryPick}
+          />
         </>
       )}
     </AnimatePresence>

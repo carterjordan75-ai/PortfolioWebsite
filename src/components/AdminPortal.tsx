@@ -653,6 +653,7 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
   const [role, setRole] = useState('')
   const [logoPath, setLogoPath] = useState('')
   const [showLogoOnAbout, setShowLogoOnAbout] = useState(true)
+  const [hideLogo, setHideLogo] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
 
   const mediumOptions = ['Motion', '3D', 'Generative', 'Illustration']
@@ -671,7 +672,7 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
     setClient(''); setTitle(''); setYear(new Date().getFullYear())
     setMedium([]); setFeatured(false); setBrief(''); setRole('')
     setEditingSlug(null); setShowForm(false); setMediaFiles([])
-    setLogoPath(''); setShowLogoOnAbout(true)
+    setLogoPath(''); setShowLogoOnAbout(true); setHideLogo(false)
   }
 
   const handleSave = async () => {
@@ -694,6 +695,8 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
       project.logoPath = logoPath
       project.showLogoOnAbout = showLogoOnAbout
     }
+    // Always persist hideLogo (it's a deliberate toggle, even when false)
+    project.hideLogo = hideLogo
     const action = editingSlug ? 'update' : 'add'
     try {
       const res = await fetch('/api/projects', {
@@ -763,6 +766,7 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
     setMediaFiles(p.media || [])
     setLogoPath((p as Record<string, unknown>).logoPath as string || '')
     setShowLogoOnAbout((p as Record<string, unknown>).showLogoOnAbout !== false)
+    setHideLogo(Boolean((p as Record<string, unknown>).hideLogo))
     originalAssetsRef.current = {
       mediaPaths: (p.media || []).map(m => m.path).filter(Boolean),
       logoPath: ((p as Record<string, unknown>).logoPath as string) || '',
@@ -906,7 +910,19 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
           {/* Client Logo */}
           <div>
             <label className={labelStyle}>Client Logo</label>
-            <div className="flex items-center gap-3">
+            {/* Hide-logo toggle — useful for Generative projects that don't
+                have a client logo. When checked, the project page skips the
+                logo area entirely. */}
+            <label className="flex items-center gap-2 mb-2 cursor-pointer select-none text-white/65 text-[8px] uppercase tracking-[0.1em]">
+              <input
+                type="checkbox"
+                checked={hideLogo}
+                onChange={(e) => setHideLogo(e.target.checked)}
+                className="accent-blue-400"
+              />
+              Hide logo on project page (no client logo)
+            </label>
+            <div className="flex items-center gap-3" style={{ opacity: hideLogo ? 0.35 : 1, pointerEvents: hideLogo ? 'none' : undefined }}>
               {logoPath ? (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 flex-1">
                   <img src={logoPath} alt="Logo" className="h-5 w-auto invert opacity-60" />

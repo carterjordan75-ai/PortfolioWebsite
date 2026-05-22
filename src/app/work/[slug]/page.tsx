@@ -373,8 +373,12 @@ For licensing inquiries: carterjordan75@gmail.com
                 />
               </div>
 
-              {/* Client logo with size control in edit mode */}
+              {/* Client logo with size control in edit mode. Hidden when
+                  the project is flagged `hideLogo: true` (typical for
+                  Generative projects that don't have a client logo). */}
               {(() => {
+                const hideLogo = Boolean(adminProject?.hideLogo)
+                if (hideLogo) return null
                 const adminLogoPath = adminProject?.logoPath ? String(adminProject.logoPath) : null
                 const logo = adminLogoPath
                   ? { src: adminLogoPath, width: 200, height: 80 }
