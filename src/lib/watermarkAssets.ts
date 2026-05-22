@@ -59,19 +59,19 @@ function drawTiledWatermark(
   canvasW: number,
   canvasH: number,
   logo: HTMLImageElement,
-  opacity = 0.16,
+  opacity = 0.14,
 ): void {
   ctx.save()
   ctx.globalAlpha = opacity
   ctx.translate(canvasW / 2, canvasH / 2)
   ctx.rotate(-Math.PI / 6)
-  // Target watermark logo width ~22% of canvas width — readable, not
-  // dominant. Spacing roughly 2× the width on x and 4× the height on y.
-  const targetW = Math.max(160, Math.round(canvasW * 0.22))
+  // Smaller logo (~10% of canvas width) with tighter spacing so the
+  // surface is densely stamped — harder to crop out one bare patch.
+  const targetW = Math.max(80, Math.round(canvasW * 0.10))
   const aspect = logo.naturalWidth / Math.max(1, logo.naturalHeight)
   const targetH = Math.round(targetW / aspect)
-  const stepX = targetW * 2.2
-  const stepY = targetH * 4
+  const stepX = targetW * 1.5
+  const stepY = targetH * 2.2
   const diag = Math.hypot(canvasW, canvasH)
   for (let y = -diag; y < diag; y += stepY) {
     for (let x = -diag; x < diag; x += stepX) {
@@ -157,10 +157,25 @@ export async function watermarkVideo(
   await ffmpeg.writeFile(inputName, await fetchFile(src))
   await ffmpeg.writeFile('logo.png', await loadLogoBytes())
 
-  // Overlay filter: scale logo to ~18% of video width, place at bottom-right
-  // with a margin equal to ~3% of width. Opacity 0.35 via colorchannelmixer.
-  const filter = '[1:v]scale=iw*0.18:-1,format=rgba,colorchannelmixer=aa=0.35[wm];' +
-    '[0:v][wm]overlay=W-w-W*0.03:H-h-W*0.03'
+  // Overlay filter: scale logo to ~8% of video width, opacity 0.22 via
+  // colorchannelmixer, then stamp it in a 4×3 grid across the frame so
+  // the watermark is harder to crop out of any one section.
+  const cols = [0.125, 0.375, 0.625, 0.875]
+  const rows = [0.20, 0.50, 0.80]
+  const positions: Array<[number, number]> = []
+  for (const ry of rows) for (const rx of cols) positions.push([rx, ry])
+  const N = positions.length
+  const splitLabels = positions.map((_, i) => `[w${i + 1}]`).join('')
+  const overlayChain = positions
+    .map(([rx, ry], i) => {
+      const inLabel = i === 0 ? '[0:v]' : `[s${i}]`
+      const outLabel = i === N - 1 ? '' : `[s${i + 1}]`
+      return `${inLabel}[w${i + 1}]overlay=W*${rx}-w/2:H*${ry}-h/2${outLabel}`
+    })
+    .join(';')
+  const filter =
+    `[1:v]scale=iw*0.08:-1,format=rgba,colorchannelmixer=aa=0.22,split=${N}${splitLabels};` +
+    overlayChain
   // Codec per container: VP8 for webm, H.264 for mp4/mov.
   const isWebm = outExt === 'webm'
   const videoCodec = isWebm
