@@ -358,11 +358,14 @@ function ArchivePageInner() {
             })}
           </div>
 
-          {/* Footer — `mt-auto` pushes it to the viewport bottom whenever
-              the project list is shorter than one screen (typical for the
-              Gen view). */}
+          {/* Footer — inline marginTop: auto pushes it to the viewport
+              bottom when the project list is shorter than one screen
+              (typical for the Gen view). Inline because .glass-footer
+              has a shorthand `margin: 0 8px 8px 8px` rule that would
+              otherwise override mt-auto. */}
           <footer
-            className="mt-auto px-6 md:px-10 py-5 glass-footer"
+            className="px-6 md:px-10 py-5 glass-footer"
+            style={{ marginTop: 'auto' }}
           >
             <div className="flex items-center justify-between gap-4">
               <div className="flex gap-3 flex-shrink-0">
