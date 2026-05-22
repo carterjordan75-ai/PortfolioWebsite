@@ -36,10 +36,9 @@ export default function Navigation() {
   // click gesture on the gate's submit button — see startAmbientAudio call there).
   const [audioOn, setAudioOn] = useState(false)
   const [indexHover, setIndexHover] = useState(false)
-  // Active bucket inside the Index hover dropdown — '3d' = the current featured
-  // projects, 'gen' = a future bucket for generative projects (currently empty,
-  // will populate once projects with `category: 'gen'` are uploaded).
-  const [indexCategory, setIndexCategory] = useState<'3d' | 'gen'>('3d')
+  // Active bucket inside the Index hover dropdown. 'gen' is first and the
+  // default (visible on open); '3d' is the secondary bucket.
+  const [indexCategory, setIndexCategory] = useState<'3d' | 'gen'>('gen')
   // Header minimize state. Only available on the home page. When true, the
   // header slides off-screen and a small floating pill in the top-center
   // restores it on click.
@@ -450,7 +449,7 @@ export default function Navigation() {
                                 projects the dropdown lists. Active segment gets a fill;
                                 inactive segment is dimmed. */}
                             <div className="flex items-center gap-1 px-3 py-1 mb-1">
-                              {(['3d', 'gen'] as const).map(cat => {
+                              {(['gen', '3d'] as const).map(cat => {
                                 const active = indexCategory === cat
                                 return (
                                   <button
