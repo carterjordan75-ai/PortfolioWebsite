@@ -504,6 +504,7 @@ Contact: carterjordan75@gmail.com`
                             mediaType={mediaType}
                             objectPos={objectPos}
                             initialAudioOn={idx === firstVideoIdx}
+                            isLightboxOpen={expandedMedia !== null}
                           />
                         </div>
                       )
@@ -526,6 +527,7 @@ Contact: carterjordan75@gmail.com`
                                 mediaSrc={item.path}
                                 mediaType={mediaType}
                                 objectPos={objectPos}
+                                isLightboxOpen={expandedMedia !== null}
                               />
                             </div>
                           )
@@ -660,10 +662,15 @@ Contact: carterjordan75@gmail.com`
 // `idx` and `dark` are part of the public API for call sites that pass them
 // (handy for future hover states / theming), but not currently consumed inside —
 // underscore-prefix keeps ESLint happy.
-function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, objectPos, initialAudioOn }: {
+function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, objectPos, initialAudioOn, isLightboxOpen }: {
   idx: number; aspect: string; label: string; onExpand: () => void; dark: boolean;
   mediaSrc?: string; mediaType?: 'video' | 'image'; objectPos?: string;
   initialAudioOn?: boolean;
+  // When the page-level lightbox is open the inline videos should mute so
+  // their audio doesn't overlap with the expanded view's audio. The user's
+  // own per-video mute preference is preserved — this only force-mutes
+  // for the duration of the lightbox being open.
+  isLightboxOpen?: boolean;
 }) {
   const pos = objectPos || 'center center'
   // Each video owns its own muted state — different clips can have different
@@ -702,7 +709,7 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
     // For aspect ratios narrower than the column the height cap kicks in;
     // since aspectRatio drives the size, this clamps the larger dimension.
     <div
-      className="relative group bg-black overflow-hidden cursor-pointer w-full"
+      className="relative group bg-black overflow-hidden w-full"
       style={{
         aspectRatio: aspect,
         maxHeight: '85vh',
@@ -711,13 +718,15 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
         marginLeft: 'auto',
         marginRight: 'auto',
       }}
-      onClick={onExpand}
     >
       {mediaSrc && mediaType === 'video' && (
         <video
           ref={videoRef}
           autoPlay
-          muted={muted}
+          // Force mute when the lightbox is open so the inline audio
+          // doesn't overlap with the expanded view's audio. Restores to
+          // the user's chosen state as soon as the lightbox closes.
+          muted={muted || !!isLightboxOpen}
           loop
           playsInline
           className="absolute inset-0 w-full h-full object-cover"
@@ -788,14 +797,32 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
           )}
         </button>
       )}
-      <div
-        className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-60 transition-opacity"
-        style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)', zIndex: 2 }}
+      {/* Full-screen toggle. Clicking the media body no longer expands
+          (was too easy to trigger by accident, and the lightbox audio
+          collided with the inline video audio). This is the only path
+          to the lightbox now. */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onExpand()
+        }}
+        aria-label="View fullscreen"
+        title="View fullscreen"
+        className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md transition-all hover:scale-110 active:scale-95"
+        style={{
+          background: 'rgba(0,0,0,0.55)',
+          color: '#fff',
+          border: '1px solid rgba(255,255,255,0.25)',
+          zIndex: 2,
+        }}
       >
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="1.2">
-          <path d="M1 9L9 1M9 1H3M9 1V7" />
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="15 3 21 3 21 9"/>
+          <polyline points="9 21 3 21 3 15"/>
+          <line x1="21" y1="3" x2="14" y2="10"/>
+          <line x1="3" y1="21" x2="10" y2="14"/>
         </svg>
-      </div>
+      </button>
     </div>
   )
 }
