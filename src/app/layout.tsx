@@ -7,6 +7,7 @@ import { DarkModeProvider } from '@/contexts/DarkModeContext'
 import { EditModeProvider } from '@/contexts/EditModeContext'
 import EditToolbar from '@/components/EditToolbar'
 import CustomCursor from '@/components/CustomCursor'
+import MediaProtect from '@/components/MediaProtect'
 
 const displayFont = DM_Serif_Display({
   subsets: ['latin'],
@@ -78,6 +79,7 @@ export default function RootLayout({
             <GrainOverlay />
             <EditToolbar />
             <CustomCursor />
+            <MediaProtect />
           </EditModeProvider>
         </DarkModeProvider>
       </body>

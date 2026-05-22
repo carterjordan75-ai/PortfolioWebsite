@@ -596,6 +596,8 @@ Contact: carterjordan75@gmail.com`
                     loop
                     playsInline
                     controls
+                    controlsList="nodownload"
+                    disablePictureInPicture
                     className="absolute inset-0 w-full h-full object-cover"
                     src={allMedia[expandedMedia]?.src}
                   />

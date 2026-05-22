@@ -33,6 +33,16 @@
   cursor: none !important;
 }
 
+/* Block iOS long-press → "Save image/Save video" callout and text-style
+   selection on every <video>/<img>. The download button on project
+   pages is the only intended way to pull media. Paired with the global
+   contextmenu/dragstart blockers in MediaProtect.tsx for desktop. */
+img, video {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 * {
   box-sizing: border-box;
 }
