@@ -95,12 +95,18 @@ export async function GET() {
       for (const b of page.blobs) {
         totalBytes += b.size
         seenBlobUrls.add(b.url)
+        // `state/*` and `meta/*` blobs are infrastructure (the admin JSON
+        // store + per-file metadata that backs the look gallery etc) —
+        // they're never referenced as media URLs, so they'd otherwise show
+        // up as "orphans" and get nuked by a cleanup run. Treat them as
+        // implicitly referenced so they're never tagged orphan.
+        const isInfra = b.pathname.startsWith('state/') || b.pathname.startsWith('meta/')
         all.push({
           pathname: b.pathname,
           url: b.url,
           size: b.size,
           uploadedAt: b.uploadedAt ? new Date(b.uploadedAt).toISOString() : undefined,
-          referenced: refs.has(b.url),
+          referenced: isInfra || refs.has(b.url),
         })
       }
       cursor = page.cursor
