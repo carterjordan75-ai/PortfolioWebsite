@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useMemo, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { projects } from '@/data/projects'
 import PageTransition from '@/components/PageTransition'
@@ -20,7 +20,17 @@ const hoverColors = [
   '#f72585', '#4cc9f0', '#ef476f', '#ffd166', '#118ab2',
 ]
 
+// Wrap the page in a Suspense boundary so useSearchParams can read query
+// params without forcing the whole tree out of static rendering.
 export default function ArchivePage() {
+  return (
+    <Suspense fallback={null}>
+      <ArchivePageInner />
+    </Suspense>
+  )
+}
+
+function ArchivePageInner() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('latest')
   const [clientSort, setClientSort] = useState<ClientSort>('az')
   const [hoveredRow, setHoveredRow] = useState<string | null>(null)
@@ -38,6 +48,12 @@ export default function ArchivePage() {
   const [loaderTarget, setLoaderTarget] = useState<string | null>(null)
   const [adminProjects, setAdminProjects] = useState<typeof projects>([])
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // `?cat=gen` flips the page to the generative-only variant. Same visual,
+  // but EVERY project is rendered as a featured row (no archive section)
+  // because generative projects don't have a published / unpublished
+  // distinction yet — they're all hero-tier.
+  const isGenView = searchParams?.get('cat') === 'gen'
   const { dark, fg, fg60, borderThick } = useDarkMode()
 
   // Fetch merged projects from API (code + admin overrides)
@@ -58,6 +74,7 @@ export default function ArchivePage() {
             heroMedia: (p.heroMedia as string) || '/placeholder/hero-1.svg',
             brief: p.brief as string || undefined,
             role: p.role as string || undefined,
+            category: (p.category as '3d' | 'gen' | undefined),
           }))
           setAdminProjects(mapped)
         }
@@ -94,14 +111,20 @@ export default function ArchivePage() {
     }
   }, [loaderTarget, router])
 
-  // Featured projects keep their original order — not affected by sorting
+  // In Gen view, only generative projects are visible — and every one of
+  // them is rendered as a "featured" row (full hover-colour treatment, no
+  // archive section). Otherwise it's the regular split: featured + archive.
   const featured = useMemo(() => {
     const source = adminProjects.length > 0 ? adminProjects : projects
+    if (isGenView) {
+      return source.filter(p => (p as typeof source[0] & { category?: string }).category === 'gen')
+    }
     return source.filter((p) => p.featured)
-  }, [adminProjects])
+  }, [adminProjects, isGenView])
 
-  // Archive (non-featured) projects get sorted
+  // Archive (non-featured) projects get sorted. Hidden entirely in Gen view.
   const archive = useMemo(() => {
+    if (isGenView) return []
     const source = adminProjects.length > 0 ? adminProjects : projects
     const nonFeatured = source.filter((p) => !p.featured)
     nonFeatured.sort((a, b) => {
@@ -111,7 +134,7 @@ export default function ArchivePage() {
       return clientSort === 'az' ? clientDiff : -clientDiff
     })
     return nonFeatured
-  }, [sortOrder, clientSort, adminProjects])
+  }, [sortOrder, clientSort, adminProjects, isGenView])
 
   const allProjects = useMemo(() => [...featured, ...archive], [featured, archive])
 
@@ -157,10 +180,17 @@ export default function ArchivePage() {
 
         <main className="pt-28 md:pt-24 pb-0">
 
-          {/* Subtle stats in square brackets — split left/right */}
-          <div className="flex justify-between px-6 md:px-10 pb-2">
+          {/* Subtle stats in square brackets — split left/right. Gen view
+              gets a small label + an escape hatch back to the full index. */}
+          <div className="flex justify-between items-baseline px-6 md:px-10 pb-2">
             <span className="text-[10px] tracking-[0.15em] uppercase" style={{ color: fg60 }}>
-              [{projects.length} projects]
+              {isGenView ? (
+                <>
+                  [generative · {featured.length} projects] <a href="/indexx" className="ml-2 hover:opacity-100 transition-opacity" style={{ opacity: 0.6 }}>← all projects</a>
+                </>
+              ) : (
+                `[${allProjects.length} projects]`
+              )}
             </span>
             <span className="text-[10px] tracking-[0.15em] uppercase" style={{ color: fg60 }}>
               [{uniqueClients} clients]
@@ -234,10 +264,14 @@ export default function ArchivePage() {
             )
           })}
 
-          {/* Divider with gap */}
-          <div className="py-2" style={{ borderBottom: `3px solid ${borderThick}` }} />
+          {/* Divider with gap — hidden in Gen view since there's no archive
+              section below it. */}
+          {!isGenView && (
+            <div className="py-2" style={{ borderBottom: `3px solid ${borderThick}` }} />
+          )}
 
-          {/* Archive rows — not clickable (non-featured) */}
+          {/* Archive rows — not clickable (non-featured). Empty in Gen view
+              so the AnimatePresence renders nothing. */}
           <AnimatePresence mode="popLayout">
             {archive.map((project) => {
               const isHovered = hoveredRow === `a-${project.slug}`
@@ -272,8 +306,9 @@ export default function ArchivePage() {
             })}
           </AnimatePresence>
 
-          {/* Employment rows — compact */}
-          <div className="mt-3">
+          {/* Employment rows — compact. Hidden in Gen view (irrelevant to
+              the generative-films-only index). */}
+          <div className="mt-3" style={{ display: isGenView ? 'none' : undefined }}>
             {employmentData.map((job, empIdx) => {
               const isHovered = hoveredRow === `emp-${job.company}`
               const hoverColor = hoverColors[empIdx % hoverColors.length]

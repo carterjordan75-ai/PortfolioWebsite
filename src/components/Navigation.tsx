@@ -548,7 +548,9 @@ export default function Navigation() {
                                 transition={{ delay: 0.2 }}
                               >
                                 <Link
-                                  href="/indexx"
+                                  // GEN tab → category-filtered index page;
+                                  // 3D tab → full /indexx with both buckets.
+                                  href={indexCategory === 'gen' ? '/indexx?cat=gen' : '/indexx'}
                                   onClick={() => setIndexHover(false)}
                                   className="text-[8px] uppercase tracking-[0.12em] font-bold hover:opacity-80 hover:scale-110 inline-block origin-left"
                                   style={{
@@ -556,7 +558,7 @@ export default function Navigation() {
                                     transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out',
                                   }}
                                 >
-                                  See all projects →
+                                  {indexCategory === 'gen' ? 'See all generative →' : 'See all projects →'}
                                 </Link>
                               </motion.div>
                             </div>
