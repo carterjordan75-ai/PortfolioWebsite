@@ -230,9 +230,10 @@ export default function Navigation() {
               i
             </button>
 
-            {/* Dark mode toggle — Index + Misc pages. Outer ring + inner filled disc
-                with a 3px gap. Matches the nav-link opacity scale (50% → 70% on hover). */}
-            {(isArchive || isExperiments) && (
+            {/* Dark mode toggle — Index + Misc + every featured project page.
+                Outer ring + inner filled disc with a 3px gap. Matches the
+                nav-link opacity scale (50% → 70% on hover). */}
+            {(isArchive || isExperiments || isProjectPage) && (
               <button
                 onClick={() => setDark(!dark)}
                 className="rounded-full flex-shrink-0 opacity-50 hover:opacity-70 hover:scale-110 flex items-center justify-center"

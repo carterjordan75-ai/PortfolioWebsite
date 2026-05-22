@@ -280,11 +280,15 @@ For licensing inquiries: carterjordan75@gmail.com
           >
             <div ref={leftPanelRef} className="px-5 py-5 flex flex-col" style={{ direction: 'ltr', color: dark ? '#ffffff' : '#000000' }}>
 
-              {/* Top row — year, views, download, featured */}
+              {/* Top row — year, views (edit-mode only), download, featured */}
               <div className="flex items-center gap-3 mb-1">
                 <span className="text-[10px] tracking-[0.1em] uppercase">{project.year}</span>
-                <span className="text-[10px]" style={{ opacity: 0.15 }}>|</span>
-                <span className="text-[9px] font-mono" style={{ opacity: 0.4 }}>[views: {viewCount}]</span>
+                {editMode && (
+                  <>
+                    <span className="text-[10px]" style={{ opacity: 0.15 }}>|</span>
+                    <span className="text-[9px] font-mono" style={{ opacity: 0.4 }}>[views: {viewCount}]</span>
+                  </>
+                )}
 
                 {/* Download button — pill style */}
                 <button
