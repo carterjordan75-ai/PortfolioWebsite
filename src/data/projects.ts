@@ -24,6 +24,18 @@ export type Project = {
 
 export const projects: Project[] = [
   {
+    slug: 'softboys',
+    client: 'SOFTBOYS',
+    title: 'SOFTBOYS',
+    year: 2026,
+    tags: ['Generative'],
+    featured: true,
+    type: 'media-forward',
+    thumbnail: '/placeholder/thumb-1.svg',
+    heroMedia: '/placeholder/hero-1.svg',
+    category: 'gen',
+  },
+  {
     slug: 'proper-motion-generative',
     client: 'Proper',
     title: 'Motion Identity & Generative System',
