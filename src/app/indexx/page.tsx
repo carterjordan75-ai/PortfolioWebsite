@@ -143,13 +143,16 @@ function ArchivePageInner() {
   const bg = dark ? '#000000' : '#ffffff'
   const borderColor = dark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)'
 
+  // In Gen view there's no real "client" — these are personal/generative
+  // projects — so the title takes the bold first-column slot and the
+  // "Project" cell is blank to avoid showing the name twice.
   const RowDesktop = ({ project }: { project: typeof projects[0] }) => (
     <>
       <span className="hidden md:block font-black text-[17px] uppercase tracking-[0.02em] leading-tight">
-        {project.client}
+        {isGenView ? project.title : project.client}
       </span>
       <span className="hidden md:block text-[17px] uppercase tracking-[0.02em] font-black leading-tight">
-        {project.title}
+        {isGenView ? '' : project.title}
       </span>
       <span className="hidden md:block text-[13px] uppercase tracking-[0.06em] font-bold leading-tight" style={{ color: fg60 }}>
         {project.tags.join(' / ')}
@@ -163,10 +166,14 @@ function ArchivePageInner() {
   const RowMobile = ({ project }: { project: typeof projects[0] }) => (
     <div className="md:hidden">
       <div className="flex items-baseline justify-between">
-        <span className="font-black text-[14px] uppercase tracking-[0.02em]">{project.client}</span>
+        <span className="font-black text-[14px] uppercase tracking-[0.02em]">
+          {isGenView ? project.title : project.client}
+        </span>
         <span className="text-[14px] font-black">{project.year}</span>
       </div>
-      <span className="text-[11px] uppercase tracking-[0.02em] opacity-50 font-black">{project.title}</span>
+      {!isGenView && (
+        <span className="text-[11px] uppercase tracking-[0.02em] opacity-50 font-black">{project.title}</span>
+      )}
     </div>
   )
 
@@ -200,30 +207,43 @@ function ArchivePageInner() {
                 `[${allProjects.length} projects]`
               )}
             </span>
-            <span className="text-[10px] tracking-[0.15em] uppercase" style={{ color: fg60 }}>
-              [{uniqueClients} clients]
-            </span>
+            {!isGenView && (
+              <span className="text-[10px] tracking-[0.15em] uppercase" style={{ color: fg60 }}>
+                [{uniqueClients} clients]
+              </span>
+            )}
           </div>
 
-          {/* Table header */}
+          {/* Table header — in Gen view the "Client" cell becomes "Project"
+              (since these projects have no client) and the secondary
+              "Project" cell is left blank. Sort buttons stay live for the
+              non-Gen archive list and are no-op in Gen view. */}
           <div
             className="hidden md:grid grid-cols-[1.2fr_2fr_1fr_0.4fr] gap-4 px-6 md:px-10 py-2 text-[10px] tracking-[0.2em] uppercase"
             style={{ borderBottom: `2px solid ${borderThick}`, color: fg60 }}
           >
-            <button
-              onClick={() => setClientSort(clientSort === 'az' ? 'za' : 'az')}
-              className="text-left hover:opacity-80 transition-opacity"
-            >
-              Client ({clientSort === 'az' ? 'A-Z' : 'Z-A'})
-            </button>
-            <span>Project</span>
+            {isGenView ? (
+              <span className="text-left">Project</span>
+            ) : (
+              <button
+                onClick={() => setClientSort(clientSort === 'az' ? 'za' : 'az')}
+                className="text-left hover:opacity-80 transition-opacity"
+              >
+                Client ({clientSort === 'az' ? 'A-Z' : 'Z-A'})
+              </button>
+            )}
+            <span>{isGenView ? '' : 'Project'}</span>
             <span>Category</span>
-            <button
-              onClick={() => setSortOrder(sortOrder === 'latest' ? 'earliest' : 'latest')}
-              className="text-right hover:opacity-80 transition-opacity"
-            >
-              Year {sortOrder === 'latest' ? '↓' : '↑'}
-            </button>
+            {isGenView ? (
+              <span className="text-right">Year</span>
+            ) : (
+              <button
+                onClick={() => setSortOrder(sortOrder === 'latest' ? 'earliest' : 'latest')}
+                className="text-right hover:opacity-80 transition-opacity"
+              >
+                Year {sortOrder === 'latest' ? '↓' : '↑'}
+              </button>
+            )}
           </div>
 
           {/* Mobile header */}
@@ -231,12 +251,20 @@ function ArchivePageInner() {
             className="md:hidden px-6 py-2 text-[10px] tracking-[0.2em] uppercase flex justify-between"
             style={{ borderBottom: `2px solid ${borderThick}`, color: fg60 }}
           >
-            <button onClick={() => setClientSort(clientSort === 'az' ? 'za' : 'az')} className="hover:opacity-80">
-              Client ({clientSort === 'az' ? 'A-Z' : 'Z-A'})
-            </button>
-            <button onClick={() => setSortOrder(sortOrder === 'latest' ? 'earliest' : 'latest')} className="hover:opacity-80">
-              Year {sortOrder === 'latest' ? '↓' : '↑'}
-            </button>
+            {isGenView ? (
+              <span>Project</span>
+            ) : (
+              <button onClick={() => setClientSort(clientSort === 'az' ? 'za' : 'az')} className="hover:opacity-80">
+                Client ({clientSort === 'az' ? 'A-Z' : 'Z-A'})
+              </button>
+            )}
+            {isGenView ? (
+              <span>Year</span>
+            ) : (
+              <button onClick={() => setSortOrder(sortOrder === 'latest' ? 'earliest' : 'latest')} className="hover:opacity-80">
+                Year {sortOrder === 'latest' ? '↓' : '↑'}
+              </button>
+            )}
           </div>
 
           {/* Featured rows */}
