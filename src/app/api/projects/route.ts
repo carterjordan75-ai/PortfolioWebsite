@@ -72,10 +72,18 @@ function getMergedProjects(adminData: AdminData) {
     result.push({ ...data, slug, _source: 'admin' })
   }
 
-  // Featured order
+  // Featured order. Gen (generative) projects always sort to the top of
+  // the featured group — they're the most recent/personal work and the
+  // user wants them above commercial projects like Nike. Within each
+  // group (gen / non-gen) we then respect any `featuredOrder` the admin
+  // has set via the reorder panel, defaulting to 999 (end of group) for
+  // unordered items.
   const featured = result.filter(p => p.featured)
   const nonFeatured = result.filter(p => !p.featured)
   featured.sort((a, b) => {
+    const aGen = a.category === 'gen' ? 0 : 1
+    const bGen = b.category === 'gen' ? 0 : 1
+    if (aGen !== bGen) return aGen - bGen
     const orderA = typeof a.featuredOrder === 'number' ? a.featuredOrder : 999
     const orderB = typeof b.featuredOrder === 'number' ? b.featuredOrder : 999
     return orderA - orderB
