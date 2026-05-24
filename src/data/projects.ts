@@ -38,7 +38,7 @@ export const projects: Project[] = [
     heroMedia: '/placeholder/hero-1.svg',
     category: 'gen',
     hideLogo: true,
-    brief: 'An ongoing series of AI-generated short films set in the world of skinheads and British indie cinema. SOFTBOYS uses generative tools to chase the texture of memory — grainy 16mm light, the feel of a scene rather than the polish of one. Each piece is a small study in emotion, nostalgia and character: the tension between hard exteriors and softer interior lives. It\'s an exploration into generative filmmaking — making AI feel human and purposeful, not just plausible.',
+    brief: 'An ongoing series of AI-generated short films set in the world of skinheads and British indie cinema. SOFTBOYS uses generative tools to chase the texture of memory — grainy 16mm light, the feel of a scene rather than the polish of one. Each piece is a small study in emotion, nostalgia and character: the tension between hard exteriors and softer interior lives. It\'s an exploration into generative filmmaking — making AI feel human and purposeful, not just plausible. The next film in the series is in production now — pushing further into audio as a storytelling layer rather than a backing track, and building out fuller, fleshed-out scenes that breathe and sustain rather than resting on single-shot moments. The aim is to move the work from fragments toward something closer to a short film proper, while keeping the rawness and grain that defined the earlier pieces.',
     role: 'Direction, generative pipeline, edit',
   },
   {

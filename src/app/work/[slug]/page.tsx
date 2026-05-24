@@ -306,20 +306,25 @@ Contact: carterjordan75@gmail.com`
                 {project.client}
               </h1>
 
-              {/* Title — scattered words, mixed weights/sizes */}
-              <div className="mb-3 -mt-1">
-                {project.title.split(' ').map((word, i) => (
-                  <span key={i}>
-                    {i > 0 && <span className="text-[11px]" style={{ opacity: 0.15 }}>{' '}</span>}
-                    <span
-                      className={i % 3 === 0 ? 'font-black' : i % 3 === 1 ? 'font-light' : 'font-bold italic'}
-                      style={{ fontSize: i === 0 ? 'clamp(1.6rem, 5vw, 2.8rem)' : i % 2 === 0 ? '1.1rem' : 'clamp(1.2rem, 3.5vw, 2rem)', lineHeight: 1 }}
-                    >
-                      {word}
+              {/* Title — scattered words, mixed weights/sizes. Hidden on
+                  Gen projects because client and title are the same value
+                  (e.g. SOFTBOYS / SOFTBOYS) so this would just duplicate
+                  the headline. */}
+              {(project as { category?: string }).category !== 'gen' && (
+                <div className="mb-3 -mt-1">
+                  {project.title.split(' ').map((word, i) => (
+                    <span key={i}>
+                      {i > 0 && <span className="text-[11px]" style={{ opacity: 0.15 }}>{' '}</span>}
+                      <span
+                        className={i % 3 === 0 ? 'font-black' : i % 3 === 1 ? 'font-light' : 'font-bold italic'}
+                        style={{ fontSize: i === 0 ? 'clamp(1.6rem, 5vw, 2.8rem)' : i % 2 === 0 ? '1.1rem' : 'clamp(1.2rem, 3.5vw, 2rem)', lineHeight: 1 }}
+                      >
+                        {word}
+                      </span>
                     </span>
-                  </span>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
 
               {/* Tags scattered inline with different sizes */}
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0 mb-4">
