@@ -76,6 +76,27 @@ export default function AdminPortal({ show, onClose }: { show: boolean; onClose:
     }
   }, [show, authenticated])
 
+  // Background sweep: every time the admin opens the panel (after auth),
+  // POST /api/storage-cleanup to delete any orphan media blobs older than
+  // the grace window. Fire-and-forget — the user doesn't wait for it, and
+  // we don't surface errors unless something interesting happened.
+  useEffect(() => {
+    if (!show || !authenticated) return
+    let cancelled = false
+    fetch('/api/storage-cleanup', { method: 'POST' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (cancelled || !d || typeof d.deleted !== 'number') return
+        if (d.deleted > 0) {
+          const mb = (d.freedBytes / (1024 * 1024)).toFixed(1)
+          // eslint-disable-next-line no-console
+          console.info(`[storage-cleanup] removed ${d.deleted} orphan${d.deleted === 1 ? '' : 's'}, freed ${mb} MB`)
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [show, authenticated])
+
   const handleLogin = () => {
     if (password === ADMIN_PASSWORD) {
       setAuthenticated(true)
@@ -333,6 +354,9 @@ function HomePagePanel() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  // Site-wide library picker for pulling existing media (e.g. a SOFTBOYS
+  // clip) into the home page playlist without re-uploading.
+  const [libraryOpen, setLibraryOpen] = useState(false)
 
   // Pending upload form — appears after a file is picked, so user can confirm
   // title / category / year before sending the file to the server.
@@ -440,6 +464,40 @@ function HomePagePanel() {
   const updateField = <K extends keyof HomeVideo>(i: number, field: K, val: HomeVideo[K]) => {
     const next = videos.map((v, idx) => (idx === i ? { ...v, [field]: val } : v))
     persist(next)
+  }
+
+  // Append picks from the site-wide library. We share the existing blob URL
+  // rather than re-uploading. Category is best-effort guessed from the source
+  // section — items pulled from a /projects/<slug>/ folder where the slug is
+  // SOFTBOYS-style → "Generative Film"; everything else falls back to the
+  // default "3D & Motion" which the admin can adjust inline.
+  const handleLibraryPick = (items: { name: string; url: string }[]) => {
+    if (!items.length) return
+    const yr = String(new Date().getFullYear())
+    const niceTitle = (name: string) =>
+      name
+        .replace(/\.[^.]+$/, '')
+        .replace(/[-_]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 60)
+    const guessCategory = (url: string): string => {
+      // SOFTBOYS / HIGH DIVE are the gen projects; any URL inside their
+      // project media folder probably wants the Generative Film bucket.
+      if (/\/media\/projects\/(softboys|high-dive)\//i.test(url)) return 'Generative Film'
+      return HOME_VIDEO_CATEGORIES[0]
+    }
+    const next: HomeVideo[] = [
+      ...videos,
+      ...items.map(it => ({
+        src: it.url,
+        title: niceTitle(it.name),
+        category: guessCategory(it.url),
+        year: yr,
+      })),
+    ]
+    void persistRaw(next)
+    setVideos(next)
   }
 
   const inputBase = 'px-2 py-1 rounded-md text-[10px] bg-white/5 border border-white/10 text-white placeholder-white/20 outline-none focus:border-white/25 transition-colors'
@@ -551,25 +609,44 @@ function HomePagePanel() {
               </div>
             </div>
           ) : (
-            <label
-              className="block w-full py-3 mt-3 rounded-full text-[9px] uppercase tracking-[0.12em] font-bold text-center cursor-pointer transition-all hover:scale-[1.01]"
-              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.22)', color: 'rgba(255,255,255,0.85)' }}
-            >
-              + Upload New Video
-              <input
-                type="file"
-                className="hidden"
-                accept="video/*"
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  if (f) handleFilePick(f)
-                  e.target.value = ''
-                }}
-              />
-            </label>
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <label
+                className="block w-full py-3 rounded-full text-[9px] uppercase tracking-[0.12em] font-bold text-center cursor-pointer transition-all hover:scale-[1.01]"
+                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.22)', color: 'rgba(255,255,255,0.85)' }}
+              >
+                + Upload New Video
+                <input
+                  type="file"
+                  className="hidden"
+                  accept="video/*"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) handleFilePick(f)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setLibraryOpen(true)}
+                className="block w-full py-3 rounded-full text-[9px] uppercase tracking-[0.12em] font-bold text-center transition-all hover:scale-[1.01]"
+                style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.22)', color: 'rgba(255,255,255,0.75)' }}
+              >
+                ⌕ From Library
+              </button>
+            </div>
           )}
         </div>
       )}
+
+      <MediaLibraryPicker
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        onSelect={(items) => {
+          handleLibraryPick(items)
+          setLibraryOpen(false)
+        }}
+      />
     </div>
   )
 }
