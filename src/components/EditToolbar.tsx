@@ -55,6 +55,11 @@ export default function EditToolbar() {
       } else {
         setSaveState('saved')
         clearChanges()
+        // Tell anyone listening (project page, etc.) to refetch their
+        // admin-managed data. Without this, EditableText's defaultValue
+        // stayed stale and saved edits looked like they reverted as soon
+        // as pendingChanges cleared.
+        window.dispatchEvent(new CustomEvent('admin-saved', { detail: { savedCount: ok } }))
         // Stay in edit mode after save so the user can keep editing. The
         // pill shows ✓ Saved for 4s, then fades back to idle.
         setTimeout(() => setSaveState('idle'), 4000)
@@ -67,6 +72,20 @@ export default function EditToolbar() {
 
   const handleCancel = () => {
     clearChanges()
+    setEditMode(false)
+  }
+
+  // Exit edit mode WITHOUT touching pendingChanges — so a user who just
+  // wants to preview the page can flip back to view mode and re-enter
+  // edit mode later with their unsaved edits intact. If there are unsaved
+  // changes we confirm before leaving so they don't lose work by accident.
+  const handleExitToView = () => {
+    if (changeCount > 0) {
+      const ok = window.confirm(
+        `You have ${changeCount} unsaved change${changeCount === 1 ? '' : 's'}. Exit anyway? Your edits will be kept until you save or discard.`,
+      )
+      if (!ok) return
+    }
     setEditMode(false)
   }
 
@@ -137,11 +156,21 @@ export default function EditToolbar() {
           </button>
 
           <button
+            onClick={handleExitToView}
+            title="Exit edit mode (keep any unsaved edits in memory)"
+            className="px-4 py-1.5 rounded-full text-[9px] uppercase tracking-[0.1em] font-bold text-white/70 hover:text-white transition-all hover:scale-105 active:scale-95"
+            style={{ border: '1px solid rgba(255, 255, 255, 0.2)' }}
+          >
+            ← View
+          </button>
+
+          <button
             onClick={handleCancel}
+            title="Discard all pending changes and exit edit mode"
             className="px-4 py-1.5 rounded-full text-[9px] uppercase tracking-[0.1em] font-bold text-white/50 hover:text-white/80 transition-all hover:scale-105 active:scale-95"
             style={{ border: '1px solid rgba(255, 255, 255, 0.15)' }}
           >
-            Cancel
+            Discard
           </button>
         </motion.div>
       )}

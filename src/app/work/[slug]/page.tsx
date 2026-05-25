@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { projects } from '@/data/projects'
@@ -71,8 +71,8 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   // Always fetch admin data — for code projects it may have overrides (logo, brief, etc.)
   // cache: 'no-store' so admin edits show up immediately on the public page
   // (otherwise the browser/Vercel edge cache can serve a stale title/brief).
-  useEffect(() => {
-    fetch('/api/projects', { cache: 'no-store' })
+  const fetchAdminProject = useCallback(() => {
+    return fetch('/api/projects', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => {
         const found = (data.projects || []).find((p: Record<string, unknown>) => p.slug === params.slug)
@@ -82,6 +82,20 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
       })
       .catch(() => setAdminLoading(false))
   }, [params.slug])
+
+  useEffect(() => {
+    void fetchAdminProject()
+  }, [fetchAdminProject])
+
+  // After the EditToolbar finishes saving, re-fetch so EditableText's
+  // `defaultValue` reflects the freshly-persisted brief/title/etc. Without
+  // this the displayed text snapped back to the old value as soon as
+  // pendingChanges cleared, which made saves look like they didn't take.
+  useEffect(() => {
+    const onSaved = () => { void fetchAdminProject() }
+    window.addEventListener('admin-saved', onSaved)
+    return () => window.removeEventListener('admin-saved', onSaved)
+  }, [fetchAdminProject])
 
   // Track page views per project in localStorage
   useEffect(() => {
