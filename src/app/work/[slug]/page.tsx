@@ -56,6 +56,18 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   const [localMedia, setLocalMedia] = useState<Array<{ name?: string; path?: string }> | null>(null)
   const [mediaPanelOpen, setMediaPanelOpen] = useState(false)
 
+  // Scroll-driven audio: only one inline video plays audio at a time —
+  // whichever is most centered in the right-column scroll container.
+  // `pageAudioMuted` is a soft global mute the user can toggle from the
+  // active video's audio button.
+  const [activeAudioIdx, setActiveAudioIdx] = useState<number | null>(null)
+  const [pageAudioMuted, setPageAudioMuted] = useState(false)
+  const rightColRef = useRef<HTMLDivElement | null>(null)
+  // Map of media idx → its root element, populated by the MediaBlock root
+  // ref callback. Used to compute which item is closest to the viewport
+  // (here: scroll-container) center on every scroll.
+  const mediaBlockRefs = useRef<Map<number, HTMLElement>>(new Map())
+
   // Always fetch admin data — for code projects it may have overrides (logo, brief, etc.)
   // cache: 'no-store' so admin edits show up immediately on the public page
   // (otherwise the browser/Vercel edge cache can serve a stale title/brief).
@@ -88,6 +100,49 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [expandedMedia])
+
+  // Scroll-driven audio handoff: whichever MediaBlock's center is closest
+  // to the scroll container's center becomes activeAudioIdx — that's the
+  // only video that gets to play audio. Listener is rAF-throttled so it
+  // doesn't fire on every scroll tick; we also re-run on resize.
+  useEffect(() => {
+    if (!localMedia || localMedia.length === 0) return
+    const container = rightColRef.current
+    if (!container) return
+    let rafId: number | null = null
+    const update = () => {
+      rafId = null
+      const cRect = container.getBoundingClientRect()
+      const centerY = (cRect.top + cRect.bottom) / 2
+      let bestIdx: number | null = null
+      let bestDistance = Infinity
+      mediaBlockRefs.current.forEach((el, idx) => {
+        const r = el.getBoundingClientRect()
+        // Skip items that are entirely outside the scroll container's
+        // visible area — they shouldn't claim the audio focus.
+        if (r.bottom < cRect.top || r.top > cRect.bottom) return
+        const itemCenter = (r.top + r.bottom) / 2
+        const distance = Math.abs(itemCenter - centerY)
+        if (distance < bestDistance) {
+          bestDistance = distance
+          bestIdx = idx
+        }
+      })
+      setActiveAudioIdx(bestIdx)
+    }
+    const onScroll = () => {
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(update)
+    }
+    update()
+    container.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll)
+    return () => {
+      container.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
+  }, [localMedia])
 
   // Mirror the latest admin media into local state — used by the inline
   // media manager + by getProjectMedia() when rendering the page.
@@ -445,7 +500,7 @@ Contact: carterjordan75@gmail.com`
               4 (16px) and grouped-row gap is 3 (12px) so consecutive media
               don't read as a single edge-to-edge block. The page background
               shows through the gaps, providing a clean visual separator. */}
-          <div className="w-full md:w-[67%] overflow-y-auto relative">
+          <div ref={rightColRef} className="w-full md:w-[67%] overflow-y-auto relative">
             <div className="p-3 md:p-4 space-y-4">
 
               {/* Dynamic feed of admin-uploaded media. Consecutive items
@@ -462,11 +517,6 @@ Contact: carterjordan75@gmail.com`
                 </div>
               ) : (
                 (() => {
-                  // Index of the first VIDEO item in the list — that's the
-                  // one that should start with audio on (browser permitting).
-                  const firstVideoIdx = (localMedia ?? []).findIndex(
-                    (m) => m.path && classifyMedia(m.path) === 'video',
-                  )
                   // Walk the list and batch consecutive same-rowId items.
                   type Row = { items: Array<{ item: NonNullable<typeof localMedia>[number]; idx: number }>; rowId?: string }
                   const rows: Row[] = []
@@ -508,8 +558,14 @@ Contact: carterjordan75@gmail.com`
                             mediaSrc={item.path}
                             mediaType={mediaType}
                             objectPos={objectPos}
-                            initialAudioOn={idx === firstVideoIdx}
                             isLightboxOpen={expandedMedia !== null}
+                            audioActive={idx === activeAudioIdx}
+                            pageAudioMuted={pageAudioMuted}
+                            onAudioToggle={() => setPageAudioMuted(p => !p)}
+                            rootRef={(el) => {
+                              if (el) mediaBlockRefs.current.set(idx, el)
+                              else mediaBlockRefs.current.delete(idx)
+                            }}
                           />
                         </div>
                       )
@@ -533,6 +589,13 @@ Contact: carterjordan75@gmail.com`
                                 mediaType={mediaType}
                                 objectPos={objectPos}
                                 isLightboxOpen={expandedMedia !== null}
+                                audioActive={idx === activeAudioIdx}
+                                pageAudioMuted={pageAudioMuted}
+                                onAudioToggle={() => setPageAudioMuted(p => !p)}
+                                rootRef={(el) => {
+                                  if (el) mediaBlockRefs.current.set(idx, el)
+                                  else mediaBlockRefs.current.delete(idx)
+                                }}
                               />
                             </div>
                           )
@@ -667,37 +730,40 @@ Contact: carterjordan75@gmail.com`
 // `idx` and `dark` are part of the public API for call sites that pass them
 // (handy for future hover states / theming), but not currently consumed inside —
 // underscore-prefix keeps ESLint happy.
-function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, objectPos, initialAudioOn, isLightboxOpen }: {
+function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, objectPos, isLightboxOpen, audioActive, pageAudioMuted, onAudioToggle, rootRef }: {
   idx: number; aspect: string; label: string; onExpand: () => void; dark: boolean;
   mediaSrc?: string; mediaType?: 'video' | 'image'; objectPos?: string;
-  initialAudioOn?: boolean;
   // When the page-level lightbox is open the inline videos should mute so
-  // their audio doesn't overlap with the expanded view's audio. The user's
-  // own per-video mute preference is preserved — this only force-mutes
-  // for the duration of the lightbox being open.
+  // their audio doesn't overlap with the expanded view's audio.
   isLightboxOpen?: boolean;
+  // Audio is scroll-driven — only the most-centered video carries audio.
+  // `audioActive` is true for that one MediaBlock at a time. `pageAudioMuted`
+  // is a soft global mute the user can toggle from the active block's
+  // audio button (lives in onAudioToggle).
+  audioActive?: boolean;
+  pageAudioMuted?: boolean;
+  onAudioToggle?: () => void;
+  // Callback so the parent can collect each block's root element into a
+  // Map<idx, HTMLElement> for the scroll-position calculation.
+  rootRef?: (el: HTMLElement | null) => void;
 }) {
   const pos = objectPos || 'center center'
-  // Each video owns its own muted state — different clips can have different
-  // audio so a global toggle would mix them in the wrong way. The first
-  // video on a project page starts UNMUTED if the parent passes
-  // initialAudioOn=true (browser autoplay-with-sound policy permitting; if
-  // it blocks the play, we retry muted on the first user gesture).
-  const [muted, setMuted] = useState(!initialAudioOn)
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  // If the browser blocks unmuted autoplay, fall back to muted and remember
-  // so a single click anywhere on the page retries the play with sound.
+  // Computed mute — videos play silently EXCEPT the centered one (and only
+  // if pageAudioMuted is off and the lightbox isn't open).
+  const shouldBeMuted = !audioActive || !!pageAudioMuted || !!isLightboxOpen
+  // Whenever this video becomes the audio source, try to keep it playing.
+  // Setting muted=false on a video can cause the browser to pause it under
+  // strict autoplay-with-sound policies; the play() call below re-arms it.
+  // If the browser still blocks, we set up a one-shot user-gesture listener
+  // so the next click anywhere on the page resumes the audio.
   useEffect(() => {
     if (mediaType !== 'video') return
     const v = videoRef.current
     if (!v) return
-    if (!initialAudioOn) return
-    // Try to play unmuted. If blocked, mute and re-arm a one-shot listener
-    // that unmutes on the next user interaction.
+    if (shouldBeMuted) return
     v.play().catch(() => {
-      setMuted(true)
       const retry = () => {
-        setMuted(false)
         v.play().catch(() => {})
         document.removeEventListener('click', retry)
         document.removeEventListener('keydown', retry)
@@ -705,8 +771,7 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
       document.addEventListener('click', retry, { once: true })
       document.addEventListener('keydown', retry, { once: true })
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaSrc])
+  }, [shouldBeMuted, mediaType])
   return (
     // maxHeight cap so a 16:9 item in the wide media column doesn't fill the
     // viewport on big screens — visually anchored to ~85% of viewport height,
@@ -714,6 +779,7 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
     // For aspect ratios narrower than the column the height cap kicks in;
     // since aspectRatio drives the size, this clamps the larger dimension.
     <div
+      ref={rootRef}
       className="relative group bg-black overflow-hidden w-full"
       style={{
         aspectRatio: aspect,
@@ -728,10 +794,10 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
         <video
           ref={videoRef}
           autoPlay
-          // Force mute when the lightbox is open so the inline audio
-          // doesn't overlap with the expanded view's audio. Restores to
-          // the user's chosen state as soon as the lightbox closes.
-          muted={muted || !!isLightboxOpen}
+          // Only the currently-active (centered) video carries audio. The
+          // page-level pageAudioMuted toggle and the lightbox-open guard
+          // additionally force a mute regardless of audioActive state.
+          muted={shouldBeMuted}
           loop
           playsInline
           className="absolute inset-0 w-full h-full object-cover"
@@ -751,32 +817,33 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
       <span className="absolute top-3 left-3 text-[8px] font-mono font-bold uppercase tracking-widest text-white" style={{ opacity: 0.3, zIndex: 2 }}>
         {label}
       </span>
-      {/* Per-video audio toggle. Sits in the bottom-left of each video
-          block. Clicking it stops the click from bubbling to onExpand. */}
-      {mediaType === 'video' && (
+      {/* Audio toggle — only on the currently-active (centered) video and
+          only for video media. Acts as a page-level mute so the user can
+          silence playback no matter which video is centered. As they
+          scroll, the button moves with the audio focus to whichever video
+          is in the middle of the frame. */}
+      {mediaType === 'video' && audioActive && (
         <button
           onClick={(e) => {
             e.stopPropagation()
-            setMuted(prev => {
-              // If we're going from muted → unmuted, the browser may have
-              // paused us (autoplay-with-sound is normally blocked). The
-              // click itself is a user gesture so retrying play() here
-              // succeeds. React's `muted` prop syncs via re-render.
-              if (prev) videoRef.current?.play().catch(() => {})
-              return !prev
-            })
+            // Resuming after a mute → unmute requires a user gesture in
+            // some browsers, which this click satisfies. The parent's
+            // pageAudioMuted state flips here; the audio effect picks
+            // it up on next render.
+            if (pageAudioMuted) videoRef.current?.play().catch(() => {})
+            onAudioToggle?.()
           }}
-          aria-label={muted ? 'Unmute' : 'Mute'}
-          title={muted ? 'Unmute' : 'Mute'}
+          aria-label={pageAudioMuted ? 'Unmute page audio' : 'Mute page audio'}
+          title={pageAudioMuted ? 'Unmute' : 'Mute'}
           className="absolute bottom-3 left-3 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md transition-all hover:scale-110 active:scale-95"
           style={{
-            background: muted ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.9)',
-            color: muted ? '#fff' : '#000',
+            background: pageAudioMuted ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.9)',
+            color: pageAudioMuted ? '#fff' : '#000',
             border: '1px solid rgba(255,255,255,0.25)',
             zIndex: 2,
           }}
         >
-          {muted ? (
+          {pageAudioMuted ? (
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
           ) : (
             // Three animated bars — matches the home page ambient-audio
