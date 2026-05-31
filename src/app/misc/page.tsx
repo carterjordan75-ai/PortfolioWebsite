@@ -806,10 +806,17 @@ export default function ExperimentsPage() {
   // Derived current list: pending edits (if any) win over the server state.
   // When the EditToolbar's Save clears pendingChanges, this falls back to
   // originalCombined — which is refreshed from /api/misc on `admin-saved`.
+  // Payload shape is { items, tombstones } so we can carry deleted srcs
+  // along with the new items array; older array-only payloads from prior
+  // commits still parse correctly via the Array.isArray branch.
   const combined = useMemo<MediaItem[]>(() => {
     const raw = pendingChanges['misc-page']?.items
     if (typeof raw === 'string') {
-      try { return JSON.parse(raw) as MediaItem[] } catch { /* fall through */ }
+      try {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) return parsed
+        if (parsed && Array.isArray(parsed.items)) return parsed.items as MediaItem[]
+      } catch { /* fall through */ }
     }
     return originalCombined
   }, [pendingChanges, originalCombined])
@@ -818,11 +825,19 @@ export default function ExperimentsPage() {
   const right = useMemo(() => combined.filter(m => !isGenerative(m)), [combined])
   const [loading, setLoading] = useState(true)
 
-  // Queue an items change into pendingChanges. Stored as a JSON string so
-  // it fits the existing PendingChanges shape (Record<string, Record<string, string>>).
+  // Queue an items change into pendingChanges. Also computes which srcs
+  // from the originally-displayed list are missing in the new list —
+  // those are the user-deleted items, which get tombstoned so the auto-
+  // surface fallback on the load path doesn't bring them back. Stored as
+  // a JSON string so it fits the existing PendingChanges shape
+  // (Record<string, Record<string, string>>).
   const queueItems = useCallback((next: MediaItem[]) => {
-    addChange('misc-page', 'items', JSON.stringify(next))
-  }, [addChange])
+    const nextSrcs = new Set(next.map(m => m.src))
+    const tombstones = originalCombined
+      .filter(m => !nextSrcs.has(m.src))
+      .map(m => m.src)
+    addChange('misc-page', 'items', JSON.stringify({ items: next, tombstones }))
+  }, [addChange, originalCombined])
 
   const handleDelete = useCallback((src: string) => {
     queueItems(combined.filter(m => m.src !== src))
@@ -870,6 +885,11 @@ export default function ExperimentsPage() {
     ])
       .then(([miscData, projData]) => {
         const miscItems = (miscData.items || []) as MediaItem[]
+        // Tombstones: blob URLs the user has explicitly deleted from
+        // misc. We exclude them from the auto-surface fallback below
+        // and (defensively) from the seen-set so they can't sneak back
+        // in via any future surfacing logic.
+        const tombstones = new Set<string>((miscData.tombstones as string[]) || [])
         type AdminProj = {
           slug?: string
           client?: string
@@ -900,6 +920,7 @@ export default function ExperimentsPage() {
           const tags = p.tags && p.tags.length > 0 ? p.tags : ['3D']
           for (const m of media) {
             if (!m.path) continue
+            if (tombstones.has(m.path)) continue
             const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(m.path) || /\.(mp4|webm|mov|m4v)$/i.test(m.name || '')
             featuredProjectItems.push({
               src: m.path,
@@ -914,7 +935,7 @@ export default function ExperimentsPage() {
         const seen = new Set(miscItems.map(m => m.src))
         const combined: MediaItem[] = [...miscItems]
         for (const it of featuredProjectItems) {
-          if (!seen.has(it.src)) {
+          if (!seen.has(it.src) && !tombstones.has(it.src)) {
             combined.push(it)
             seen.add(it.src)
           }

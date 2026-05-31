@@ -20,16 +20,20 @@ export default function EditToolbar() {
       const failed: string[] = []
       for (const [slug, fields] of Object.entries(pendingChanges)) {
         if (slug === 'misc-page') {
-          // Misc edits queue an `items` field as a JSON string (since
-          // PendingChanges is keyed on strings). Parse and POST it as
-          // the canonical items array to /api/misc.
+          // Misc edits queue a `{ items, tombstones }` JSON blob into
+          // pendingChanges (since PendingChanges is keyed on strings).
+          // The tombstones list carries user-deleted blob URLs so the
+          // misc page's load-time auto-surface fallback can skip them.
           try {
             const raw = fields.items
-            const items = typeof raw === 'string' ? JSON.parse(raw) : raw
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+            // Backwards-compatible: older payloads were just an array.
+            const items = Array.isArray(parsed) ? parsed : (parsed?.items ?? [])
+            const tombstones = Array.isArray(parsed) ? [] : (parsed?.tombstones ?? [])
             const res = await fetch('/api/misc', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ items }),
+              body: JSON.stringify({ items, tombstones }),
             })
             if (res.ok) ok++
             else {
