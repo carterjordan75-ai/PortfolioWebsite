@@ -1,13 +1,15 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { upload } from '@vercel/blob/client'
 import PageTransition from '@/components/PageTransition'
 import PageLoader from '@/components/PageLoader'
 import EmailPopup from '@/components/EmailPopup'
 import AdminPortal from '@/components/AdminPortal'
 import FooterBlurb from '@/components/FooterBlurb'
 import { useDarkMode } from '@/contexts/DarkModeContext'
+import { useEditMode } from '@/contexts/EditModeContext'
 
 type MediaItem = { src: string; type: 'video' | 'image'; title: string; year: number; medium?: string | string[] }
 
@@ -28,6 +30,10 @@ function MediaPanel({
   onToggleExpand,
   otherIndex,
   otherMedia,
+  editMode = false,
+  onDelete,
+  onReplace,
+  onReorder,
 }: {
   media: MediaItem[]
   side: 'left' | 'right'
@@ -37,6 +43,13 @@ function MediaPanel({
   onToggleExpand: () => void
   otherIndex: number
   otherMedia: MediaItem[]
+  // Edit-mode plumbing. When `editMode` is true the gallery tiles render
+  // delete + replace + drag-handle controls. All operations route through
+  // the parent so the canonical combined list stays the source of truth.
+  editMode?: boolean
+  onDelete?: (src: string) => void
+  onReplace?: (src: string, file: File) => void
+  onReorder?: (newOrder: MediaItem[]) => void
 }) {
   const [index, setIndex] = useState(0)
   const [prevIndex, setPrevIndex] = useState<number | null>(null)
@@ -61,6 +74,21 @@ function MediaPanel({
   const [hoveredTile, setHoveredTile] = useState<number | null>(null)
   const tileRefs = useRef<(HTMLButtonElement | null)[]>([])
   const [pushOffsets, setPushOffsets] = useState<{ x: number; y: number }[]>([])
+  // Drag-reorder state — index of the tile being dragged, and the index
+  // it's currently hovered over (for the visual drop-indicator). Only
+  // populated while editMode is true.
+  const [dragFromIdx, setDragFromIdx] = useState<number | null>(null)
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
+  // Hidden file input used by the per-tile Replace button. We track which
+  // tile triggered the picker so the upload swaps the right item.
+  const replaceInputRef = useRef<HTMLInputElement | null>(null)
+  const [replaceTargetSrc, setReplaceTargetSrc] = useState<string | null>(null)
+
+  // Whenever the user flips into edit mode, jump to gallery view — slideshow
+  // doesn't show enough at once for editing to feel useful.
+  useEffect(() => {
+    if (editMode) setGalleryView(true)
+  }, [editMode])
   const autoTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const current = media[index]
   const prevMedia = prevIndex !== null ? media[prevIndex] : null
@@ -396,15 +424,48 @@ function MediaPanel({
               <button
                 key={item.src + '-thumb-' + i}
                 ref={(el) => { tileRefs.current[i] = el }}
+                draggable={editMode}
+                onDragStart={editMode ? (e) => {
+                  setDragFromIdx(i)
+                  // Some browsers refuse to start a drag unless data is set.
+                  try { e.dataTransfer.setData('text/plain', String(i)) } catch {}
+                  e.dataTransfer.effectAllowed = 'move'
+                } : undefined}
+                onDragOver={editMode ? (e) => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                  if (dragFromIdx !== null && dragOverIdx !== i) setDragOverIdx(i)
+                } : undefined}
+                onDragLeave={editMode ? () => {
+                  if (dragOverIdx === i) setDragOverIdx(null)
+                } : undefined}
+                onDrop={editMode ? (e) => {
+                  e.preventDefault()
+                  const from = dragFromIdx
+                  setDragFromIdx(null)
+                  setDragOverIdx(null)
+                  if (from === null || from === i) return
+                  const next = [...media]
+                  const [moved] = next.splice(from, 1)
+                  next.splice(i, 0, moved)
+                  onReorder?.(next)
+                } : undefined}
+                onDragEnd={editMode ? () => {
+                  setDragFromIdx(null)
+                  setDragOverIdx(null)
+                } : undefined}
                 onClick={(e) => {
                   e.stopPropagation()
+                  // In edit mode the tile-body shouldn't open the slideshow —
+                  // the user is mid-drag or about to click delete / replace.
+                  if (editMode) return
                   setIndex(i)
                   setPrevIndex(null)
                   setAnimating(false)
                   setGalleryView(false)
                 }}
                 onMouseEnter={() => setHoveredTile(i)}
-                className="relative aspect-square overflow-hidden group cursor-pointer hover:scale-[1.24] hover:-translate-y-3 hover:z-10 hover:shadow-[0_56px_128px_rgba(0,0,0,0.55),0_20px_44px_rgba(0,0,0,0.35)] active:scale-[1.12] active:-translate-y-1"
+                className={`relative aspect-square overflow-hidden group ${editMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer hover:scale-[1.24] hover:-translate-y-3 hover:z-10 hover:shadow-[0_56px_128px_rgba(0,0,0,0.55),0_20px_44px_rgba(0,0,0,0.35)] active:scale-[1.12] active:-translate-y-1'}`}
                 style={{
                   background: '#000',
                   borderRadius: '8px',
@@ -412,15 +473,22 @@ function MediaPanel({
                   // Magnetic push: inline transform only applies when a
                   // neighbor is hovered. When this tile itself is hovered,
                   // inline is undefined so Tailwind's hover:scale-* /
-                  // hover:-translate-y-* compose naturally.
-                  transform: isOtherHovered && offset
+                  // hover:-translate-y-* compose naturally. In edit mode we
+                  // suppress the magnetic effect entirely so drag-handles
+                  // sit still under the cursor.
+                  transform: !editMode && isOtherHovered && offset
                     ? `translate(${offset.x.toFixed(2)}px, ${offset.y.toFixed(2)}px)`
                     : undefined,
+                  // Visual drop indicator — a bright outline on the tile
+                  // the user is currently hovering over with a drag.
+                  outline: editMode && dragOverIdx === i && dragFromIdx !== i ? '2px solid rgb(250,204,21)' : undefined,
+                  outlineOffset: '2px',
+                  opacity: editMode && dragFromIdx === i ? 0.4 : 1,
                   // Spring-out easing with a subtle overshoot for a tactile "pop" —
                   // same curve used on the site's other interactive controls so the
                   // motion vocabulary stays consistent. Doubled lift + translate
                   // make the tile clearly leave the grid surface on hover.
-                  transition: 'transform 420ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 420ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  transition: 'transform 420ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 420ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s, outline-color 0.15s',
                 }}
               >
                 {/* Inner media wrapper — parallax doubled to keep pace with the
@@ -438,6 +506,11 @@ function MediaPanel({
                       muted
                       loop
                       playsInline
+                      // Stop the inner media from capturing the drag itself —
+                      // we want dragstart to fire on the BUTTON so the tile is
+                      // the drag source. Images are draggable by default in
+                      // every browser, hence the explicit false.
+                      draggable={false}
                       className="absolute inset-0 w-full h-full object-cover"
                     />
                   ) : (
@@ -445,10 +518,59 @@ function MediaPanel({
                     <img
                       src={item.src}
                       alt={item.title || ''}
+                      draggable={false}
                       className="absolute inset-0 w-full h-full object-cover"
                     />
                   )}
                 </div>
+                {/* Edit affordances — delete + replace + drag-handle hint. Only
+                    rendered in edit mode. Buttons stopPropagation so they
+                    don't trigger tile-click navigation or drag. */}
+                {editMode && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (window.confirm(`Delete "${item.title || 'this item'}" from misc?`)) {
+                          onDelete?.(item.src)
+                        }
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      title="Delete"
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold text-white"
+                      style={{ background: 'rgba(248,113,113,0.9)', border: '1px solid rgba(255,255,255,0.3)', zIndex: 3 }}
+                    >
+                      ×
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setReplaceTargetSrc(item.src)
+                        replaceInputRef.current?.click()
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      title="Replace file"
+                      className="absolute top-1.5 left-1.5 w-6 h-6 rounded-full flex items-center justify-center text-white"
+                      style={{ background: 'rgba(59,130,246,0.9)', border: '1px solid rgba(255,255,255,0.3)', zIndex: 3 }}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <polyline points="1 20 1 14 7 14"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                      </svg>
+                    </button>
+                    {/* Drag handle hint — bottom-centre dots icon */}
+                    <span
+                      className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-white pointer-events-none"
+                      style={{ opacity: 0.7, fontSize: '14px', lineHeight: 1, zIndex: 3, textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}
+                      aria-hidden="true"
+                    >
+                      ⠿
+                    </span>
+                  </>
+                )}
                 {/* Soft dark vignette + title overlay — slides up and fades in
                     on hover for a more deliberate reveal than a flat opacity flip. */}
                 <div
@@ -479,6 +601,24 @@ function MediaPanel({
               )
             })}
           </div>
+          {/* Hidden file input shared by every tile's Replace button. The
+              tile-click sets replaceTargetSrc and then click()s this input;
+              onChange fires onReplace with the chosen file. */}
+          {editMode && (
+            <input
+              ref={replaceInputRef}
+              type="file"
+              accept="image/*,video/*"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f && replaceTargetSrc) onReplace?.(replaceTargetSrc, f)
+                setReplaceTargetSrc(null)
+                // Reset so picking the SAME file again still fires onChange.
+                if (e.target) e.target.value = ''
+              }}
+            />
+          )}
         </div>
       )}
       {/* ====== /GALLERY VIEW ====== */}
@@ -654,9 +794,82 @@ export default function ExperimentsPage() {
   // Admin-managed items only — no static fallbacks. Empty arrays until the
   // API responds; if the admin has nothing in a given panel, that side stays
   // blank rather than showing test footage.
-  const [left, setLeft] = useState<MediaItem[]>([])
-  const [right, setRight] = useState<MediaItem[]>([])
+  // Holding ONE combined list (instead of two split ones) means in-page
+  // editing can safely add/remove/reorder without losing the canonical
+  // shape that gets POSTed back to /api/misc. Left/right are derived
+  // from it via useMemo so the panels keep their identical filter rule.
+  const [combined, setCombined] = useState<MediaItem[]>([])
+  const left = useMemo(() => combined.filter(isGenerative), [combined])
+  const right = useMemo(() => combined.filter(m => !isGenerative(m)), [combined])
   const [loading, setLoading] = useState(true)
+  const { editMode } = useEditMode()
+  const [editStatus, setEditStatus] = useState<string | null>(null)
+
+  // Persist the full combined list to /api/misc. Anything that was being
+  // auto-surfaced from /api/projects gets promoted into the misc store
+  // the first time the user edits it — that's the price of giving the
+  // user an in-place edit surface for the merged view.
+  const persistCombined = useCallback(async (next: MediaItem[]) => {
+    setCombined(next)
+    setEditStatus('⟳ Saving…')
+    try {
+      const res = await fetch('/api/misc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: next }),
+      })
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`
+        try { detail += ': ' + (await res.text()).slice(0, 200) } catch {}
+        throw new Error(detail)
+      }
+      setEditStatus('✓ Saved')
+      setTimeout(() => setEditStatus(null), 1600)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('Misc save failed:', err)
+      setEditStatus(`✗ Save failed: ${msg}`)
+      setTimeout(() => setEditStatus(null), 4000)
+    }
+  }, [])
+
+  // Delete a single item by src — works regardless of which panel it
+  // lives in, because we operate on the combined list.
+  const handleDelete = useCallback((src: string) => {
+    persistCombined(combined.filter(m => m.src !== src))
+  }, [combined, persistCombined])
+
+  // Replace an item: upload a new file straight to Blob, then swap the
+  // src/type on the matching item while keeping its position, title,
+  // year and medium tags intact.
+  const handleReplace = useCallback(async (src: string, file: File) => {
+    setEditStatus(`⟳ Uploading ${file.name}…`)
+    try {
+      const extMatch = file.name.match(/\.[^.]+$/)
+      const ext = extMatch ? extMatch[0].toLowerCase() : ''
+      const pathname = `media/misc/${Date.now().toString(36)}${ext}`
+      const blob = await upload(pathname, file, { access: 'public', handleUploadUrl: '/api/upload-token' })
+      const isVideo = /\.(mp4|webm|mov|m4v)$/i.test(file.name)
+      const next = combined.map(m =>
+        m.src === src ? { ...m, src: blob.url, type: (isVideo ? 'video' : 'image') as 'video' | 'image' } : m,
+      )
+      await persistCombined(next)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('Misc replace failed:', err)
+      setEditStatus(`✗ Replace failed: ${msg}`)
+      setTimeout(() => setEditStatus(null), 4000)
+    }
+  }, [combined, persistCombined])
+
+  // Reorder within a panel: given the new in-panel sequence, zip it
+  // back into the combined list at the original panel-item slots so
+  // items belonging to the other panel keep their absolute positions.
+  const handleReorder = useCallback((panelFilter: (m: MediaItem) => boolean, newPanelOrder: MediaItem[]) => {
+    let p = 0
+    const next = combined.map(m => panelFilter(m) ? newPanelOrder[p++] : m)
+    persistCombined(next)
+  }, [combined, persistCombined])
 
   useEffect(() => {
     // Pull both /api/misc AND /api/projects so we can surface featured-project
@@ -719,8 +932,7 @@ export default function ExperimentsPage() {
           }
         }
         if (combined.length === 0) return
-        setLeft(combined.filter(isGenerative))
-        setRight(combined.filter(m => !isGenerative(m)))
+        setCombined(combined)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -757,6 +969,10 @@ export default function ExperimentsPage() {
             onToggleExpand={toggleLeft}
             otherIndex={rightIdx}
             otherMedia={right}
+            editMode={editMode}
+            onDelete={handleDelete}
+            onReplace={handleReplace}
+            onReorder={(newOrder) => handleReorder(isGenerative, newOrder)}
           />
           <MediaPanel
             media={right}
@@ -767,8 +983,33 @@ export default function ExperimentsPage() {
             onToggleExpand={toggleRight}
             otherIndex={leftIdx}
             otherMedia={left}
+            editMode={editMode}
+            onDelete={handleDelete}
+            onReplace={handleReplace}
+            onReorder={(newOrder) => handleReorder(m => !isGenerative(m), newOrder)}
           />
         </div>
+
+        {/* Edit-mode save status pill — top-centre so it's visible no matter
+            which panel the user is editing. Same colour vocabulary as the
+            project-media panel: green for ✓, red for ✗, yellow otherwise. */}
+        {editMode && editStatus && (() => {
+          const isOk = editStatus.startsWith('✓')
+          const isErr = editStatus.startsWith('✗')
+          const palette = isOk
+            ? { bg: 'rgba(34,197,94,0.18)', fg: 'rgb(74,222,128)', border: 'rgba(74,222,128,0.4)' }
+            : isErr
+              ? { bg: 'rgba(248,113,113,0.18)', fg: 'rgb(248,113,113)', border: 'rgba(248,113,113,0.5)' }
+              : { bg: 'rgba(234,179,8,0.15)', fg: 'rgb(250,204,21)', border: 'rgba(250,204,21,0.4)' }
+          return (
+            <div
+              className="fixed top-[80px] left-1/2 -translate-x-1/2 z-[9998] text-[10px] font-bold uppercase tracking-[0.1em] px-3.5 py-1.5 rounded-full"
+              style={{ background: palette.bg, color: palette.fg, border: `1px solid ${palette.border}`, backdropFilter: 'blur(12px)' }}
+            >
+              {editStatus}
+            </div>
+          )
+        })()}
 
         {/* Footer — below media, scroll down to see */}
         <footer className="px-6 md:px-10 py-5" style={{ borderTop: `3px solid ${borderThick}` }}>
