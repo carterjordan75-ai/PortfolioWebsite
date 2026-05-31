@@ -215,9 +215,15 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     }
   }
 
-  // Persist a media update to the server, then mirror locally.
+  // Persist a media update to the server, then mirror locally. Every call
+  // surfaces a visible status pill so the user can see the auto-save
+  // happen — previously success was silent, which made changes like
+  // aspect ratio look like they hadn't taken (the dropdown updates
+  // optimistically, but with no save feedback it felt like the choice
+  // never committed).
   const persist = async (next: ProjectMediaItem[]) => {
     onChange(next)
+    setStatus('⟳ Saving…')
     try {
       const res = await fetch('/api/projects', {
         method: 'POST',
@@ -236,6 +242,8 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
         try { detail += ': ' + (await res.text()).slice(0, 200) } catch {}
         throw new Error(detail)
       }
+      setStatus('✓ Saved')
+      setTimeout(() => setStatus(null), 1600)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('Project media save failed:', err)
@@ -446,9 +454,27 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
               </div>
             </div>
 
-            {status && (
-              <p className={`mx-5 mt-3 text-[9px] ${status.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>{status}</p>
-            )}
+            {status && (() => {
+              // Pill colour follows status prefix: ✓ green, ✗ red, ⟳ /
+              // upload-progress yellow. Bigger and pill-shaped now so the
+              // user can actually see the auto-save firing — the old
+              // small <p> blended into the panel header.
+              const isOk = status.startsWith('✓')
+              const isErr = status.startsWith('✗')
+              const palette = isOk
+                ? { bg: 'rgba(34,197,94,0.15)', fg: 'rgb(74,222,128)', border: 'rgba(74,222,128,0.35)' }
+                : isErr
+                  ? { bg: 'rgba(248,113,113,0.15)', fg: 'rgb(248,113,113)', border: 'rgba(248,113,113,0.4)' }
+                  : { bg: 'rgba(234,179,8,0.12)', fg: 'rgb(250,204,21)', border: 'rgba(250,204,21,0.3)' }
+              return (
+                <div
+                  className="mx-5 mt-3 text-[10px] font-bold uppercase tracking-[0.08em] px-3 py-1.5 rounded-full self-start inline-block"
+                  style={{ background: palette.bg, color: palette.fg, border: `1px solid ${palette.border}`, width: 'fit-content' }}
+                >
+                  {status}
+                </div>
+              )
+            })()}
 
             {/* Grouping toolbar — appears whenever rows are selected */}
             {selected.size > 0 && (
