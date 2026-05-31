@@ -25,8 +25,12 @@ const clientLogos: Record<string, { src: string; width: number; height: number }
   'Adidas Rugby': { src: '/assets/Logos/Logo_ADIDAS.webp', width: 200, height: 80 },
 }
 
+// Keep this list in sync with VIDEO_EXT in MediaLibraryPicker.tsx — any
+// extension recognised as a video by the picker must also classify as a
+// video here, otherwise picking a .m4v from the library renders it as
+// an <img> and shows the browser's broken-image icon.
 function classifyMedia(path: string): 'video' | 'image' {
-  return /\.(mp4|webm|mov)$/i.test(path) ? 'video' : 'image'
+  return /\.(mp4|webm|mov|m4v)$/i.test(path) ? 'video' : 'image'
 }
 
 export default function ProjectPage({ params }: { params: { slug: string } }) {
@@ -763,6 +767,11 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
 }) {
   const pos = objectPos || 'center center'
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  // Flips to true if the <img> or <video> fires onError — i.e. the blob
+  // URL is dead (deleted, 404, network issue). We surface a clear
+  // "Media missing" panel instead of the browser's tiny broken-image
+  // icon so the issue is obvious in both view and edit mode.
+  const [loadFailed, setLoadFailed] = useState(false)
   // Computed mute — videos play silently EXCEPT the centered one (and only
   // if pageAudioMuted is off and the lightbox isn't open).
   const shouldBeMuted = !audioActive || !!pageAudioMuted || !!isLightboxOpen
@@ -804,7 +813,7 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
         marginRight: 'auto',
       }}
     >
-      {mediaSrc && mediaType === 'video' && (
+      {mediaSrc && mediaType === 'video' && !loadFailed && (
         <video
           ref={videoRef}
           autoPlay
@@ -817,16 +826,38 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
           className="absolute inset-0 w-full h-full object-cover"
           style={{ objectPosition: pos }}
           src={mediaSrc}
+          onError={() => setLoadFailed(true)}
         />
       )}
-      {mediaSrc && mediaType === 'image' && (
+      {mediaSrc && mediaType === 'image' && !loadFailed && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={mediaSrc}
           alt={label}
           className="absolute inset-0 w-full h-full object-cover"
           style={{ objectPosition: pos }}
+          onError={() => setLoadFailed(true)}
         />
+      )}
+      {loadFailed && (
+        // Replaces the browser's tiny broken-image icon with a panel that
+        // actually tells you what went wrong. The truncated URL is shown
+        // so a quick look in the admin Storage panel can verify whether
+        // the blob still exists.
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center text-center px-6"
+          style={{ background: 'rgba(20,20,20,0.95)', color: 'rgba(255,255,255,0.75)' }}
+        >
+          <span className="text-[10px] uppercase tracking-[0.18em] font-bold mb-1.5" style={{ opacity: 0.9 }}>Media missing</span>
+          <span className="text-[9px] uppercase tracking-[0.08em]" style={{ opacity: 0.4 }}>
+            {mediaType === 'video' ? 'video' : 'image'} failed to load
+          </span>
+          {mediaSrc && (
+            <span className="text-[8px] font-mono mt-3 max-w-[80%] truncate" style={{ opacity: 0.35 }} title={mediaSrc}>
+              {mediaSrc.replace(/^https?:\/\//, '').slice(0, 60)}{mediaSrc.length > 67 ? '…' : ''}
+            </span>
+          )}
+        </div>
       )}
       <span className="absolute top-3 left-3 text-[8px] font-mono font-bold uppercase tracking-widest text-white" style={{ opacity: 0.3, zIndex: 2 }}>
         {label}
