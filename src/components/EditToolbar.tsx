@@ -19,7 +19,28 @@ export default function EditToolbar() {
       let ok = 0
       const failed: string[] = []
       for (const [slug, fields] of Object.entries(pendingChanges)) {
-        if (pageKeys.includes(slug)) {
+        if (slug === 'misc-page') {
+          // Misc edits queue an `items` field as a JSON string (since
+          // PendingChanges is keyed on strings). Parse and POST it as
+          // the canonical items array to /api/misc.
+          try {
+            const raw = fields.items
+            const items = typeof raw === 'string' ? JSON.parse(raw) : raw
+            const res = await fetch('/api/misc', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ items }),
+            })
+            if (res.ok) ok++
+            else {
+              console.error('Misc save failed:', await res.text())
+              failed.push(slug)
+            }
+          } catch (err) {
+            console.error('Misc save failed (parse):', err)
+            failed.push(slug)
+          }
+        } else if (pageKeys.includes(slug)) {
           const res = await fetch('/api/pages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

@@ -794,56 +794,45 @@ export default function ExperimentsPage() {
   // Admin-managed items only — no static fallbacks. Empty arrays until the
   // API responds; if the admin has nothing in a given panel, that side stays
   // blank rather than showing test footage.
-  // Holding ONE combined list (instead of two split ones) means in-page
-  // editing can safely add/remove/reorder without losing the canonical
-  // shape that gets POSTed back to /api/misc. Left/right are derived
-  // from it via useMemo so the panels keep their identical filter rule.
-  const [combined, setCombined] = useState<MediaItem[]>([])
+  // `originalCombined` is the canonical server state from the last fetch.
+  // Edits in edit mode go into `pendingChanges['misc-page'].items` so they
+  // travel through the same EditToolbar Save flow as text edits — that way
+  // the global Save button enables the moment the user deletes / reorders /
+  // replaces an item, and Discard reverts everything cleanly.
+  const [originalCombined, setOriginalCombined] = useState<MediaItem[]>([])
+  const { editMode, addChange, pendingChanges } = useEditMode()
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null)
+
+  // Derived current list: pending edits (if any) win over the server state.
+  // When the EditToolbar's Save clears pendingChanges, this falls back to
+  // originalCombined — which is refreshed from /api/misc on `admin-saved`.
+  const combined = useMemo<MediaItem[]>(() => {
+    const raw = pendingChanges['misc-page']?.items
+    if (typeof raw === 'string') {
+      try { return JSON.parse(raw) as MediaItem[] } catch { /* fall through */ }
+    }
+    return originalCombined
+  }, [pendingChanges, originalCombined])
+
   const left = useMemo(() => combined.filter(isGenerative), [combined])
   const right = useMemo(() => combined.filter(m => !isGenerative(m)), [combined])
   const [loading, setLoading] = useState(true)
-  const { editMode } = useEditMode()
-  const [editStatus, setEditStatus] = useState<string | null>(null)
 
-  // Persist the full combined list to /api/misc. Anything that was being
-  // auto-surfaced from /api/projects gets promoted into the misc store
-  // the first time the user edits it — that's the price of giving the
-  // user an in-place edit surface for the merged view.
-  const persistCombined = useCallback(async (next: MediaItem[]) => {
-    setCombined(next)
-    setEditStatus('⟳ Saving…')
-    try {
-      const res = await fetch('/api/misc', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: next }),
-      })
-      if (!res.ok) {
-        let detail = `HTTP ${res.status}`
-        try { detail += ': ' + (await res.text()).slice(0, 200) } catch {}
-        throw new Error(detail)
-      }
-      setEditStatus('✓ Saved')
-      setTimeout(() => setEditStatus(null), 1600)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error('Misc save failed:', err)
-      setEditStatus(`✗ Save failed: ${msg}`)
-      setTimeout(() => setEditStatus(null), 4000)
-    }
-  }, [])
+  // Queue an items change into pendingChanges. Stored as a JSON string so
+  // it fits the existing PendingChanges shape (Record<string, Record<string, string>>).
+  const queueItems = useCallback((next: MediaItem[]) => {
+    addChange('misc-page', 'items', JSON.stringify(next))
+  }, [addChange])
 
-  // Delete a single item by src — works regardless of which panel it
-  // lives in, because we operate on the combined list.
   const handleDelete = useCallback((src: string) => {
-    persistCombined(combined.filter(m => m.src !== src))
-  }, [combined, persistCombined])
+    queueItems(combined.filter(m => m.src !== src))
+  }, [combined, queueItems])
 
-  // Replace an item: upload a new file straight to Blob, then swap the
-  // src/type on the matching item while keeping its position, title,
-  // year and medium tags intact.
+  // Replace still has to upload immediately (the new src isn't knowable
+  // before the upload completes), but the items-array swap is queued so
+  // the global Save commits it alongside any other pending edits.
   const handleReplace = useCallback(async (src: string, file: File) => {
-    setEditStatus(`⟳ Uploading ${file.name}…`)
+    setUploadStatus(`⟳ Uploading ${file.name}…`)
     try {
       const extMatch = file.name.match(/\.[^.]+$/)
       const ext = extMatch ? extMatch[0].toLowerCase() : ''
@@ -853,23 +842,22 @@ export default function ExperimentsPage() {
       const next = combined.map(m =>
         m.src === src ? { ...m, src: blob.url, type: (isVideo ? 'video' : 'image') as 'video' | 'image' } : m,
       )
-      await persistCombined(next)
+      queueItems(next)
+      setUploadStatus('✓ Uploaded — click Save All to commit')
+      setTimeout(() => setUploadStatus(null), 2400)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error('Misc replace failed:', err)
-      setEditStatus(`✗ Replace failed: ${msg}`)
-      setTimeout(() => setEditStatus(null), 4000)
+      console.error('Misc replace upload failed:', err)
+      setUploadStatus(`✗ Upload failed: ${msg}`)
+      setTimeout(() => setUploadStatus(null), 4000)
     }
-  }, [combined, persistCombined])
+  }, [combined, queueItems])
 
-  // Reorder within a panel: given the new in-panel sequence, zip it
-  // back into the combined list at the original panel-item slots so
-  // items belonging to the other panel keep their absolute positions.
   const handleReorder = useCallback((panelFilter: (m: MediaItem) => boolean, newPanelOrder: MediaItem[]) => {
     let p = 0
     const next = combined.map(m => panelFilter(m) ? newPanelOrder[p++] : m)
-    persistCombined(next)
-  }, [combined, persistCombined])
+    queueItems(next)
+  }, [combined, queueItems])
 
   useEffect(() => {
     // Pull both /api/misc AND /api/projects so we can surface featured-project
@@ -932,10 +920,24 @@ export default function ExperimentsPage() {
           }
         }
         if (combined.length === 0) return
-        setCombined(combined)
+        setOriginalCombined(combined)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
+  }, [])
+
+  // After a Save All, refetch /api/misc so originalCombined reflects what
+  // just committed. Without this, the next Discard would revert to whatever
+  // the page loaded with — stale by however many save cycles have happened.
+  useEffect(() => {
+    const onSaved = () => {
+      fetch('/api/misc').then(r => r.json()).then(d => {
+        const items = (d.items || []) as MediaItem[]
+        if (items.length > 0) setOriginalCombined(items)
+      }).catch(() => {})
+    }
+    window.addEventListener('admin-saved', onSaved)
+    return () => window.removeEventListener('admin-saved', onSaved)
   }, [])
 
   // Indices into each side's media list. Setters are unused (no manual cycling
@@ -990,12 +992,14 @@ export default function ExperimentsPage() {
           />
         </div>
 
-        {/* Edit-mode save status pill — top-centre so it's visible no matter
-            which panel the user is editing. Same colour vocabulary as the
-            project-media panel: green for ✓, red for ✗, yellow otherwise. */}
-        {editMode && editStatus && (() => {
-          const isOk = editStatus.startsWith('✓')
-          const isErr = editStatus.startsWith('✗')
+        {/* Upload-progress pill — only shown for the Replace flow's in-flight
+            upload, since that's the only misc operation that does network IO
+            outside the EditToolbar's Save. Delete + Reorder go straight into
+            pendingChanges so the EditToolbar's own pill reports their save
+            status. */}
+        {editMode && uploadStatus && (() => {
+          const isOk = uploadStatus.startsWith('✓')
+          const isErr = uploadStatus.startsWith('✗')
           const palette = isOk
             ? { bg: 'rgba(34,197,94,0.18)', fg: 'rgb(74,222,128)', border: 'rgba(74,222,128,0.4)' }
             : isErr
@@ -1006,7 +1010,7 @@ export default function ExperimentsPage() {
               className="fixed top-[80px] left-1/2 -translate-x-1/2 z-[9998] text-[10px] font-bold uppercase tracking-[0.1em] px-3.5 py-1.5 rounded-full"
               style={{ background: palette.bg, color: palette.fg, border: `1px solid ${palette.border}`, backdropFilter: 'blur(12px)' }}
             >
-              {editStatus}
+              {uploadStatus}
             </div>
           )
         })()}
