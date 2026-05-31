@@ -1875,11 +1875,17 @@ function MiscUploadPanel() {
       .catch(() => setLoading(false))
   }, [])
 
-  const saveItems = async (updated: MiscItem[]) => {
+  // Save items with optional tombstones. Tombstones are blob URLs that
+  // should NEVER auto-surface back onto /misc — used so user-initiated
+  // deletes here stay deleted even when the same URL is also referenced
+  // by a featured project (the /misc page falls back to project media
+  // for clients that have no explicit misc entries; without tombstones,
+  // that fallback resurrects deletions on the next reload).
+  const saveItems = async (updated: MiscItem[], tombstones: string[] = []) => {
     const res = await fetch('/api/misc', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: updated }),
+      body: JSON.stringify({ items: updated, tombstones }),
     })
     if (res.ok) {
       const data = await res.json()
@@ -1984,7 +1990,9 @@ function MiscUploadPanel() {
     const removedSrc = items[idx]?.src
     const updated = items.filter((_, i) => i !== idx)
     setItems(updated)
-    await saveItems(updated)
+    // Tombstone the removed URL so the /misc page's auto-surface fallback
+    // can't re-add it from a featured project on next reload.
+    await saveItems(updated, removedSrc ? [removedSrc] : [])
     void deleteBlobUrls([removedSrc])
     setStatus('✓ Removed')
     setTimeout(() => setStatus(null), 1500)

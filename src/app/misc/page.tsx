@@ -880,8 +880,11 @@ export default function ExperimentsPage() {
     // case for the tiffany-holiday-campaign uploads before the AdminPortal
     // upload path was wired to mirror). The union is deduped by `src`.
     Promise.all([
-      fetch('/api/misc').then(r => r.json()).catch(() => ({ items: [] })),
-      fetch('/api/projects').then(r => r.json()).catch(() => ({ projects: [] })),
+      // cache: 'no-store' so the browser doesn't return a stale copy after
+      // a save — the API already sets Cache-Control: no-store, max-age=0,
+      // but belt-and-braces guarantees a fresh GET every reload.
+      fetch('/api/misc', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ items: [] })),
+      fetch('/api/projects', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ projects: [] })),
     ])
       .then(([miscData, projData]) => {
         const miscItems = (miscData.items || []) as MediaItem[]
@@ -952,7 +955,7 @@ export default function ExperimentsPage() {
   // the page loaded with — stale by however many save cycles have happened.
   useEffect(() => {
     const onSaved = () => {
-      fetch('/api/misc').then(r => r.json()).then(d => {
+      fetch('/api/misc', { cache: 'no-store' }).then(r => r.json()).then(d => {
         const items = (d.items || []) as MediaItem[]
         if (items.length > 0) setOriginalCombined(items)
       }).catch(() => {})
