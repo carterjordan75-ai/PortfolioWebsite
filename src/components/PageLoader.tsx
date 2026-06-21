@@ -8,11 +8,12 @@ interface PageLoaderProps {
   onComplete?: () => void
   /**
    * 'transition' (default) — runs the full animation once: grow → split →
-   *   brief hold → reveal → fade. onComplete fires at the start of reveal
-   *   so the parent can navigate while the flips play.
+   *   brief hold → reveal (XOXO flips) → whiten (each circle rotates again
+   *   to a white face, in order) → fade. onComplete fires at the start of
+   *   reveal so the parent can navigate while the rest of the moment plays.
    * 'data' — grows → splits → holds on the 4 black circles for as long as
-   *   `show` stays true. When `show` goes false, runs the reveal flips and
-   *   fades out.
+   *   `show` stays true. When `show` goes false, runs reveal → whiten →
+   *   fade and exits.
    */
   mode?: 'transition' | 'data'
 }
@@ -26,7 +27,13 @@ const COUNT = LETTERS.length
 const TOTAL_WIDTH = CIRCLE_SIZE * COUNT + GAP * (COUNT - 1)
 const CENTER_X = (TOTAL_WIDTH - CIRCLE_SIZE) / 2
 
-type Phase = 'idle' | 'grow' | 'split' | 'hold' | 'reveal' | 'done'
+// Rotation animation constants — kept short so the whole sequence stays
+// under ~3 seconds.
+const FLIP_DURATION_S = 0.42
+const STAGGER_S = 0.13
+const PHASE_MS = (COUNT - 1) * STAGGER_S * 1000 + FLIP_DURATION_S * 1000
+
+type Phase = 'idle' | 'grow' | 'split' | 'hold' | 'reveal' | 'whiten' | 'done'
 
 export default function PageLoader({ show, onComplete, mode = 'transition' }: PageLoaderProps) {
   const [phase, setPhase] = useState<Phase>('idle')
@@ -71,8 +78,15 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
       return () => clearTimeout(t)
     }
     if (phase === 'reveal') {
-      // Total reveal time = staggered start of last flip + its duration.
-      const t = setTimeout(() => setPhase('done'), (COUNT - 1) * 150 + 520 + 320)
+      // Reveal takes the staggered last-circle-finish time + a small
+      // buffer so the whiten flips don't overlap visually.
+      const t = setTimeout(() => setPhase('whiten'), PHASE_MS + 120)
+      return () => clearTimeout(t)
+    }
+    if (phase === 'whiten') {
+      // Same shape as reveal — each circle rotates another 180° to its
+      // white face, in order. Then fade out.
+      const t = setTimeout(() => setPhase('done'), PHASE_MS + 80)
       return () => clearTimeout(t)
     }
     return undefined
@@ -87,8 +101,8 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   }, [show, phase, mode])
 
   // onComplete fires once, at the start of the reveal — that's the right
-  // moment for a parent route to start navigating (the loader stays up
-  // through the flips and the fade).
+  // moment for a parent route to start navigating. The loader keeps
+  // playing through whiten + fade while the new page mounts underneath.
   useEffect(() => {
     if (phase === 'reveal' && !completedRef.current) {
       completedRef.current = true
@@ -99,11 +113,18 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   if (phase === 'idle') return null
   if (phase === 'done' && !show) return null
 
-  // After the early returns, phase is one of grow|split|hold|reveal|done —
-  // all of which mean the loader is rendering, so isVisible is constant.
-  const isVisible = true
-  const isSplit = phase === 'split' || phase === 'hold' || phase === 'reveal'
-  const shouldReveal = phase === 'reveal'
+  const isSplit = phase === 'split' || phase === 'hold' || phase === 'reveal' || phase === 'whiten'
+  // Rotation target — 0° (front, black) for early phases, 180° for reveal
+  // (back, X/O), 360° for whiten/done (front again, but recoloured white).
+  const rotationTarget =
+    phase === 'whiten' || phase === 'done' ? 360 :
+    phase === 'reveal' ? 180 :
+    0
+  // Front face flips to white during the whiten phase. Each circle's
+  // colour swap is delayed to roughly the rotation midpoint so the change
+  // happens while the face is edge-on (and visually hidden).
+  const isWhitened = phase === 'whiten' || phase === 'done'
+  const rotationStaggered = phase === 'reveal' || phase === 'whiten'
 
   return (
     <AnimatePresence>
@@ -140,7 +161,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
                   initial={{ x: CENTER_X, scale: 0 }}
                   animate={{
                     x: isSplit ? finalX : CENTER_X,
-                    scale: isVisible ? 1 : 0,
+                    scale: 1,
                   }}
                   transition={{
                     x: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
@@ -155,14 +176,14 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
                     perspective: 600,
                   }}
                 >
-                  {/* The flip: rotate the inner wrapper 180° on Y. The two
-                      faces use backfaceVisibility: hidden so the visible
-                      face cleanly swaps at the 90° crossover. */}
+                  {/* The flip: rotate the inner wrapper on Y. Reveal takes
+                      it to 180° (back with X/O); whiten continues to 360°
+                      (front face, now recoloured white). */}
                   <motion.div
-                    animate={{ rotateY: shouldReveal ? 180 : 0 }}
+                    animate={{ rotateY: rotationTarget }}
                     transition={{
-                      duration: 0.52,
-                      delay: shouldReveal ? i * 0.15 : 0,
+                      duration: FLIP_DURATION_S,
+                      delay: rotationStaggered ? i * STAGGER_S : 0,
                       ease: [0.4, 0, 0.2, 1],
                     }}
                     style={{
@@ -172,20 +193,29 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
                       transformStyle: 'preserve-3d',
                     }}
                   >
-                    {/* Front face — solid black circle, no letter. */}
-                    <div
+                    {/* Front face — black during reveal, swaps to white
+                        during whiten. The color change is scheduled at
+                        ~40% through the flip so it lands while the face
+                        is edge-on (invisible) and the user only sees the
+                        final white when it rotates back into view. */}
+                    <motion.div
+                      initial={{ backgroundColor: '#000000' }}
+                      animate={{ backgroundColor: isWhitened ? '#ffffff' : '#000000' }}
+                      transition={{
+                        delay: isWhitened ? i * STAGGER_S + FLIP_DURATION_S * 0.4 : 0,
+                        duration: 0.05,
+                      }}
                       style={{
                         position: 'absolute',
                         inset: 0,
                         borderRadius: '50%',
-                        background: '#000',
                         backfaceVisibility: 'hidden',
                         WebkitBackfaceVisibility: 'hidden',
                       }}
                     />
-                    {/* Back face — same black circle with the letter on
-                        top. Pre-rotated 180° so its content reads
-                        right-way-up once the parent has flipped. */}
+                    {/* Back face — black circle with the letter. Pre-rotated
+                        180° so its content reads right-way-up once the
+                        wrapper has flipped. */}
                     <div
                       style={{
                         position: 'absolute',
