@@ -1,106 +1,107 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface PageLoaderProps {
   show: boolean
   onComplete?: () => void
   /**
-   * 'transition' (default) — the original behaviour. Auto-runs cover → hold
-   *   → reveal once `show` goes true; fires onComplete at the start of reveal
-   *   so the parent can navigate while the circles shrink away.
-   *
-   * 'data'       — covers the screen while `show` stays true. When `show`
-   *   goes false the loader plays its reveal-and-fade-out animation. Used
-   *   for "wait for media to load" overlays where the duration is unknown.
+   * 'transition' (default) — runs the full animation once: grow → split →
+   *   brief hold → reveal → fade. onComplete fires at the start of reveal
+   *   so the parent can navigate while the flips play.
+   * 'data' — grows → splits → holds on the 4 black circles for as long as
+   *   `show` stays true. When `show` goes false, runs the reveal flips and
+   *   fades out.
    */
   mode?: 'transition' | 'data'
 }
 
-const COLS = 12
-const ROWS = 8
-const TOTAL = COLS * ROWS
+const LETTERS = ['X', 'O', 'X', 'O'] as const
+const CIRCLE_SIZE = 88
+const GAP = 28
+const COUNT = LETTERS.length
+const TOTAL_WIDTH = CIRCLE_SIZE * COUNT + GAP * (COUNT - 1)
+const CENTER_X = (TOTAL_WIDTH - CIRCLE_SIZE) / 2
+
+type Phase = 'idle' | 'grow' | 'split' | 'hold' | 'reveal' | 'done'
 
 export default function PageLoader({ show, onComplete, mode = 'transition' }: PageLoaderProps) {
-  const [phase, setPhase] = useState<'idle' | 'cover' | 'hold' | 'reveal' | 'done'>('idle')
+  const [phase, setPhase] = useState<Phase>('idle')
   const completedRef = useRef(false)
-
-  // Pick one random non-edge circle to be red.
-  const redIndex = useMemo(() => {
-    if (!show) return -1
-    const inner: number[] = []
-    for (let r = 1; r < ROWS - 1; r++) {
-      for (let c = 1; c < COLS - 1; c++) {
-        inner.push(r * COLS + c)
-      }
-    }
-    return inner[Math.floor(Math.random() * inner.length)]
-  }, [show])
-
-  // -------------- transition mode --------------
+  // Viewport-based scale so the row of circles always fits on screen with a
+  // sensible margin — pure CSS scaling instead of recomputing the layout.
+  const [scale, setScale] = useState(1)
   useEffect(() => {
-    if (mode !== 'transition') return
-    if (!show) {
-      setPhase('idle')
+    const update = () => {
+      if (typeof window === 'undefined') return
+      const w = window.innerWidth
+      const margin = 60
+      setScale(Math.min(1, Math.max(0.4, (w - margin * 2) / TOTAL_WIDTH)))
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  // Kick off the animation as soon as `show` is true.
+  useEffect(() => {
+    if (show && (phase === 'idle' || phase === 'done')) {
       completedRef.current = false
-      return
+      setPhase('grow')
     }
-    completedRef.current = false
-    setPhase('cover')
-    const coverTime = (COLS + ROWS) * 12 + 180
-    const t1 = setTimeout(() => setPhase('hold'), coverTime)
-    return () => clearTimeout(t1)
-  }, [show, mode])
+  }, [show, phase])
 
+  // Auto-progress the early phases. Hold is the branch point — in
+  // transition mode we auto-advance after a short pause; in data mode we
+  // wait for `show` to go false.
   useEffect(() => {
-    if (mode !== 'transition') return
-    if (phase !== 'hold') return
-    const t = setTimeout(() => setPhase('reveal'), 250)
-    return () => clearTimeout(t)
+    if (phase === 'grow') {
+      const t = setTimeout(() => setPhase('split'), 320)
+      return () => clearTimeout(t)
+    }
+    if (phase === 'split') {
+      const t = setTimeout(() => setPhase('hold'), 520)
+      return () => clearTimeout(t)
+    }
+    if (phase === 'hold' && mode === 'transition') {
+      const t = setTimeout(() => setPhase('reveal'), 220)
+      return () => clearTimeout(t)
+    }
+    if (phase === 'reveal') {
+      // Total reveal time = staggered start of last flip + its duration.
+      const t = setTimeout(() => setPhase('done'), (COUNT - 1) * 150 + 520 + 320)
+      return () => clearTimeout(t)
+    }
+    return undefined
   }, [phase, mode])
 
+  // Data mode: when the parent says "done", trigger the reveal flips and
+  // exit. If we're still mid-grow/split when this happens, we let the
+  // current phase keep running visually — `reveal` will fire from `hold`.
   useEffect(() => {
-    if (mode !== 'transition') return
-    if (phase !== 'reveal') return
-    if (!completedRef.current) {
+    if (mode !== 'data') return
+    if (!show && phase === 'hold') setPhase('reveal')
+  }, [show, phase, mode])
+
+  // onComplete fires once, at the start of the reveal — that's the right
+  // moment for a parent route to start navigating (the loader stays up
+  // through the flips and the fade).
+  useEffect(() => {
+    if (phase === 'reveal' && !completedRef.current) {
       completedRef.current = true
       onComplete?.()
     }
-    const revealTime = (COLS + ROWS) * 12 + 200
-    const t = setTimeout(() => setPhase('done'), revealTime)
-    return () => clearTimeout(t)
-  }, [phase, onComplete, mode])
-
-  // -------------- data mode --------------
-  // Cover while show=true, reveal when show=false.
-  useEffect(() => {
-    if (mode !== 'data') return
-    if (show) {
-      // Either first mount or returning after a previous reveal — kick to cover.
-      if (phase === 'idle' || phase === 'reveal' || phase === 'done') setPhase('cover')
-    } else {
-      // Parent says "data ready" — animate the reveal then finish.
-      if (phase === 'cover' || phase === 'hold') setPhase('reveal')
-    }
-  }, [show, mode, phase])
-
-  useEffect(() => {
-    if (mode !== 'data') return
-    if (phase !== 'reveal') return
-    if (!completedRef.current) {
-      completedRef.current = true
-      onComplete?.()
-    }
-    const revealTime = (COLS + ROWS) * 12 + 200
-    const t = setTimeout(() => setPhase('done'), revealTime)
-    return () => clearTimeout(t)
-  }, [phase, onComplete, mode])
+  }, [phase, onComplete])
 
   if (phase === 'idle') return null
   if (phase === 'done' && !show) return null
 
-  const growing = phase === 'cover' || phase === 'hold'
+  // After the early returns, phase is one of grow|split|hold|reveal|done —
+  // all of which mean the loader is rendering, so isVisible is constant.
+  const isVisible = true
+  const isSplit = phase === 'split' || phase === 'hold' || phase === 'reveal'
+  const shouldReveal = phase === 'reveal'
 
   return (
     <AnimatePresence>
@@ -109,73 +110,120 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
           key="loader"
           initial={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.08 }}
+          transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }}
           style={{
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
             background: '#ffffff',
-            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
-          {/* Grid of circles — half of them get an X inside (checkerboard
-              pattern: (row+col) even = X). The X is rendered as an SVG with
-              a white stroke so it reads against both the black and red fills. */}
           <div
             style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'grid',
-              gridTemplateColumns: `repeat(${COLS}, 1fr)`,
-              gridTemplateRows: `repeat(${ROWS}, 1fr)`,
-              placeItems: 'center',
-              padding: '2vmin',
+              position: 'relative',
+              width: TOTAL_WIDTH,
+              height: CIRCLE_SIZE,
+              transform: `scale(${scale})`,
+              transformOrigin: 'center',
             }}
           >
-            {Array.from({ length: TOTAL }, (_, i) => {
-              const row = Math.floor(i / COLS)
-              const col = i % COLS
-              const stagger = (row + col) * 0.012
-              const isRed = i === redIndex
-              const hasX = (row + col) % 2 === 0
-
+            {LETTERS.map((letter, i) => {
+              const finalX = i * (CIRCLE_SIZE + GAP)
               return (
                 <motion.div
                   key={i}
-                  initial={{ scale: 0 }}
-                  animate={{ scale: growing ? 1 : 0 }}
+                  initial={{ x: CENTER_X, scale: 0 }}
+                  animate={{
+                    x: isSplit ? finalX : CENTER_X,
+                    scale: isVisible ? 1 : 0,
+                  }}
                   transition={{
-                    duration: 0.18,
-                    delay: stagger,
-                    ease: growing ? [0.34, 1.2, 0.64, 1] : [0.55, 0, 1, 0.45],
+                    x: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
+                    scale: { duration: 0.32, ease: [0.34, 1.5, 0.64, 1] },
                   }}
                   style={{
-                    width: '65%',
-                    aspectRatio: '1',
-                    borderRadius: '50%',
-                    background: isRed ? '#e53e3e' : '#000000',
-                    position: 'relative',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: CIRCLE_SIZE,
+                    height: CIRCLE_SIZE,
+                    perspective: 600,
                   }}
                 >
-                  {hasX && (
-                    <svg
-                      viewBox="0 0 10 10"
-                      width="42%"
-                      height="42%"
+                  {/* The flip: rotate the inner wrapper 180° on Y. The two
+                      faces use backfaceVisibility: hidden so the visible
+                      face cleanly swaps at the 90° crossover. */}
+                  <motion.div
+                    animate={{ rotateY: shouldReveal ? 180 : 0 }}
+                    transition={{
+                      duration: 0.52,
+                      delay: shouldReveal ? i * 0.15 : 0,
+                      ease: [0.4, 0, 0.2, 1],
+                    }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      position: 'relative',
+                      transformStyle: 'preserve-3d',
+                    }}
+                  >
+                    {/* Front face — solid black circle, no letter. */}
+                    <div
                       style={{
-                        stroke: '#ffffff',
-                        strokeWidth: 1.6,
-                        strokeLinecap: 'round',
-                        fill: 'none',
+                        position: 'absolute',
+                        inset: 0,
+                        borderRadius: '50%',
+                        background: '#000',
+                        backfaceVisibility: 'hidden',
+                        WebkitBackfaceVisibility: 'hidden',
+                      }}
+                    />
+                    {/* Back face — same black circle with the letter on
+                        top. Pre-rotated 180° so its content reads
+                        right-way-up once the parent has flipped. */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        borderRadius: '50%',
+                        background: '#000',
+                        color: '#fff',
+                        backfaceVisibility: 'hidden',
+                        WebkitBackfaceVisibility: 'hidden',
+                        transform: 'rotateY(180deg)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                       }}
                       aria-hidden="true"
                     >
-                      <path d="M2 2 L8 8 M8 2 L2 8" />
-                    </svg>
-                  )}
+                      {letter === 'X' ? (
+                        <svg viewBox="0 0 60 60" width="58%" height="58%">
+                          <path
+                            d="M14 14 L46 46 M46 14 L14 46"
+                            stroke="white"
+                            strokeWidth="7"
+                            strokeLinecap="round"
+                            fill="none"
+                          />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 60 60" width="58%" height="58%">
+                          <circle
+                            cx="30"
+                            cy="30"
+                            r="16"
+                            stroke="white"
+                            strokeWidth="7"
+                            fill="none"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                  </motion.div>
                 </motion.div>
               )
             })}
