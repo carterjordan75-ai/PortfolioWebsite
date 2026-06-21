@@ -18,8 +18,10 @@ interface PageLoaderProps {
 }
 
 const LETTERS = ['X', 'O', 'X', 'O'] as const
-const CIRCLE_SIZE = 88
-const GAP = 28
+// Circle + gap dimensions. Original was 88 / 28; the row felt too big in
+// the viewport, so this is dialed down ~40% across the board.
+const CIRCLE_SIZE = 53
+const GAP = 17
 const COUNT = LETTERS.length
 const TOTAL_WIDTH = CIRCLE_SIZE * COUNT + GAP * (COUNT - 1)
 const CENTER_X = (TOTAL_WIDTH - CIRCLE_SIZE) / 2
