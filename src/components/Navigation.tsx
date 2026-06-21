@@ -19,10 +19,18 @@ const hoverColors = [
   '#fb5607', '#3a86ff', '#8338ec', '#ff006e', '#38b000',
 ]
 
-const navItems = [
+const navItems: { href: string; label: string; description?: string }[] = [
   { href: '/indexx', label: 'Index' },
-  { href: '/misc', label: 'Misc' },
-  { href: '/look', label: 'Look' },
+  {
+    href: '/misc',
+    label: 'Misc',
+    description: 'A scrapbook of frames, off-cuts and experiments — the looser side of the studio outside the finished projects.',
+  },
+  {
+    href: '/look',
+    label: 'Look',
+    description: 'A moodboard of references — films, type, colour and visuals that feed the work.',
+  },
 ]
 
 export default function Navigation() {
@@ -36,6 +44,10 @@ export default function Navigation() {
   // click gesture on the gate's submit button — see startAmbientAudio call there).
   const [audioOn, setAudioOn] = useState(false)
   const [indexHover, setIndexHover] = useState(false)
+  // Tooltip hover — keyed by href. Only one nav item can be hovered at a
+  // time, so a single string-or-null state covers Misc + Look (and any
+  // future nav item that supplies a `description`).
+  const [tipHover, setTipHover] = useState<string | null>(null)
   // Active bucket inside the Index hover dropdown. 'gen' is first and the
   // default (visible on open); '3d' is the secondary bucket.
   const [indexCategory, setIndexCategory] = useState<'3d' | 'gen'>('gen')
@@ -563,6 +575,84 @@ export default function Navigation() {
                               </motion.div>
                             </div>
                           </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                ) : item.description ? (
+                  // Items with a description (Misc, Look) get the same
+                  // "drop down" hover motion as INDEX: the label slides
+                  // down + scales up while a small description tooltip
+                  // animates open beneath. Bridge div fills the visual
+                  // gap so the cursor can travel into the tooltip
+                  // without exiting the hover region.
+                  <div
+                    key={item.href}
+                    className="relative"
+                    style={{ zIndex: 10000 }}
+                    onMouseEnter={() => setTipHover(item.href)}
+                    onMouseLeave={() => setTipHover(null)}
+                  >
+                    <Link
+                      href={item.href}
+                      className={`text-sm font-bold uppercase tracking-wider inline-block ${
+                        pathname.startsWith(item.href) ? 'opacity-100' : 'opacity-50'
+                      }`}
+                      style={{
+                        position: 'relative',
+                        zIndex: 10000,
+                        transition: 'transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.22s ease-out',
+                        transform: tipHover === item.href ? 'translateY(22px) scale(1.1)' : 'translateY(0) scale(1)',
+                        opacity: tipHover === item.href
+                          ? 0.85
+                          : (pathname.startsWith(item.href) ? 1 : 0.5),
+                      }}
+                    >
+                      {item.label}
+                    </Link>
+                    {tipHover === item.href && (
+                      <div
+                        aria-hidden
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          right: 0,
+                          width: '260px',
+                          height: '60px',
+                          zIndex: 9998,
+                        }}
+                      />
+                    )}
+                    <AnimatePresence>
+                      {tipHover === item.href && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+                          // right-aligned to the parent (the link), since MISC
+                          // and LOOK sit near the right edge of the header.
+                          className="absolute top-full right-0 mt-[38px] rounded-xl overflow-hidden"
+                          style={{
+                            zIndex: 9999,
+                            width: 260,
+                            background: dark
+                              ? 'linear-gradient(180deg, rgba(20,20,20,0.42), rgba(0,0,0,0.32))'
+                              : 'linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0.22))',
+                            backdropFilter: 'blur(48px) saturate(2.2)',
+                            WebkitBackdropFilter: 'blur(48px) saturate(2.2)',
+                            border: `1px solid ${dark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.55)'}`,
+                            boxShadow: dark
+                              ? 'inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 36px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.18)'
+                              : 'inset 0 1px 0 rgba(255,255,255,0.65), 0 12px 36px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.04)',
+                          }}
+                        >
+                          <p
+                            className="px-4 py-3 text-[10px] leading-[1.5] tracking-[0.05em] uppercase font-bold"
+                            style={{ color: dark ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.82)' }}
+                          >
+                            {item.description}
+                          </p>
                         </motion.div>
                       )}
                     </AnimatePresence>
