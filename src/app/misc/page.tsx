@@ -464,10 +464,14 @@ function MediaPanel({
                 >
                   <button
                     onClick={() => { setFilter(null); setFilterOpen(false) }}
-                    className="block w-full text-left px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-bold transition-colors"
+                    // hover:scale + bouncy ease matches the header nav links —
+                    // text grows from the LEFT edge (origin-left) so the
+                    // dropdown column doesn't shift.
+                    className="block w-full text-left px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-bold hover:scale-110 origin-left"
                     style={{
                       color: dark ? '#ffffff' : '#000000',
                       background: filter === null ? (dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)') : 'transparent',
+                      transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.18s ease-out',
                     }}
                   >
                     All projects
@@ -476,10 +480,11 @@ function MediaPanel({
                     <button
                       key={tag}
                       onClick={() => { setFilter(tag); setFilterOpen(false) }}
-                      className="block w-full text-left px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-bold transition-colors"
+                      className="block w-full text-left px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-bold hover:scale-110 origin-left"
                       style={{
                         color: dark ? '#ffffff' : '#000000',
                         background: filter === tag ? (dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)') : 'transparent',
+                        transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.18s ease-out',
                       }}
                     >
                       {tag}
