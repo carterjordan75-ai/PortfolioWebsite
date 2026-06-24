@@ -22,7 +22,7 @@ const isGenerative = (m: MediaItem) => {
 }
 
 function MediaPanel({
-  media,
+  media: rawMedia,
   side,
   dark,
   expanded,
@@ -34,6 +34,7 @@ function MediaPanel({
   onDelete,
   onReplace,
   onReorder,
+  onTagChange,
 }: {
   media: MediaItem[]
   side: 'left' | 'right'
@@ -50,6 +51,9 @@ function MediaPanel({
   onDelete?: (src: string) => void
   onReplace?: (src: string, file: File) => void
   onReorder?: (newOrder: MediaItem[]) => void
+  // Update an item's project tag (its `title` field). Called when the
+  // tag editor on a gallery tile commits a change in edit mode.
+  onTagChange?: (src: string, newTitle: string) => void
 }) {
   const [index, setIndex] = useState(0)
   const [prevIndex, setPrevIndex] = useState<number | null>(null)
@@ -83,6 +87,32 @@ function MediaPanel({
   // tile triggered the picker so the upload swaps the right item.
   const replaceInputRef = useRef<HTMLInputElement | null>(null)
   const [replaceTargetSrc, setReplaceTargetSrc] = useState<string | null>(null)
+  // Per-panel project filter. null = "All". When set, only items whose
+  // `title` matches are shown in slideshow + gallery.
+  const [filter, setFilter] = useState<string | null>(null)
+  const [filterOpen, setFilterOpen] = useState(false)
+  // Unique project tags currently present in this panel. Sorted alphabetically.
+  const projectTags = useMemo(
+    () => Array.from(new Set(rawMedia.map(m => (m.title || '').trim()).filter(Boolean))).sort(),
+    [rawMedia],
+  )
+  // The list the panel actually renders — pre-filtered.
+  const media = useMemo(
+    () => filter ? rawMedia.filter(m => (m.title || '').trim() === filter) : rawMedia,
+    [rawMedia, filter],
+  )
+  // If the active filter no longer exists in rawMedia (e.g. last item with
+  // that tag was deleted) reset to "All". Same idea for the slideshow
+  // index — clamp it to the new filtered length.
+  useEffect(() => {
+    if (filter && !projectTags.includes(filter)) setFilter(null)
+  }, [filter, projectTags])
+  useEffect(() => {
+    if (index >= media.length && media.length > 0) {
+      setIndex(0)
+      setPrevIndex(null)
+    }
+  }, [media.length, index])
 
   // Whenever the user flips into edit mode, jump to gallery view — slideshow
   // doesn't show enough at once for editing to feel useful.
@@ -380,7 +410,10 @@ function MediaPanel({
             paddingBottom: '96px',
           }}
         >
-          {/* Gallery header — text + background flip with mode */}
+          {/* Gallery header — panel name on the left, project filter +
+              item count on the right. The filter shows the currently
+              active project tag (or "All"); clicking it opens a small
+              dropdown listing every distinct title in this panel. */}
           <div
             className="sticky top-0 z-10 px-5 py-4 flex items-baseline justify-between"
             style={{
@@ -396,12 +429,65 @@ function MediaPanel({
             >
               {side === 'left' ? 'Generative' : 'Misc'} — Gallery
             </span>
-            <span
-              className="text-[8px] font-mono tracking-[0.15em]"
-              style={{ color: dark ? '#ffffff' : '#000000', opacity: 0.5 }}
-            >
-              {String(media.length).padStart(2, '0')} items
-            </span>
+            <div className="flex items-baseline gap-3 relative">
+              <button
+                onClick={(e) => { e.stopPropagation(); setFilterOpen(o => !o) }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="text-[9px] font-bold uppercase tracking-[0.12em] px-2 py-1 rounded-md transition-colors"
+                style={{
+                  color: dark ? '#ffffff' : '#000000',
+                  background: filter ? (dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)') : 'transparent',
+                  border: `1px solid ${dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.12)'}`,
+                }}
+                title="Filter by project"
+              >
+                {filter ? `▾ ${filter}` : '▾ All projects'}
+              </button>
+              <span
+                className="text-[8px] font-mono tracking-[0.15em]"
+                style={{ color: dark ? '#ffffff' : '#000000', opacity: 0.5 }}
+              >
+                {String(media.length).padStart(2, '0')} items
+              </span>
+              {filterOpen && (
+                <div
+                  className="absolute top-full right-0 mt-2 rounded-lg overflow-y-auto"
+                  style={{
+                    minWidth: 200,
+                    maxHeight: 320,
+                    zIndex: 20,
+                    background: dark ? 'rgba(10,10,10,0.95)' : 'rgba(255,255,255,0.95)',
+                    border: `1px solid ${dark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.10)'}`,
+                    boxShadow: dark ? '0 10px 32px rgba(0,0,0,0.5)' : '0 10px 32px rgba(0,0,0,0.18)',
+                    backdropFilter: 'blur(12px)',
+                  }}
+                >
+                  <button
+                    onClick={() => { setFilter(null); setFilterOpen(false) }}
+                    className="block w-full text-left px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-bold transition-colors"
+                    style={{
+                      color: dark ? '#ffffff' : '#000000',
+                      background: filter === null ? (dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)') : 'transparent',
+                    }}
+                  >
+                    All projects
+                  </button>
+                  {projectTags.map(tag => (
+                    <button
+                      key={tag}
+                      onClick={() => { setFilter(tag); setFilterOpen(false) }}
+                      className="block w-full text-left px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-bold transition-colors"
+                      style={{
+                        color: dark ? '#ffffff' : '#000000',
+                        background: filter === tag ? (dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)') : 'transparent',
+                      }}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Thumbnail grid — comfortable gap so tiles breathe. Grid-level
@@ -561,14 +647,53 @@ function MediaPanel({
                         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
                       </svg>
                     </button>
-                    {/* Drag handle hint — bottom-centre dots icon */}
+                    {/* Drag handle hint — top-centre dots icon (moved up
+                        to make room for the tag editor at the bottom). */}
                     <span
-                      className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-white pointer-events-none"
-                      style={{ opacity: 0.7, fontSize: '14px', lineHeight: 1, zIndex: 3, textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}
+                      className="absolute top-9 left-1/2 -translate-x-1/2 text-white pointer-events-none"
+                      style={{ opacity: 0.65, fontSize: '14px', lineHeight: 1, zIndex: 3, textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}
                       aria-hidden="true"
                     >
                       ⠿
                     </span>
+                    {/* Project-tag editor — free-text input bound to the
+                        item's `title`. Commits onBlur or on Enter so the
+                        parent's onTagChange routes the new value into
+                        pendingChanges. Datalist offers existing tags as
+                        suggestions for quick reuse. */}
+                    <div
+                      className="absolute bottom-1.5 left-1.5 right-1.5"
+                      style={{ zIndex: 3 }}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="text"
+                        defaultValue={item.title || ''}
+                        list={`misc-tags-${side}`}
+                        placeholder="project tag"
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                          if (e.key === 'Escape') {
+                            (e.target as HTMLInputElement).value = item.title || ''
+                            ;(e.target as HTMLInputElement).blur()
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const next = e.target.value.trim()
+                          if (next !== (item.title || '')) onTagChange?.(item.src, next)
+                        }}
+                        className="w-full px-1.5 py-1 text-[9px] font-bold uppercase tracking-[0.06em] outline-none rounded"
+                        style={{
+                          background: 'rgba(0,0,0,0.6)',
+                          color: 'white',
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          backdropFilter: 'blur(6px)',
+                        }}
+                      />
+                    </div>
                   </>
                 )}
                 {/* Soft dark vignette + title overlay — slides up and fades in
@@ -618,6 +743,17 @@ function MediaPanel({
                 if (e.target) e.target.value = ''
               }}
             />
+          )}
+          {/* Suggestions feed for the per-tile tag editor — every distinct
+              title currently in this panel + ones the user has been seeing
+              in the filter dropdown. Per-side id so the two panels can
+              suggest independently. */}
+          {editMode && (
+            <datalist id={`misc-tags-${side}`}>
+              {projectTags.map(tag => (
+                <option key={tag} value={tag} />
+              ))}
+            </datalist>
           )}
         </div>
       )}
@@ -874,6 +1010,14 @@ export default function ExperimentsPage() {
     queueItems(next)
   }, [combined, queueItems])
 
+  // Update an item's project tag (its `title`). Routes through the same
+  // queueItems pipeline as delete/reorder, so the change appears in the
+  // EditToolbar's pending count and commits via Save All.
+  const handleTagChange = useCallback((src: string, newTitle: string) => {
+    const next = combined.map(m => m.src === src ? { ...m, title: newTitle } : m)
+    queueItems(next)
+  }, [combined, queueItems])
+
   useEffect(() => {
     // Pull both /api/misc AND /api/projects so we can surface featured-project
     // media on /misc even if the auto-mirror missed a batch (which was the
@@ -999,6 +1143,7 @@ export default function ExperimentsPage() {
             onDelete={handleDelete}
             onReplace={handleReplace}
             onReorder={(newOrder) => handleReorder(isGenerative, newOrder)}
+            onTagChange={handleTagChange}
           />
           <MediaPanel
             media={right}
@@ -1013,6 +1158,7 @@ export default function ExperimentsPage() {
             onDelete={handleDelete}
             onReplace={handleReplace}
             onReorder={(newOrder) => handleReorder(m => !isGenerative(m), newOrder)}
+            onTagChange={handleTagChange}
           />
         </div>
 
