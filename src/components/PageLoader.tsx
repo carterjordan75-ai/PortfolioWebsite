@@ -10,12 +10,13 @@ interface PageLoaderProps {
   /**
    * 'transition' (default) — runs the full animation once: grow → split →
    *   brief hold → reveal (XOXO flips) → revealHold (XOXO sits on screen)
-   *   → drop (each circle falls off the bottom in order) → fade.
-   *   onComplete fires at the start of reveal so the parent can navigate
-   *   while the rest of the moment plays.
+   *   → collapse (4 circles converge back to centre, rotation back to
+   *   front, scaled down — reading as one dot) → drop (that dot falls
+   *   off the bottom) → fade. onComplete fires at the start of reveal
+   *   so the parent can navigate while the rest of the moment plays.
    * 'data' — grows → splits → holds on the 4 black circles for as long as
    *   `show` stays true. When `show` goes false, runs reveal →
-   *   revealHold → drop → fade and exits.
+   *   revealHold → collapse → drop → fade and exits.
    */
   mode?: 'transition' | 'data'
 }
@@ -40,13 +41,17 @@ const PHASE_MS = (COUNT - 1) * STAGGER_S * 1000 + FLIP_DURATION_S * 1000
 // brand moment.
 const REVEAL_HOLD_MS = 520
 
-// Drop animation — each circle falls off the bottom of the viewport with
-// a gravity-feeling ease. Staggered in the same left-to-right order as
-// the reveal flips.
-const DROP_DURATION_S = 0.55
-const DROP_PHASE_MS = (COUNT - 1) * STAGGER_S * 1000 + DROP_DURATION_S * 1000
+// Collapse animation — the 4 circles converge back to the centre and
+// shrink so the row reads as one compact dot before the drop.
+const COLLAPSE_DURATION_S = 0.5
+const COLLAPSE_PHASE_MS = COLLAPSE_DURATION_S * 1000
 
-type Phase = 'idle' | 'grow' | 'split' | 'hold' | 'reveal' | 'revealHold' | 'drop' | 'done'
+// Drop animation — the (now single-dot) stack falls off the bottom of
+// the viewport with a gravity-feeling ease.
+const DROP_DURATION_S = 0.55
+const DROP_PHASE_MS = DROP_DURATION_S * 1000
+
+type Phase = 'idle' | 'grow' | 'split' | 'hold' | 'reveal' | 'revealHold' | 'collapse' | 'drop' | 'done'
 
 export default function PageLoader({ show, onComplete, mode = 'transition' }: PageLoaderProps) {
   const [phase, setPhase] = useState<Phase>('idle')
@@ -112,12 +117,18 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
       return () => clearTimeout(t)
     }
     if (phase === 'revealHold') {
-      const t = setTimeout(() => setPhase('drop'), REVEAL_HOLD_MS)
+      const t = setTimeout(() => setPhase('collapse'), REVEAL_HOLD_MS)
+      return () => clearTimeout(t)
+    }
+    if (phase === 'collapse') {
+      // After the converge, hold a tiny beat on the dot before dropping
+      // so the singular-dot read registers.
+      const t = setTimeout(() => setPhase('drop'), COLLAPSE_PHASE_MS + 140)
       return () => clearTimeout(t)
     }
     if (phase === 'drop') {
-      // Drop runs the staggered fall + a small buffer so the last circle
-      // is fully off-screen before the loader background fades.
+      // Single-dot drop — no stagger, all 4 stacked circles fall together
+      // and read as one element exiting the viewport.
       const t = setTimeout(() => setPhase('done'), DROP_PHASE_MS + 80)
       return () => clearTimeout(t)
     }
@@ -146,13 +157,21 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   if (phase === 'idle') return null
   if (phase === 'done' && !show) return null
 
-  const isSplit = phase === 'split' || phase === 'hold' || phase === 'reveal' || phase === 'revealHold' || phase === 'drop'
-  // Rotation target — 0° for early phases, 180° once we hit reveal and
-  // pinned there through revealHold + drop so the X/O glyphs stay visible
-  // all the way down.
+  // Circles are "split" (spread apart) from the split phase through the
+  // revealHold beat. During collapse they slide back to CENTER_X so the
+  // stack reads as a single dot before the drop.
+  const isSplit = phase === 'split' || phase === 'hold' || phase === 'reveal' || phase === 'revealHold'
+  // Rotation target — 0° initially, 180° from reveal through revealHold
+  // (X/O showing), then back to 0° during collapse + drop so the dot is
+  // a plain front-face circle (no glyph artifacts from stacking).
   const rotationTarget =
-    phase === 'reveal' || phase === 'revealHold' || phase === 'drop' || phase === 'done' ? 180 :
+    phase === 'reveal' || phase === 'revealHold' ? 180 :
     0
+  // Once we've entered collapse the row shrinks down to ~50% scale and
+  // stacks at the centre — together it reads as a small, compact dot.
+  // The dot scale + position is preserved through drop + done so the
+  // exit animation translates that same dot off the bottom.
+  const isCollapsed = phase === 'collapse' || phase === 'drop' || phase === 'done'
   // True once we've entered the drop phase — each circle's `y` target
   // jumps to dropDistance so they translate straight off the bottom.
   const shouldDrop = phase === 'drop' || phase === 'done'
@@ -193,17 +212,20 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
                   animate={{
                     x: isSplit ? finalX : CENTER_X,
                     y: shouldDrop ? dropDistance : 0,
-                    scale: 1,
+                    // 0 during grow → 1 once visible → 0.5 during the
+                    // collapse so the merged stack reads as a compact dot.
+                    scale: isCollapsed ? 0.5 : 1,
                   }}
                   transition={{
-                    x: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
+                    x: { duration: COLLAPSE_DURATION_S, ease: [0.16, 1, 0.3, 1] },
                     scale: { duration: 0.32, ease: [0.34, 1.5, 0.64, 1] },
                     y: shouldDrop
                       ? {
-                          // Gravity-flavoured ease-in. Staggered left-to-right
-                          // in the same order as the reveal flips.
+                          // Gravity-flavoured ease-in. No stagger anymore —
+                          // the 4 circles are stacked into one dot by the
+                          // time drop fires, so they fall together.
                           duration: DROP_DURATION_S,
-                          delay: i * STAGGER_S,
+                          delay: 0,
                           ease: [0.55, 0.085, 0.68, 0.53],
                         }
                       : { duration: 0 },
