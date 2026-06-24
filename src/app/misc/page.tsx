@@ -1171,7 +1171,11 @@ export default function ExperimentsPage() {
     <PageTransition>
       <PageLoader show={loading} mode="data" />
       <div style={{ background: dark ? '#0a0a0a' : '#f5f5f0', color: fg, minHeight: '100vh' }}>
-        <div className="flex" style={{ height: '100vh', paddingTop: '68px' }}>
+        {/* 96px top padding clears the glass header (which is ~92px tall
+            with its inner padding). Earlier this was 68px and the
+            slideshow's [year] / nn/MM labels + the gallery sticky header
+            were rendering up underneath the header glass. */}
+        <div className="flex" style={{ height: '100vh', paddingTop: '96px' }}>
           <MediaPanel
             media={left}
             side="left"
