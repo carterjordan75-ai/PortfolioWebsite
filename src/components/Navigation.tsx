@@ -24,12 +24,12 @@ const navItems: { href: string; label: string; description?: string }[] = [
   {
     href: '/misc',
     label: 'Misc',
-    description: 'A scrapbook of frames, off-cuts and experiments — the looser side of the studio outside the finished projects.',
+    description: 'Frames, off-cuts and experiments outside the projects.',
   },
   {
     href: '/look',
     label: 'Look',
-    description: 'A moodboard of references — films, type, colour and visuals that feed the work.',
+    description: 'Moodboard of references that feed the work.',
   },
 ]
 
@@ -410,6 +410,47 @@ export default function Navigation() {
                     >
                       {item.label}
                     </Link>
+                    {/* Click-affordance line — same idea as Misc/Look: the
+                        INDEX label drops down on hover, but a thin line
+                        stays at the original position so the user can still
+                        click through without chasing the dropped label. */}
+                    <AnimatePresence>
+                      {indexHover && (
+                        <motion.div
+                          initial={{ opacity: 0, scaleX: 0 }}
+                          animate={{ opacity: 0.55, scaleX: 1 }}
+                          exit={{ opacity: 0, scaleX: 0 }}
+                          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                          style={{
+                            position: 'absolute',
+                            top: 7,
+                            left: 0,
+                            right: 0,
+                            height: 2,
+                            borderRadius: 1,
+                            background: 'currentColor',
+                            transformOrigin: 'center',
+                            zIndex: 10001,
+                            pointerEvents: 'none',
+                          }}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </AnimatePresence>
+                    {indexHover && (
+                      <Link
+                        href={item.href}
+                        aria-label={item.label}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: 18,
+                          zIndex: 10002,
+                        }}
+                      />
+                    )}
                     {/* Invisible hover-bridge — fills the visual gap between the
                         translated INDEX label and the dropdown so the cursor can
                         travel down without exiting the wrapper's mouse hit-area.
@@ -610,15 +651,56 @@ export default function Navigation() {
                     >
                       {item.label}
                     </Link>
+                    {/* Click-affordance line — visible only while hovered.
+                        Sits at the title's ORIGINAL top position (where it
+                        sat before translateY(22px)) so the user can still
+                        click the link without chasing the dropped label. */}
+                    <AnimatePresence>
+                      {tipHover === item.href && (
+                        <motion.div
+                          initial={{ opacity: 0, scaleX: 0 }}
+                          animate={{ opacity: 0.55, scaleX: 1 }}
+                          exit={{ opacity: 0, scaleX: 0 }}
+                          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                          style={{
+                            position: 'absolute',
+                            top: 7,
+                            left: 0,
+                            right: 0,
+                            height: 2,
+                            borderRadius: 1,
+                            background: 'currentColor',
+                            transformOrigin: 'center',
+                            zIndex: 10001,
+                            pointerEvents: 'none',
+                          }}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </AnimatePresence>
+                    {tipHover === item.href && (
+                      <Link
+                        href={item.href}
+                        aria-label={item.label}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: 18,
+                          zIndex: 10002,
+                        }}
+                      />
+                    )}
                     {tipHover === item.href && (
                       <div
                         aria-hidden
                         style={{
                           position: 'absolute',
                           top: '100%',
-                          right: 0,
-                          width: '260px',
-                          height: '60px',
+                          left: 0,
+                          width: 200,
+                          height: 60,
                           zIndex: 9998,
                         }}
                       />
@@ -630,12 +712,13 @@ export default function Navigation() {
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
                           transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-                          // right-aligned to the parent (the link), since MISC
-                          // and LOOK sit near the right edge of the header.
-                          className="absolute top-full right-0 mt-[38px] rounded-xl overflow-hidden"
+                          // Left-aligned to match INDEX. Width reduced to 200
+                          // and copy trimmed so the box stays compact on the
+                          // right side of the header without overflowing.
+                          className="absolute top-full left-0 mt-[38px] rounded-xl overflow-hidden"
                           style={{
                             zIndex: 9999,
-                            width: 260,
+                            width: 200,
                             background: dark
                               ? 'linear-gradient(180deg, rgba(20,20,20,0.42), rgba(0,0,0,0.32))'
                               : 'linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0.22))',
@@ -648,7 +731,7 @@ export default function Navigation() {
                           }}
                         >
                           <p
-                            className="px-4 py-3 text-[10px] leading-[1.5] tracking-[0.05em] uppercase font-bold"
+                            className="px-3 py-2.5 text-[9px] leading-[1.5] tracking-[0.06em] uppercase font-bold"
                             style={{ color: dark ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.82)' }}
                           >
                             {item.description}

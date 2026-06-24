@@ -33,7 +33,12 @@ const FLIP_DURATION_S = 0.42
 const STAGGER_S = 0.13
 const PHASE_MS = (COUNT - 1) * STAGGER_S * 1000 + FLIP_DURATION_S * 1000
 
-type Phase = 'idle' | 'grow' | 'split' | 'hold' | 'reveal' | 'whiten' | 'done'
+type Phase = 'idle' | 'grow' | 'split' | 'hold' | 'reveal' | 'revealHold' | 'whiten' | 'done'
+
+// How long XOXO stays visible after the reveal flips finish, before the
+// whiten rotation kicks in. Short enough not to drag, long enough to
+// register as a brand moment.
+const REVEAL_HOLD_MS = 520
 
 export default function PageLoader({ show, onComplete, mode = 'transition' }: PageLoaderProps) {
   const [phase, setPhase] = useState<Phase>('idle')
@@ -78,9 +83,14 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
       return () => clearTimeout(t)
     }
     if (phase === 'reveal') {
-      // Reveal takes the staggered last-circle-finish time + a small
-      // buffer so the whiten flips don't overlap visually.
-      const t = setTimeout(() => setPhase('whiten'), PHASE_MS + 120)
+      // Reveal takes the staggered last-circle-finish time. We then sit on
+      // 'revealHold' so XOXO is visible as a brand beat before the white
+      // rotation begins.
+      const t = setTimeout(() => setPhase('revealHold'), PHASE_MS + 80)
+      return () => clearTimeout(t)
+    }
+    if (phase === 'revealHold') {
+      const t = setTimeout(() => setPhase('whiten'), REVEAL_HOLD_MS)
       return () => clearTimeout(t)
     }
     if (phase === 'whiten') {
@@ -113,12 +123,14 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   if (phase === 'idle') return null
   if (phase === 'done' && !show) return null
 
-  const isSplit = phase === 'split' || phase === 'hold' || phase === 'reveal' || phase === 'whiten'
+  const isSplit = phase === 'split' || phase === 'hold' || phase === 'reveal' || phase === 'revealHold' || phase === 'whiten'
   // Rotation target — 0° (front, black) for early phases, 180° for reveal
-  // (back, X/O), 360° for whiten/done (front again, but recoloured white).
+  // and revealHold (back, X/O), 360° for whiten/done (front again, but
+  // recoloured white). revealHold keeps the rotation pinned at 180° so
+  // the XOXO sits cleanly on screen for the hold beat.
   const rotationTarget =
     phase === 'whiten' || phase === 'done' ? 360 :
-    phase === 'reveal' ? 180 :
+    phase === 'reveal' || phase === 'revealHold' ? 180 :
     0
   // Front face flips to white during the whiten phase. Each circle's
   // colour swap is delayed to roughly the rotation midpoint so the change
