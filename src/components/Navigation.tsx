@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { useDarkMode } from '@/contexts/DarkModeContext'
@@ -48,6 +48,24 @@ export default function Navigation() {
   // time, so a single string-or-null state covers Misc + Look (and any
   // future nav item that supplies a `description`).
   const [tipHover, setTipHover] = useState<string | null>(null)
+  // Distance to slide the tooltip LEFT so it lines up under the INDEX
+  // wrapper rather than under its own item. Captured synchronously when
+  // the hover starts so the tooltip mounts already at the right X.
+  const [tipOffset, setTipOffset] = useState(0)
+  const indexWrapperRef = useRef<HTMLDivElement | null>(null)
+  const tipWrapperRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  const handleTipEnter = (href: string) => {
+    const indexEl = indexWrapperRef.current
+    const ownEl = tipWrapperRefs.current[href]
+    if (indexEl && ownEl) {
+      const offset = indexEl.getBoundingClientRect().left - ownEl.getBoundingClientRect().left
+      setTipOffset(offset)
+    } else {
+      setTipOffset(0)
+    }
+    setTipHover(href)
+  }
   // Active bucket inside the Index hover dropdown. 'gen' is first and the
   // default (visible on open); '3d' is the secondary bucket.
   const [indexCategory, setIndexCategory] = useState<'3d' | 'gen'>('gen')
@@ -382,6 +400,7 @@ export default function Navigation() {
                 item.href === '/indexx' ? (
                   <div
                     key={item.href}
+                    ref={indexWrapperRef}
                     className="relative"
                     style={{ zIndex: 10000 }}
                     onMouseEnter={() => setIndexHover(true)}
@@ -417,16 +436,17 @@ export default function Navigation() {
                     <AnimatePresence>
                       {indexHover && (
                         <motion.div
-                          initial={{ opacity: 0, scaleX: 0 }}
-                          animate={{ opacity: 0.55, scaleX: 1 }}
-                          exit={{ opacity: 0, scaleX: 0 }}
+                          initial={{ opacity: 0, scaleY: 0 }}
+                          animate={{ opacity: 0.55, scaleY: 1 }}
+                          exit={{ opacity: 0, scaleY: 0 }}
                           transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
                           style={{
                             position: 'absolute',
-                            top: 7,
-                            left: 0,
-                            right: 0,
-                            height: 2,
+                            top: 2,
+                            left: '50%',
+                            marginLeft: -1,
+                            width: 2,
+                            height: 12,
                             borderRadius: 1,
                             background: 'currentColor',
                             transformOrigin: 'center',
@@ -629,9 +649,10 @@ export default function Navigation() {
                   // without exiting the hover region.
                   <div
                     key={item.href}
+                    ref={(el) => { tipWrapperRefs.current[item.href] = el }}
                     className="relative"
                     style={{ zIndex: 10000 }}
-                    onMouseEnter={() => setTipHover(item.href)}
+                    onMouseEnter={() => handleTipEnter(item.href)}
                     onMouseLeave={() => setTipHover(null)}
                   >
                     <Link
@@ -658,16 +679,17 @@ export default function Navigation() {
                     <AnimatePresence>
                       {tipHover === item.href && (
                         <motion.div
-                          initial={{ opacity: 0, scaleX: 0 }}
-                          animate={{ opacity: 0.55, scaleX: 1 }}
-                          exit={{ opacity: 0, scaleX: 0 }}
+                          initial={{ opacity: 0, scaleY: 0 }}
+                          animate={{ opacity: 0.55, scaleY: 1 }}
+                          exit={{ opacity: 0, scaleY: 0 }}
                           transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
                           style={{
                             position: 'absolute',
-                            top: 7,
-                            left: 0,
-                            right: 0,
-                            height: 2,
+                            top: 2,
+                            left: '50%',
+                            marginLeft: -1,
+                            width: 2,
+                            height: 12,
                             borderRadius: 1,
                             background: 'currentColor',
                             transformOrigin: 'center',
@@ -698,8 +720,8 @@ export default function Navigation() {
                         style={{
                           position: 'absolute',
                           top: '100%',
-                          left: 0,
-                          width: 200,
+                          left: tipOffset,
+                          width: 220,
                           height: 60,
                           zIndex: 9998,
                         }}
@@ -712,13 +734,16 @@ export default function Navigation() {
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
                           transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-                          // Left-aligned to match INDEX. Width reduced to 200
-                          // and copy trimmed so the box stays compact on the
-                          // right side of the header without overflowing.
-                          className="absolute top-full left-0 mt-[38px] rounded-xl overflow-hidden"
+                          // Anchored to INDEX's wrapper position via tipOffset
+                          // (measured synchronously on hover-enter). That way
+                          // the Misc/Look description box appears at the same
+                          // screen X as the INDEX dropdown, matching its
+                          // box position exactly.
+                          className="absolute top-full mt-[38px] rounded-xl overflow-hidden"
                           style={{
                             zIndex: 9999,
-                            width: 200,
+                            left: tipOffset,
+                            width: 220,
                             background: dark
                               ? 'linear-gradient(180deg, rgba(20,20,20,0.42), rgba(0,0,0,0.32))'
                               : 'linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0.22))',
