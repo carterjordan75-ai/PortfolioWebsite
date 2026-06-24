@@ -24,7 +24,7 @@ const navItems: { href: string; label: string; description?: string }[] = [
   {
     href: '/misc',
     label: 'Misc',
-    description: 'Frames, off-cuts and experiments outside the projects.',
+    description: 'A collection of images from projects, experiments and stills — in no particular order.',
   },
   {
     href: '/look',
