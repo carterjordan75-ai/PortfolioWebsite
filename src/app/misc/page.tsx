@@ -13,6 +13,15 @@ import { useEditMode } from '@/contexts/EditModeContext'
 
 type MediaItem = { src: string; type: 'video' | 'image'; title: string; year: number; medium?: string | string[] }
 
+// Same hover palette the /indexx rows cycle through. Each filter-dropdown
+// option gets one based on its position so hovering the list reads as
+// the same colour-scroll moment.
+const hoverColors = [
+  '#e94560', '#ff6b35', '#00b4d8', '#7209b7', '#06d6a0',
+  '#fb5607', '#3a86ff', '#8338ec', '#ff006e', '#38b000',
+  '#f72585', '#4cc9f0', '#ef476f', '#ffd166', '#118ab2',
+]
+
 // Split rule: anything tagged "Generative" → LEFT panel; everything else → right.
 // Order is whatever the admin panel produced (no shuffling) so both the
 // slideshow and the gallery view reflect the exact admin sequence.
@@ -91,6 +100,10 @@ function MediaPanel({
   // `title` matches are shown in slideshow + gallery.
   const [filter, setFilter] = useState<string | null>(null)
   const [filterOpen, setFilterOpen] = useState(false)
+  // Hovered index in the open filter dropdown — drives the per-item
+  // colour-scroll. -1 = "All projects" row (which stays neutral);
+  // 0+ matches projectTags[i] (which picks hoverColors[i % len]).
+  const [hoveredFilterIdx, setHoveredFilterIdx] = useState<number | null>(null)
   // Unique project tags currently present in this panel. Sorted alphabetically.
   const projectTags = useMemo(
     () => Array.from(new Set(rawMedia.map(m => (m.title || '').trim()).filter(Boolean))).sort(),
@@ -462,34 +475,58 @@ function MediaPanel({
                     backdropFilter: 'blur(12px)',
                   }}
                 >
-                  <button
-                    onClick={() => { setFilter(null); setFilterOpen(false) }}
-                    // hover:scale + bouncy ease matches the header nav links —
-                    // text grows from the LEFT edge (origin-left) so the
-                    // dropdown column doesn't shift.
-                    className="block w-full text-left px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-bold hover:scale-110 origin-left"
-                    style={{
-                      color: dark ? '#ffffff' : '#000000',
-                      background: filter === null ? (dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)') : 'transparent',
-                      transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.18s ease-out',
-                    }}
-                  >
-                    All projects
-                  </button>
-                  {projectTags.map(tag => (
-                    <button
-                      key={tag}
-                      onClick={() => { setFilter(tag); setFilterOpen(false) }}
-                      className="block w-full text-left px-3 py-2 text-[10px] uppercase tracking-[0.1em] font-bold hover:scale-110 origin-left"
-                      style={{
-                        color: dark ? '#ffffff' : '#000000',
-                        background: filter === tag ? (dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)') : 'transparent',
-                        transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.18s ease-out',
-                      }}
-                    >
-                      {tag}
-                    </button>
-                  ))}
+                  {(() => {
+                    // "All projects" gets index -1 (no colour, just dim).
+                    // Tags grow with index 0..N from the hoverColors cycle.
+                    const isAllHovered = hoveredFilterIdx === -1
+                    return (
+                      <button
+                        onClick={() => { setFilter(null); setFilterOpen(false) }}
+                        onMouseEnter={() => setHoveredFilterIdx(-1)}
+                        onMouseLeave={() => setHoveredFilterIdx(null)}
+                        className="block w-full text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.1em] font-bold origin-left"
+                        style={{
+                          color: isAllHovered ? '#ffffff' : (dark ? '#ffffff' : '#000000'),
+                          background: isAllHovered
+                            ? (dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)')
+                            : filter === null ? (dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)') : 'transparent',
+                          transform: isAllHovered ? 'scale(1.25)' : 'scale(1)',
+                          // Same asymmetric ease as /indexx rows: snap in fast,
+                          // slow fade-out leaves a colour trail.
+                          transition: isAllHovered
+                            ? 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.08s ease-out, color 0.08s ease-out'
+                            : 'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), background 0.9s ease-out, color 0.9s ease-out',
+                        }}
+                      >
+                        All projects
+                      </button>
+                    )
+                  })()}
+                  {projectTags.map((tag, i) => {
+                    const isHovered = hoveredFilterIdx === i
+                    const color = hoverColors[i % hoverColors.length]
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => { setFilter(tag); setFilterOpen(false) }}
+                        onMouseEnter={() => setHoveredFilterIdx(i)}
+                        onMouseLeave={() => setHoveredFilterIdx(null)}
+                        className="block w-full text-left px-3 py-2.5 text-[10px] uppercase tracking-[0.1em] font-bold origin-left"
+                        style={{
+                          color: isHovered ? '#ffffff' : (dark ? '#ffffff' : '#000000'),
+                          background: isHovered
+                            ? color
+                            : filter === tag ? (dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)') : 'transparent',
+                          transform: isHovered ? 'scale(1.25)' : 'scale(1)',
+                          transition: isHovered
+                            ? 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.08s ease-out, color 0.08s ease-out'
+                            : 'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), background 0.9s ease-out, color 0.9s ease-out',
+                        }}
+                      >
+                        {tag}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>
