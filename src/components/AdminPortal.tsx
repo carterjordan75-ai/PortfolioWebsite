@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { upload } from '@vercel/blob/client'
@@ -1852,6 +1852,16 @@ function MiscUploadPanel() {
   const [bulkYear, setBulkYear] = useState<string>('')
   const [bulkMedium, setBulkMedium] = useState<string[]>([])
   const [bulkApplyMedium, setBulkApplyMedium] = useState(false)
+  // Project (title) bulk-assignment toggle + value, mirrored to the
+  // toolbar so N selected items can be tagged to one project in one
+  // commit. Same datalist as the project-rename pills below.
+  const [bulkProject, setBulkProject] = useState<string>('')
+  const [bulkApplyProject, setBulkApplyProject] = useState(false)
+  // Inline rename UX — `renamingProject` is the title currently being
+  // renamed (null = not editing). renameValue holds the new text. Commit
+  // cascades through every item that shares that title.
+  const [renamingProject, setRenamingProject] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   // Derive a clean human title from a filename when the user hasn't supplied
   // one — strip the extension, swap separators for spaces, collapse repeats.
@@ -2078,11 +2088,13 @@ function MiscUploadPanel() {
   const applyBulkEdit = async () => {
     if (selected.size === 0) return
     const yearNum = bulkYear.trim() ? parseInt(bulkYear, 10) : null
+    const projectTitle = bulkProject.trim()
     const updated = items.map((item, i) => {
       if (!selected.has(i)) return item
       const next = { ...item }
       if (yearNum !== null && !isNaN(yearNum)) next.year = yearNum
       if (bulkApplyMedium) next.medium = bulkMedium.length ? bulkMedium : ['3D']
+      if (bulkApplyProject && projectTitle) next.title = projectTitle
       return next
     })
     setItems(updated)
@@ -2090,6 +2102,8 @@ function MiscUploadPanel() {
     setStatus(`✓ Updated ${selected.size} item${selected.size !== 1 ? 's' : ''}`)
     setBulkYear('')
     setBulkApplyMedium(false)
+    setBulkApplyProject(false)
+    setBulkProject('')
     setTimeout(() => setStatus(null), 2000)
   }
 
@@ -2149,6 +2163,41 @@ function MiscUploadPanel() {
     setTimeout(() => setStatus(null), 1500)
   }
 
+  // Distinct project titles + how many items use each — drives both the
+  // top-of-panel Projects strip (rename in place) and the datalist that
+  // feeds the per-item + bulk title editors.
+  const projectsList = useMemo(() => {
+    const counts = new Map<string, number>()
+    items.forEach(item => {
+      const t = (item.title || '').trim()
+      if (!t) return
+      counts.set(t, (counts.get(t) || 0) + 1)
+    })
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [items])
+
+  // Cascade rename — every item whose title matches `renamingProject`
+  // gets the new title. Commits through saveItems so it lands in the
+  // misc blob in one write.
+  const applyProjectRename = async () => {
+    if (!renamingProject) return
+    const next = renameValue.trim()
+    if (!next || next === renamingProject) {
+      setRenamingProject(null)
+      return
+    }
+    const updated = items.map(item =>
+      (item.title || '').trim() === renamingProject ? { ...item, title: next } : item,
+    )
+    setItems(updated)
+    await saveItems(updated)
+    setRenamingProject(null)
+    setStatus(`✓ Renamed "${renamingProject}" → "${next}"`)
+    setTimeout(() => setStatus(null), 2200)
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -2172,6 +2221,70 @@ function MiscUploadPanel() {
 
       {status && (
         <p className={`text-[9px] mb-3 ${status.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>{status}</p>
+      )}
+
+      {/* Datalist feeds every title input below — per-item edit, bulk
+          project assignment, and the rename input on the chips. Just one
+          DOM node, referenced by id. */}
+      <datalist id="misc-admin-project-tags">
+        {projectsList.map(p => (
+          <option key={p.name} value={p.name} />
+        ))}
+      </datalist>
+
+      {/* Projects strip — every distinct title currently in the misc set.
+          Click a chip to rename the project; the new name cascades to
+          every item that shares the old title. The count shows how many
+          items the rename will touch. */}
+      {projectsList.length > 0 && (
+        <div className="mb-5 p-3 rounded-lg border border-white/10" style={{ background: 'rgba(255,255,255,0.03)' }}>
+          <p className="text-white/60 text-[9px] font-bold uppercase tracking-[0.1em] mb-2">
+            Projects <span className="text-white/30 font-normal normal-case tracking-normal">— click a chip to rename across every item</span>
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {projectsList.map(p => (
+              renamingProject === p.name ? (
+                <div key={p.name} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white/10 border border-white/25">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={renameValue}
+                    list="misc-admin-project-tags"
+                    onChange={e => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') applyProjectRename()
+                      if (e.key === 'Escape') setRenamingProject(null)
+                    }}
+                    className="bg-transparent text-[10px] text-white outline-none w-36"
+                  />
+                  <button
+                    onClick={applyProjectRename}
+                    className="text-green-400 text-[11px] hover:text-green-300"
+                    title="Rename across all items"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    onClick={() => setRenamingProject(null)}
+                    className="text-white/40 text-[11px] hover:text-white/70"
+                    title="Cancel"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <button
+                  key={p.name}
+                  onClick={() => { setRenamingProject(p.name); setRenameValue(p.name) }}
+                  className="px-2.5 py-1 rounded-full text-[9px] uppercase tracking-[0.08em] font-bold text-white/75 border border-white/15 hover:border-white/35 hover:text-white hover:bg-white/5 transition-colors"
+                  title={`Rename "${p.name}" across ${p.count} item${p.count !== 1 ? 's' : ''}`}
+                >
+                  {p.name} <span className="opacity-50 font-mono ml-1">·{p.count}</span>
+                </button>
+              )
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Upload new — supports drag & drop OR file picker, single OR many.
@@ -2273,6 +2386,25 @@ function MiscUploadPanel() {
             Clear
           </button>
           <div className="h-3 w-px bg-white/15" />
+          <label className="flex items-center gap-1.5 text-white/40 text-[7px] uppercase tracking-[0.12em] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={bulkApplyProject}
+              onChange={e => setBulkApplyProject(e.target.checked)}
+              className="accent-white"
+            />
+            Set project:
+          </label>
+          <input
+            type="text"
+            value={bulkProject}
+            list="misc-admin-project-tags"
+            onChange={e => setBulkProject(e.target.value)}
+            placeholder="project tag"
+            disabled={!bulkApplyProject}
+            className={`w-36 px-2 py-1 rounded text-[10px] bg-white/5 border border-white/10 text-white outline-none focus:border-white/25 ${bulkApplyProject ? '' : 'opacity-40'}`}
+          />
+          <div className="h-3 w-px bg-white/15" />
           <label className="text-white/40 text-[7px] uppercase tracking-[0.12em]">Set year:</label>
           <input
             type="number"
@@ -2310,7 +2442,7 @@ function MiscUploadPanel() {
           <div className="flex-1" />
           <button
             onClick={applyBulkEdit}
-            disabled={!bulkYear.trim() && !bulkApplyMedium}
+            disabled={!bulkYear.trim() && !bulkApplyMedium && !(bulkApplyProject && bulkProject.trim())}
             className="px-3 py-1 rounded text-[8px] font-bold text-green-400 border border-green-400/30 hover:bg-green-400/10 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             Apply
@@ -2448,7 +2580,7 @@ function MiscUploadPanel() {
             {/* Inline edit */}
             {editIdx === i && (
               <div className="flex flex-wrap items-center gap-2 py-2 px-4 bg-white/3 border-b border-white/5">
-                <input type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} className={`${inputStyle} w-32`} placeholder="Title" />
+                <input type="text" value={newTitle} list="misc-admin-project-tags" onChange={e => setNewTitle(e.target.value)} className={`${inputStyle} w-32`} placeholder="Title (project tag)" />
                 <input type="number" value={newYear} onChange={e => setNewYear(parseInt(e.target.value) || 2026)} className={`${inputStyle} w-16`} />
                 <div className="flex gap-1">
                   {mediumOptions.map(m => (
