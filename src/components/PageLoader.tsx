@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useDarkMode } from '@/contexts/DarkModeContext'
 
 interface PageLoaderProps {
   show: boolean
@@ -50,6 +51,15 @@ type Phase = 'idle' | 'grow' | 'split' | 'hold' | 'reveal' | 'revealHold' | 'dro
 export default function PageLoader({ show, onComplete, mode = 'transition' }: PageLoaderProps) {
   const [phase, setPhase] = useState<Phase>('idle')
   const completedRef = useRef(false)
+  // Site-wide dark mode — flips the loader from white/black to black/white
+  // (background + circles + glyphs). Anchored to the same context the rest
+  // of the site uses, so a user who's saved dark mode sees a dark loader
+  // on Index / Misc / Look, and the always-light home page gets a light
+  // loader regardless of stored preference.
+  const { dark } = useDarkMode()
+  const bg = dark ? '#0a0a0a' : '#ffffff'
+  const circleFill = dark ? '#ffffff' : '#000000'
+  const glyphStroke = dark ? '#000000' : '#ffffff'
   // Viewport-based scale so the row of circles always fits on screen with a
   // sensible margin — pure CSS scaling instead of recomputing the layout.
   const [scale, setScale] = useState(1)
@@ -159,7 +169,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
-            background: '#ffffff',
+            background: bg,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -225,27 +235,30 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
                       transformStyle: 'preserve-3d',
                     }}
                   >
-                    {/* Front face — solid black circle, no letter. */}
+                    {/* Front face — solid circle, no letter. Colour
+                        comes from circleFill (black in light mode, white
+                        in dark mode). */}
                     <div
                       style={{
                         position: 'absolute',
                         inset: 0,
                         borderRadius: '50%',
-                        background: '#000',
+                        background: circleFill,
                         backfaceVisibility: 'hidden',
                         WebkitBackfaceVisibility: 'hidden',
                       }}
                     />
-                    {/* Back face — black circle with the letter. Pre-rotated
-                        180° so its content reads right-way-up once the
-                        wrapper has flipped. */}
+                    {/* Back face — same-colour circle with the letter
+                        drawn in the opposing colour. Pre-rotated 180° so
+                        its content reads right-way-up once the wrapper
+                        has flipped. */}
                     <div
                       style={{
                         position: 'absolute',
                         inset: 0,
                         borderRadius: '50%',
-                        background: '#000',
-                        color: '#fff',
+                        background: circleFill,
+                        color: glyphStroke,
                         backfaceVisibility: 'hidden',
                         WebkitBackfaceVisibility: 'hidden',
                         transform: 'rotateY(180deg)',
@@ -259,7 +272,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
                         <svg viewBox="0 0 60 60" width="58%" height="58%">
                           <path
                             d="M14 14 L46 46 M46 14 L14 46"
-                            stroke="white"
+                            stroke={glyphStroke}
                             strokeWidth="7"
                             strokeLinecap="round"
                             fill="none"
@@ -271,7 +284,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
                             cx="30"
                             cy="30"
                             r="16"
-                            stroke="white"
+                            stroke={glyphStroke}
                             strokeWidth="7"
                             fill="none"
                           />
