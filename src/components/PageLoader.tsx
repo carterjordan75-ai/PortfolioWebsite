@@ -22,6 +22,9 @@ interface PageLoaderProps {
 }
 
 const LETTERS = ['X', 'O', 'X', 'O'] as const
+// One fill colour per circle — the first four of the site's index-page
+// hover palette, so the loader speaks the same colour language.
+const FILL_COLORS = ['#e94560', '#ff6b35', '#00b4d8', '#7209b7'] as const
 // Circle + gap dimensions. Original was 88 / 28; the row felt too big in
 // the viewport, so this is dialed down ~40% across the board.
 const CIRCLE_SIZE = 53
@@ -63,8 +66,9 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   // loader regardless of stored preference.
   const { dark } = useDarkMode()
   const bg = dark ? '#0a0a0a' : '#ffffff'
-  const circleFill = dark ? '#ffffff' : '#000000'
-  const glyphStroke = dark ? '#000000' : '#ffffff'
+  // Wireframe ring colour for the un-filled entrance state — black rings
+  // on the light loader, white rings on the dark one.
+  const ringColor = dark ? '#ffffff' : '#000000'
   // Viewport-based scale so the row of circles always fits on screen with a
   // sensible margin — pure CSS scaling instead of recomputing the layout.
   const [scale, setScale] = useState(1)
@@ -161,12 +165,14 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   // revealHold beat. During collapse they slide back to CENTER_X so the
   // stack reads as a single dot before the drop.
   const isSplit = phase === 'split' || phase === 'hold' || phase === 'reveal' || phase === 'revealHold'
-  // Rotation target — 0° initially, 180° from reveal through revealHold
-  // (X/O showing), then back to 0° during collapse + drop so the dot is
-  // a plain front-face circle (no glyph artifacts from stacking).
+  // Rotation target — 0° while the wireframe rings are in, then 180°
+  // from reveal onward and it STAYS there: the flip is the "fill"
+  // moment (wireframe ring → solid colour + letter), and the colour
+  // rides through collapse + drop so the falling dot is a filled one.
   const rotationTarget =
-    phase === 'reveal' || phase === 'revealHold' ? 180 :
-    0
+    phase === 'reveal' || phase === 'revealHold' || phase === 'collapse' || phase === 'drop' || phase === 'done'
+      ? 180
+      : 0
   // Once we've entered collapse the row shrinks down to ~50% scale and
   // stacks at the centre — together it reads as a small, compact dot.
   // The dot scale + position is preserved through drop + done so the
@@ -237,6 +243,10 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
                     width: CIRCLE_SIZE,
                     height: CIRCLE_SIZE,
                     perspective: 600,
+                    // Paint order: earlier circles on top, so when the four
+                    // stack into the collapse-dot the visible colour is the
+                    // first one (the red X), not whichever renders last.
+                    zIndex: COUNT - i,
                   }}
                 >
                   {/* The flip: rotate the inner wrapper on Y. Reveal takes
@@ -257,30 +267,30 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
                       transformStyle: 'preserve-3d',
                     }}
                   >
-                    {/* Front face — solid circle, no letter. Colour
-                        comes from circleFill (black in light mode, white
-                        in dark mode). */}
+                    {/* Front face — WIREFRAME: transparent circle with a
+                        ring stroke. This is what enters, splits and holds
+                        before the fill. */}
                     <div
                       style={{
                         position: 'absolute',
                         inset: 0,
                         borderRadius: '50%',
-                        background: circleFill,
+                        background: 'transparent',
+                        border: `3px solid ${ringColor}`,
                         backfaceVisibility: 'hidden',
                         WebkitBackfaceVisibility: 'hidden',
                       }}
                     />
-                    {/* Back face — same-colour circle with the letter
-                        drawn in the opposing colour. Pre-rotated 180° so
-                        its content reads right-way-up once the wrapper
-                        has flipped. */}
+                    {/* Back face — the FILL: solid colour (one per circle)
+                        with the letter in white. Pre-rotated 180° so its
+                        content reads right-way-up once the wrapper has
+                        flipped — the staggered flip IS the fill moment. */}
                     <div
                       style={{
                         position: 'absolute',
                         inset: 0,
                         borderRadius: '50%',
-                        background: circleFill,
-                        color: glyphStroke,
+                        background: FILL_COLORS[i % FILL_COLORS.length],
                         backfaceVisibility: 'hidden',
                         WebkitBackfaceVisibility: 'hidden',
                         transform: 'rotateY(180deg)',
@@ -294,7 +304,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
                         <svg viewBox="0 0 60 60" width="58%" height="58%">
                           <path
                             d="M14 14 L46 46 M46 14 L14 46"
-                            stroke={glyphStroke}
+                            stroke="#ffffff"
                             strokeWidth="7"
                             strokeLinecap="round"
                             fill="none"
@@ -306,7 +316,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
                             cx="30"
                             cy="30"
                             r="16"
-                            stroke={glyphStroke}
+                            stroke="#ffffff"
                             strokeWidth="7"
                             fill="none"
                           />
