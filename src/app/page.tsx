@@ -20,14 +20,20 @@ type HomeVideo = {
 // Fixed to the left edge, vertically centred. Shows the 1-based number of
 // the video currently in view (01..N). Driven by a rAF loop that reads the
 // scroll container directly and writes styles straight to the DOM — zero
-// React re-renders while scrolling:
-//   - the strip of numbers translates with the FRACTIONAL scroll position,
-//     so mid-scroll the previous/next numbers are visible above/below
-//   - each digit stretches (scaleY) with scroll velocity, run through an
-//     underdamped spring — when the snap lands the digit squashes past 1
-//     and "pings" back to rest
-//   - the rail fades up while scrolling and settles to a subtle residue on
-//     the current number when idle (fast fade-in, slow fade-out)
+// React re-renders while scrolling.
+//
+// Motion model — TENSION + RELEASE, not 1:1 tracking:
+//   - `railPos` (what the strip displays) chases the real scroll position
+//     through an underdamped spring. While the scroll travels to the next
+//     video, railPos lags behind — the gap between them is "tension".
+//   - The centre digit stretches (scaleY) with that tension, like it's
+//     being pulled toward the incoming video. When the scroll lands, the
+//     spring releases: railPos catches up, overshoots a touch, and pings
+//     into place while the stretch snaps back through <1 (squash).
+//   - Neighbours above/below fade AND shrink progressively with distance
+//     from the centre — ±1 clearly readable, ±2 a whisper, ±3 gone.
+//   - The rail fades up while scrolling / settling and rests at a subtle
+//     residue on the current number when idle.
 // Works in playlist space (position mod N) so the triple-playlist silent
 // shift is invisible to it, and the numbers wrap N→1 seamlessly.
 function ScrollNumberRail({
@@ -45,16 +51,19 @@ function ScrollNumberRail({
     if (!container) return
 
     const SPACING = 84        // px between adjacent numbers on the strip
-    const STRETCH_K = 10      // velocity (sections/frame) → extra scaleY
-    const MAX_EXTRA = 1.1     // cap: scaleY tops out at 2.1
-    const STIFFNESS = 0.14    // spring pull toward target stretch
-    const DAMPING = 0.78      // < 1 → underdamped → overshoot = the "ping"
+    const RAIL_K = 0.05       // spring pull of railPos toward the scroll pos
+    const RAIL_DAMP = 0.86    // < 1 → underdamped → overshoot = the "ping"
+    const TENSION_S = 1.5     // tension gap (sections) → extra scaleY
+    const MAX_EXTRA = 1.2     // cap: scaleY tops out at 2.2
+    const STIFFNESS = 0.14    // stretch spring pull toward its target
+    const DAMPING = 0.78      // stretch spring damping (squash on release)
 
     let raf = 0
-    let lastPos: number | null = null
-    let smoothV = 0
+    let lastRawPos: number | null = null
+    let railPos = 0           // sprung display position (tripled space)
+    let railVel = 0
     let stretch = 1
-    let springVel = 0
+    let stretchVel = 0
     let energy = 0            // 0..1 scroll-activity, drives the fade
     let lastScrollTs = 0
 
@@ -66,26 +75,39 @@ function ScrollNumberRail({
       const h = container.clientHeight
       if (h <= 0) return
       const pos = container.scrollTop / h            // float, tripled space
-      const p = ((pos % count) + count) % count      // wrapped playlist space
 
-      // Per-frame velocity (sections/frame), smoothed. The silent-shift
-      // teleports scrollTop by ±count sections in one frame — ignore those
-      // jumps so the rail doesn't see a fake velocity spike.
-      let v = lastPos === null ? 0 : pos - lastPos
-      if (Math.abs(v) > count / 2) v = 0
-      lastPos = pos
-      smoothV = smoothV + (v - smoothV) * 0.25
+      // First frame: adopt the position outright (no fly-in). On the
+      // silent-shift teleport (scrollTop jumps ±count sections in one
+      // frame) carry railPos along by the same delta so the gap — and
+      // therefore the animation — is continuous across the shift.
+      if (lastRawPos === null) {
+        railPos = pos
+      } else {
+        const rawDelta = pos - lastRawPos
+        if (Math.abs(rawDelta) > count / 2) railPos += rawDelta
+      }
+      lastRawPos = pos
 
-      // Stretch spring: target follows |velocity|; the underdamped settle
-      // is what produces the squash-overshoot ping when a snap lands.
-      const target = 1 + Math.min(Math.abs(smoothV) * STRETCH_K, MAX_EXTRA)
-      springVel = (springVel + (target - stretch) * STIFFNESS) * DAMPING
-      stretch += springVel
+      // Rail spring: railPos chases pos. The lag IS the tension; the
+      // underdamped catch-up IS the ping into place.
+      railVel = (railVel + (pos - railPos) * RAIL_K) * RAIL_DAMP
+      railPos += railVel
+      const gap = pos - railPos
 
-      // Activity: scrolled recently OR strip still visibly moving.
+      // Stretch follows the tension through its own underdamped spring —
+      // build while the gap grows, snap back through <1 when it releases.
+      const target = 1 + Math.min(Math.abs(gap) * TENSION_S, MAX_EXTRA)
+      stretchVel = (stretchVel + (target - stretch) * STIFFNESS) * DAMPING
+      stretch += stretchVel
+
+      // Activity: recent scroll OR the rail still settling.
       // Asymmetric lerp — fast fade-in, slow fade-out (site-wide motif).
-      const activeNow = (performance.now() - lastScrollTs < 400) || Math.abs(smoothV) > 0.002
+      const activeNow = (performance.now() - lastScrollTs < 400)
+        || Math.abs(gap) > 0.02
+        || Math.abs(railVel) > 0.003
       energy = energy + ((activeNow ? 1 : 0) - energy) * (activeNow ? 0.16 : 0.05)
+
+      const p = ((railPos % count) + count) % count  // wrapped playlist space
 
       for (let i = 0; i < count; i++) {
         const el = numberRefs.current[i]
@@ -95,14 +117,24 @@ function ScrollNumberRail({
         let d = (i - p) % count
         if (d > count / 2) d -= count
         if (d < -count / 2) d += count
-        const w = Math.max(0, 1 - Math.abs(d))       // 1 at centre → 0 at ±1
-        // Idle: subtle residue on the centre number only. Active: centre
-        // at full opacity, neighbours fading up with proximity.
-        const idleO = w > 0.5 ? 0.3 : 0
-        const activeO = 0.12 + 0.88 * w
+        const dist = Math.abs(d)
+        // Continuous falloff with distance: further = fainter AND smaller.
+        //   opacity: 1 → ~0.44 (±1) → ~0.05 (±2) → 0 (±2.4)
+        //   size:    1 → 0.68 (±1) → 0.36 (±2), floored at 0.3
+        const fall = Math.max(0, 1 - dist * 0.42)
+        const activeO = Math.pow(fall, 1.6)
+        const sizeScale = Math.max(0.3, 1 - dist * 0.32)
+        // Idle: subtle residue on the centre number only.
+        const idleO = dist < 0.5 ? 0.3 : 0
         const o = idleO + (activeO - idleO) * energy
+        // The tension stretch belongs to the centre digit — neighbours
+        // only carry a fraction of it, tapering to none past ±1.6.
+        const stretchWeight = Math.max(0, 1 - dist * 0.6)
+        const digitStretch = 1 + (stretch - 1) * stretchWeight
         el.style.opacity = o.toFixed(3)
-        el.style.transform = `translate3d(0, ${(d * SPACING).toFixed(2)}px, 0) scaleY(${stretch.toFixed(3)})`
+        el.style.transform =
+          `translate3d(0, ${(d * SPACING).toFixed(2)}px, 0)` +
+          ` scale(${sizeScale.toFixed(3)}) scaleY(${digitStretch.toFixed(3)})`
       }
     }
     raf = requestAnimationFrame(tick)
