@@ -50,13 +50,13 @@ function ScrollNumberRail({
     const container = containerRef.current
     if (!container) return
 
-    const SPACING = 84        // px between adjacent numbers on the strip
-    const RAIL_K = 0.05       // spring pull of railPos toward the scroll pos
-    const RAIL_DAMP = 0.86    // < 1 → underdamped → overshoot = the "ping"
-    const TENSION_S = 1.5     // tension gap (sections) → extra scaleY
-    const MAX_EXTRA = 1.2     // cap: scaleY tops out at 2.2
-    const STIFFNESS = 0.14    // stretch spring pull toward its target
-    const DAMPING = 0.78      // stretch spring damping (squash on release)
+    const SPACING = 116       // px between adjacent numbers on the strip
+    const RAIL_K = 0.055      // spring pull of railPos toward the scroll pos
+    const RAIL_DAMP = 0.78    // heavier damping → ping lands with little recoil
+    const TENSION_S = 2.8     // tension gap (sections) → extra scaleY
+    const MAX_EXTRA = 1.8     // cap: scaleY tops out at 2.8 (exaggerated pull)
+    const STIFFNESS = 0.18    // stretch spring pull toward its target
+    const DAMPING = 0.70      // stretch spring damping (quick, quiet release)
 
     let raf = 0
     let lastRawPos: number | null = null
@@ -118,12 +118,16 @@ function ScrollNumberRail({
         if (d > count / 2) d -= count
         if (d < -count / 2) d += count
         const dist = Math.abs(d)
-        // Continuous falloff with distance: further = fainter AND smaller.
-        //   opacity: 1 → ~0.44 (±1) → ~0.05 (±2) → 0 (±2.4)
-        //   size:    1 → 0.68 (±1) → 0.36 (±2), floored at 0.3
+        // Continuous falloff with distance: further = fainter, smaller,
+        // and LIGHTER. Only the centre number is bold.
+        //   opacity: 1 → ~0.32 (±1) → ~0.04 (±2) → 0 (±2.4)
+        //   size:    1 → 0.55 (±1) → 0.24 (±2), floored at 0.24
+        //   weight:  900 centre → 400 by ±1 (Inter is a variable font,
+        //            so the weight interpolates as numbers pass through)
         const fall = Math.max(0, 1 - dist * 0.42)
         const activeO = Math.pow(fall, 1.6)
-        const sizeScale = Math.max(0.3, 1 - dist * 0.32)
+        const sizeScale = Math.max(0.24, 1 - dist * 0.45)
+        const weight = Math.round(900 - Math.min(dist, 1) * 500)
         // Idle: subtle residue on the centre number only.
         const idleO = dist < 0.5 ? 0.3 : 0
         const o = idleO + (activeO - idleO) * energy
@@ -132,6 +136,7 @@ function ScrollNumberRail({
         const stretchWeight = Math.max(0, 1 - dist * 0.6)
         const digitStretch = 1 + (stretch - 1) * stretchWeight
         el.style.opacity = o.toFixed(3)
+        el.style.fontWeight = String(weight)
         el.style.transform =
           `translate3d(0, ${(d * SPACING).toFixed(2)}px, 0)` +
           ` scale(${sizeScale.toFixed(3)}) scaleY(${digitStretch.toFixed(3)})`
@@ -151,12 +156,16 @@ function ScrollNumberRail({
         <div
           key={i}
           ref={(el) => { numberRefs.current[i] = el }}
-          className="absolute left-0 flex items-center text-white font-black leading-none text-[44px] md:text-[56px]"
+          className="absolute left-0 flex items-center text-white leading-none text-[44px] md:text-[56px]"
           style={{
             top: -42,
             height: 84,
             letterSpacing: '-0.02em',
             opacity: 0,
+            // Weight is driven per-frame by the rail loop (900 at centre
+            // tapering to 400 for neighbours — Inter is variable so it
+            // interpolates smoothly). 900 initial matches the idle state.
+            fontWeight: 900,
             textShadow: '0 2px 14px rgba(0,0,0,0.55)',
             willChange: 'transform, opacity',
           }}
