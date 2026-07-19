@@ -16,6 +16,126 @@ type HomeVideo = {
   label?: string  // legacy fallback
 }
 
+// ─── Scroll-reactive number rail ─────────────────────────────────────
+// Fixed to the left edge, vertically centred. Shows the 1-based number of
+// the video currently in view (01..N). Driven by a rAF loop that reads the
+// scroll container directly and writes styles straight to the DOM — zero
+// React re-renders while scrolling:
+//   - the strip of numbers translates with the FRACTIONAL scroll position,
+//     so mid-scroll the previous/next numbers are visible above/below
+//   - each digit stretches (scaleY) with scroll velocity, run through an
+//     underdamped spring — when the snap lands the digit squashes past 1
+//     and "pings" back to rest
+//   - the rail fades up while scrolling and settles to a subtle residue on
+//     the current number when idle (fast fade-in, slow fade-out)
+// Works in playlist space (position mod N) so the triple-playlist silent
+// shift is invisible to it, and the numbers wrap N→1 seamlessly.
+function ScrollNumberRail({
+  containerRef,
+  count,
+}: {
+  containerRef: React.RefObject<HTMLDivElement | null>
+  count: number
+}) {
+  const numberRefs = useRef<Array<HTMLDivElement | null>>([])
+
+  useEffect(() => {
+    if (count <= 1) return
+    const container = containerRef.current
+    if (!container) return
+
+    const SPACING = 84        // px between adjacent numbers on the strip
+    const STRETCH_K = 10      // velocity (sections/frame) → extra scaleY
+    const MAX_EXTRA = 1.1     // cap: scaleY tops out at 2.1
+    const STIFFNESS = 0.14    // spring pull toward target stretch
+    const DAMPING = 0.78      // < 1 → underdamped → overshoot = the "ping"
+
+    let raf = 0
+    let lastPos: number | null = null
+    let smoothV = 0
+    let stretch = 1
+    let springVel = 0
+    let energy = 0            // 0..1 scroll-activity, drives the fade
+    let lastScrollTs = 0
+
+    const onScroll = () => { lastScrollTs = performance.now() }
+    container.addEventListener('scroll', onScroll, { passive: true })
+
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const h = container.clientHeight
+      if (h <= 0) return
+      const pos = container.scrollTop / h            // float, tripled space
+      const p = ((pos % count) + count) % count      // wrapped playlist space
+
+      // Per-frame velocity (sections/frame), smoothed. The silent-shift
+      // teleports scrollTop by ±count sections in one frame — ignore those
+      // jumps so the rail doesn't see a fake velocity spike.
+      let v = lastPos === null ? 0 : pos - lastPos
+      if (Math.abs(v) > count / 2) v = 0
+      lastPos = pos
+      smoothV = smoothV + (v - smoothV) * 0.25
+
+      // Stretch spring: target follows |velocity|; the underdamped settle
+      // is what produces the squash-overshoot ping when a snap lands.
+      const target = 1 + Math.min(Math.abs(smoothV) * STRETCH_K, MAX_EXTRA)
+      springVel = (springVel + (target - stretch) * STIFFNESS) * DAMPING
+      stretch += springVel
+
+      // Activity: scrolled recently OR strip still visibly moving.
+      // Asymmetric lerp — fast fade-in, slow fade-out (site-wide motif).
+      const activeNow = (performance.now() - lastScrollTs < 400) || Math.abs(smoothV) > 0.002
+      energy = energy + ((activeNow ? 1 : 0) - energy) * (activeNow ? 0.16 : 0.05)
+
+      for (let i = 0; i < count; i++) {
+        const el = numberRefs.current[i]
+        if (!el) continue
+        // Signed wrapped distance from the centre position — handles the
+        // N→1 wrap so between the last and first video both are adjacent.
+        let d = (i - p) % count
+        if (d > count / 2) d -= count
+        if (d < -count / 2) d += count
+        const w = Math.max(0, 1 - Math.abs(d))       // 1 at centre → 0 at ±1
+        // Idle: subtle residue on the centre number only. Active: centre
+        // at full opacity, neighbours fading up with proximity.
+        const idleO = w > 0.5 ? 0.3 : 0
+        const activeO = 0.12 + 0.88 * w
+        const o = idleO + (activeO - idleO) * energy
+        el.style.opacity = o.toFixed(3)
+        el.style.transform = `translate3d(0, ${(d * SPACING).toFixed(2)}px, 0) scaleY(${stretch.toFixed(3)})`
+      }
+    }
+    raf = requestAnimationFrame(tick)
+    return () => {
+      cancelAnimationFrame(raf)
+      container.removeEventListener('scroll', onScroll)
+    }
+  }, [containerRef, count])
+
+  if (count <= 1) return null
+  return (
+    <div className="fixed left-6 top-1/2 z-20 pointer-events-none" aria-hidden="true">
+      {Array.from({ length: count }, (_, i) => (
+        <div
+          key={i}
+          ref={(el) => { numberRefs.current[i] = el }}
+          className="absolute left-0 flex items-center text-white font-black leading-none text-[44px] md:text-[56px]"
+          style={{
+            top: -42,
+            height: 84,
+            letterSpacing: '-0.02em',
+            opacity: 0,
+            textShadow: '0 2px 14px rgba(0,0,0,0.55)',
+            willChange: 'transform, opacity',
+          }}
+        >
+          {String(i + 1).padStart(2, '0')}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function Home() {
   useDarkMode() // home page is dark-mode only; we don't read its colors but the hook keeps the context active.
 
@@ -335,6 +455,10 @@ export default function Home() {
         )}
 
       </div>
+
+      {/* Left-rail scroll-reactive video number (01..N). Fixed overlay,
+          sibling of the scroll container so it never scrolls away. */}
+      <ScrollNumberRail containerRef={scrollContainerRef} count={N} />
 
       {/* Floating action overlay — bottom-center pill with the actions that
           used to live in the footer section. Always visible on top of every
