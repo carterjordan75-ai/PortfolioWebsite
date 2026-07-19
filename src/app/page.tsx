@@ -347,17 +347,9 @@ export default function Home() {
     }
   }, [activeIdx, N])
 
-  // playlist-index for UI (which dot to highlight, etc.) — wraps the tripled
-  // section index back into 0..N-1.
+  // playlist-index for UI (scroll cue / tagline visibility) — wraps the
+  // tripled section index back into 0..N-1.
   const playlistIdx = N > 0 ? ((activeIdx % N) + N) % N : 0
-
-  // Dot nav: scroll to the matching section in the MIDDLE copy. CSS
-  // scroll-snap handles the snap; smooth scrollIntoView animates the move.
-  const goTo = (playlistIndex: number) => {
-    if (N === 0) return
-    const el = sectionRefs.current[N + playlistIndex]
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
 
   // Keyboard nav — arrow keys / PageUp/Down / space. No edge-handling needed
   // because the silent-shift effect keeps the user inside the middle copy.
@@ -471,29 +463,6 @@ export default function Home() {
             )}
           </section>
         ))}
-
-        {/* Right-rail nav dots — one per UNIQUE video. Active dot is the
-            playlist index (active section mod N). */}
-        {N > 1 && (
-          <div className="fixed right-6 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-3">
-            {playlist.map((v, i) => (
-              <button
-                key={`dot-${v.src}-${i}`}
-                aria-label={v.title || v.label || `Video ${i + 1}`}
-                onClick={() => goTo(i)}
-                className="rounded-full transition-all duration-300"
-                style={{
-                  width: 8,
-                  height: i === playlistIdx ? 28 : 8,
-                  background: i === playlistIdx ? '#fff' : 'rgba(255,255,255,0.4)',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                }}
-              />
-            ))}
-          </div>
-        )}
 
       </div>
 
