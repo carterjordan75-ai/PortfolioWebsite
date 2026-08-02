@@ -10,25 +10,35 @@ const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
 /**
  * Pinterest board → Look page feed.
  *
- * Pulls the public RSS feed of the user's Pinterest board and normalises
- * it into gallery items for /look. Pinterest's RSS only surfaces the
- * ~25 most recent pins of a PUBLIC board — good enough for a living
- * moodboard. Results are cached in Blob (state/pinterest-feed.json) and
- * refreshed at most once per TTL window, so page loads are instant and
- * Pinterest sees at most a handful of requests per day. If a refresh
- * fails (Pinterest down, rate limit, ...), the stale cache is served.
+ * Pinterest's anonymous surfaces (board RSS + the pidgets widget API)
+ * only expose the ~25 most recent pins of a PUBLIC board. To serve the
+ * WHOLE board anyway, the cache is CUMULATIVE: every sync unions the
+ * current feed (RSS ∪ pidgets, deduped by pin id) into the stored set,
+ * so any pin that was ever visible in the feed window stays on /look
+ * permanently — with 6-hourly auto-refreshes, pins are captured as
+ * they pass through the window. Items no longer in the live feed keep
+ * their `lastSeenAt` so a future prune could drop board-removed pins.
+ *
+ * VIDEO PINS: no anonymous surface exposes them at all (RSS emits an
+ * empty img, pidgets omits them, the pin page + oEmbed are login-gated).
+ * Surfacing even their cover images needs the official OAuth API.
+ * Playable video on /look = upload the file via the Look admin panel.
  *
  * The board is intentionally a constant — one personal board feeds the
- * moodboard. Swap the URL (or lift it into admin state) to change it.
+ * moodboard. Swap the IDs (or lift into admin state) to change it.
  */
 const BOARD_RSS = 'https://au.pinterest.com/carterjordan75/widget.rss'
+const PIDGETS_URL = 'https://widgets.pinterest.com/v3/pidgets/boards/carterjordan75/widget/pins/'
 const BLOB_KEY = 'state/pinterest-feed.json'
 const TTL_MS = 6 * 60 * 60 * 1000 // 6 hours
+const UA = 'Mozilla/5.0 (compatible; xoxo-studio-look/1.0)'
 
 type PinItem = {
-  src: string      // image URL (736x upgrade of the RSS thumbnail)
-  link: string     // pin page URL — used as "Visit Source" in the lightbox
+  id: string        // numeric pin id — dedupe key
+  src: string       // image URL (736x rendition)
+  link: string      // pin page URL — "Visit Source" in the lightbox
   pubDate: string
+  lastSeenAt?: number
 }
 type FeedCache = {
   fetchedAt: number
@@ -38,44 +48,95 @@ type FeedCache = {
 
 const EMPTY: FeedCache = { fetchedAt: 0, boardTitle: '', items: [] }
 
-async function fetchBoardFeed(): Promise<FeedCache | null> {
+const pinIdFromLink = (link: string): string =>
+  link.match(/\/pin\/([^/]+)/)?.[1] || link
+
+/** RSS: latest ~25 pins with thumbnail images. */
+async function fetchRss(): Promise<{ boardTitle: string; items: PinItem[] } | null> {
   try {
-    const res = await fetch(BOARD_RSS, {
-      cache: 'no-store',
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; xoxo-studio-look/1.0)' },
-    })
+    const res = await fetch(BOARD_RSS, { cache: 'no-store', headers: { 'User-Agent': UA } })
     if (!res.ok) return null
     const xml = await res.text()
-
     const boardTitle = (xml.match(/<title>([^<]*)<\/title>/)?.[1] || '').trim()
-
-    // The feed is machine-generated and flat — regex parsing is fine.
-    // Each <item> carries the pin link and a description whose escaped
-    // HTML contains the thumbnail <img src="...">.
     const items: PinItem[] = []
-    const itemBlocks = xml.match(/<item>[\s\S]*?<\/item>/g) || []
-    for (const block of itemBlocks) {
+    for (const block of xml.match(/<item>[\s\S]*?<\/item>/g) || []) {
       const link = block.match(/<link>([^<]+)<\/link>/)?.[1]?.trim()
       const pubDate = block.match(/<pubDate>([^<]+)<\/pubDate>/)?.[1]?.trim() || ''
-      // img src sits inside the HTML-escaped description
-      const imgMatch = block.match(/img src=(?:&quot;|")(https:\/\/i\.pinimg\.com[^"&]+)/)
-      const thumb = imgMatch?.[1]
-      // VIDEO PINS: Pinterest's RSS emits them with an EMPTY img src (and
-      // no video URL), the public pin page is a login-gated JS shell, and
-      // oEmbed redirects — there is no server-accessible media for them,
-      // so they're skipped. Playable video on /look = upload the file via
-      // the Look admin panel instead.
-      if (!link || !thumb) continue
-      // RSS thumbnails are 236px wide; the CDN serves the same file at
-      // higher widths by swapping the size segment. 736x is reliably
-      // available for every pin (originals sometimes 404).
-      const src = thumb.replace('/236x/', '/736x/')
-      items.push({ src, link, pubDate })
+      const thumb = block.match(/img src=(?:&quot;|")(https:\/\/i\.pinimg\.com[^"&]+)/)?.[1]
+      if (!link || !thumb) continue // video pins arrive with an empty img — skip
+      items.push({
+        id: pinIdFromLink(link),
+        src: thumb.replace('/236x/', '/736x/'),
+        link,
+        pubDate,
+      })
     }
-    if (items.length === 0) return null
-    return { fetchedAt: Date.now(), boardTitle, items }
+    return items.length > 0 ? { boardTitle, items } : null
   } catch {
     return null
+  }
+}
+
+/** Pidgets: same window as RSS but a second net — occasionally differs. */
+async function fetchPidgets(): Promise<{ boardTitle: string; items: PinItem[] } | null> {
+  try {
+    const res = await fetch(PIDGETS_URL, { cache: 'no-store', headers: { 'User-Agent': UA } })
+    if (!res.ok) return null
+    const json = await res.json() as {
+      data?: {
+        board?: { name?: string }
+        pins?: Array<{ id?: string; images?: Record<string, { url?: string }> }>
+      }
+    }
+    const boardTitle = json.data?.board?.name || ''
+    const items: PinItem[] = []
+    for (const pin of json.data?.pins || []) {
+      if (!pin.id) continue
+      const anySize = pin.images && Object.values(pin.images)[0]?.url
+      if (!anySize) continue
+      items.push({
+        id: pin.id,
+        src: anySize.replace(/\/\d+x\//, '/736x/'),
+        link: `https://au.pinterest.com/pin/${pin.id}/`,
+        pubDate: '',
+      })
+    }
+    return items.length > 0 ? { boardTitle, items } : null
+  } catch {
+    return null
+  }
+}
+
+/** Fetch both anonymous surfaces and merge into the cumulative cache. */
+async function refreshFeed(cached: FeedCache): Promise<FeedCache | null> {
+  const [rss, pidgets] = await Promise.all([fetchRss(), fetchPidgets()])
+  if (!rss && !pidgets) return null
+  const now = Date.now()
+
+  // Union of the two live windows, RSS order first (it carries pubDates).
+  const liveMap = new Map<string, PinItem>()
+  for (const item of [...(rss?.items || []), ...(pidgets?.items || [])]) {
+    if (!liveMap.has(item.id)) liveMap.set(item.id, { ...item, lastSeenAt: now })
+  }
+
+  // Cumulative merge: live items lead (fresh order), then previously
+  // cached pins that have rolled out of the feed window — they keep
+  // their original relative order and their old lastSeenAt. Legacy
+  // cache entries predate the `id` field, so derive it from the link
+  // before comparing or they'd duplicate their live twins forever.
+  const merged: PinItem[] = Array.from(liveMap.values())
+  const seenIds = new Set(Array.from(liveMap.keys()))
+  for (const old of cached.items) {
+    const oldId = old.id || pinIdFromLink(old.link)
+    if (seenIds.has(oldId)) continue
+    seenIds.add(oldId)
+    merged.push({ ...old, id: oldId })
+  }
+
+  return {
+    fetchedAt: now,
+    boardTitle: rss?.boardTitle || pidgets?.boardTitle || cached.boardTitle,
+    items: merged,
   }
 }
 
@@ -85,7 +146,7 @@ export async function GET() {
   if (fresh) {
     return NextResponse.json(cached, NO_CACHE)
   }
-  const feed = await fetchBoardFeed()
+  const feed = await refreshFeed(cached)
   if (feed) {
     await writeJsonBlob(BLOB_KEY, feed)
     return NextResponse.json(feed, NO_CACHE)
@@ -95,14 +156,15 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  // { action: 'sync' } forces a refresh regardless of TTL — for a future
-  // "Sync now" button in the Look admin panel.
+  // { action: 'sync' } forces a refresh regardless of TTL — wired to the
+  // "Sync Pinterest" button in the Look admin panel.
   try {
     const body = await request.json().catch(() => ({}))
     if (body?.action !== 'sync') {
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
     }
-    const feed = await fetchBoardFeed()
+    const cached = await readJsonBlob<FeedCache>(BLOB_KEY, EMPTY)
+    const feed = await refreshFeed(cached)
     if (!feed) {
       return NextResponse.json({ error: 'Pinterest fetch failed' }, { status: 502 })
     }

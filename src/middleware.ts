@@ -22,9 +22,13 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Skip both checks for asset paths and the gate itself.
+  // /api/look-share is exempt because the phone share-sheet Shortcut has
+  // no gate cookie — the route authenticates every request itself against
+  // SITE_PASSCODE before writing anything.
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api/gate') ||
+    pathname.startsWith('/api/look-share') ||
     pathname === '/gate' ||
     pathname.startsWith('/assets') ||
     pathname.startsWith('/placeholder') ||

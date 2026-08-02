@@ -1572,6 +1572,31 @@ function LookUploadPanel() {
   const [editingLookIdx, setEditingLookIdx] = useState<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  // Pinterest board sync — forces /api/look-pinterest to refetch the
+  // board immediately instead of waiting out the 6-hour TTL.
+  const [pinSyncing, setPinSyncing] = useState(false)
+  const [pinSyncStatus, setPinSyncStatus] = useState<string | null>(null)
+
+  const handlePinterestSync = async () => {
+    setPinSyncing(true)
+    setPinSyncStatus(null)
+    try {
+      const res = await fetch('/api/look-pinterest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`)
+      setPinSyncStatus(`✓ Synced — ${data.items?.length ?? 0} pins on Look`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setPinSyncStatus(`✗ Sync failed: ${msg}`)
+    } finally {
+      setPinSyncing(false)
+      setTimeout(() => setPinSyncStatus(null), 4000)
+    }
+  }
 
   // Load existing gallery items
   useEffect(() => {
@@ -1648,11 +1673,24 @@ function LookUploadPanel() {
     <div>
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-white text-[14px] font-bold uppercase tracking-[0.1em]">Look Gallery</h2>
-        <a href="/look" target="_blank" className="text-white/30 text-[8px] uppercase tracking-[0.1em] hover:text-white/60 transition-colors">
-          View Page →
-        </a>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handlePinterestSync}
+            disabled={pinSyncing}
+            className="px-3 py-1.5 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold text-white/70 border border-white/15 hover:border-white/30 hover:text-white/90 hover:bg-white/5 transition-all disabled:opacity-40 disabled:cursor-wait"
+            title="Pull the latest pins from the Pinterest board now (otherwise refreshes every 6h)"
+          >
+            {pinSyncing ? '⏳ Syncing…' : '↻ Sync Pinterest'}
+          </button>
+          <a href="/look" target="_blank" className="text-white/30 text-[8px] uppercase tracking-[0.1em] hover:text-white/60 transition-colors">
+            View Page →
+          </a>
+        </div>
       </div>
-      <p className="text-white/30 text-[9px] leading-[1.6] mb-4">Drag thumbnails to reorder. Upload new files below.</p>
+      {pinSyncStatus && (
+        <p className={`text-[9px] mb-2 ${pinSyncStatus.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>{pinSyncStatus}</p>
+      )}
+      <p className="text-white/30 text-[9px] leading-[1.6] mb-4">Drag thumbnails to reorder. Upload new files below. Pinterest pins feed in automatically (every 6h or via Sync).</p>
 
       {/* Existing media — draggable thumbnail grid */}
       {existingItems.length > 0 && (
