@@ -7,6 +7,7 @@ import PageTransition from '@/components/PageTransition'
 import PageLoader from '@/components/PageLoader'
 import EmailPopup from '@/components/EmailPopup'
 import AdminPortal from '@/components/AdminPortal'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 import { motion, AnimatePresence } from 'framer-motion'
 
 type GalleryItem = {
@@ -90,6 +91,14 @@ export default function LookPage() {
   const [loading, setLoading] = useState(true)
   const [showEmail, setShowEmail] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
+
+  // Close the isolated (lightbox) view and let the auto-scroll resume.
+  // Used by the backdrop click, the Close button, and Escape alike.
+  const closeLightbox = useCallback(() => {
+    setActiveItem(null)
+    setTimeout(() => { speedRef.current = 0.5 }, 500)
+  }, [])
+  useEscapeToClose(activeItem !== null, closeLightbox)
 
   // Visibility-gated video playback. The gallery repeats its items to
   // make the loop feel endless, so N videos become 3N <video> elements —
@@ -181,6 +190,14 @@ export default function LookPage() {
           credit: pinCredit,
           source: pin.link,
         })
+      }
+      // Shuffle the combined list once (Fisher–Yates) so the gallery opens on a
+      // fresh order every visit. Done on the base list *before* spanning and the
+      // loop-repeat, so each loop-copy still lays out identically and the
+      // scroll-loop jump stays invisible.
+      for (let i = raw.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[raw[i], raw[j]] = [raw[j], raw[i]]
       }
       const aspects = await Promise.all(raw.map(measureAspect))
       if (cancelled) return
@@ -390,18 +407,21 @@ export default function LookPage() {
               transition={{ duration: 0.3 }}
               className="fixed inset-0 flex items-center justify-center"
               style={{ zIndex: 10000, background: 'rgba(0,0,0,0.95)', cursor: 'zoom-out' }}
-              onClick={() => {
-                setActiveItem(null)
-                setTimeout(() => { speedRef.current = 0.5 }, 500)
-              }}
+              onClick={closeLightbox}
             >
+              {/* NOTE: no stopPropagation on this wrapper. It's a
+                  90vw x 85vh box and the media inside is object-contain,
+                  so most of it is empty letterbox around a portrait
+                  image — swallowing clicks here made "click the empty
+                  space" fail across most of the screen. Clicks fall
+                  through to the backdrop and close; only the <video>
+                  stops propagation, so its controls stay usable. */}
               <motion.div
                 initial={{ scale: 0.85, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.9, opacity: 0 }}
                 transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                className="relative w-[90vw] h-[85vh]"
-                onClick={(e) => e.stopPropagation()}
+                className="relative w-[90vw] h-[85vh] pointer-events-none"
               >
                 {activeData.type === 'image' ? (
                   <Image
@@ -418,6 +438,8 @@ export default function LookPage() {
                   // download + PiP entries from the native control menu.
                   // This is other people's work — the site shows it and
                   // links back; it doesn't hand out the files.
+                  // pointer-events re-enabled + stopPropagation so the
+                  // player controls work without closing the lightbox.
                   <video
                     src={activeData.src}
                     autoPlay
@@ -427,7 +449,8 @@ export default function LookPage() {
                     controlsList="nodownload noplaybackrate"
                     disablePictureInPicture
                     onContextMenu={(e) => e.preventDefault()}
-                    className="absolute inset-0 w-full h-full object-contain"
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute inset-0 w-full h-full object-contain pointer-events-auto"
                   />
                 )}
               </motion.div>
@@ -464,10 +487,7 @@ export default function LookPage() {
                   </p>
                 )}
                 <button
-                  onClick={() => {
-                    setActiveItem(null)
-                    setTimeout(() => { speedRef.current = 0.5 }, 500)
-                  }}
+                  onClick={closeLightbox}
                   className="text-[9px] uppercase tracking-[0.15em] text-white/50 px-4 py-1.5 rounded-full hover:text-white transition-all"
                   style={{ border: '1px solid rgba(255,255,255,0.15)' }}
                 >
