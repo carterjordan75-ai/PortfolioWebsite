@@ -1604,7 +1604,13 @@ function LookUploadPanel() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`)
-      setPinSyncStatus(`✓ Synced — ${data.items?.length ?? 0} pins on Look`)
+      // Video pins import a few per run (time budget) — tell the user
+      // when another click will pull in more.
+      const vid = data.videoImported
+        ? ` · ${data.videoImported} video${data.videoImported === 1 ? '' : 's'} imported`
+        : ''
+      const more = data.videoRemaining ? ` · ${data.videoRemaining} to check — click Sync again` : ''
+      setPinSyncStatus(`✓ Synced — ${data.items?.length ?? 0} pins on Look${vid}${more}`)
       if (data.items) setPinFeed(data.items)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

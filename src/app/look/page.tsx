@@ -117,8 +117,15 @@ export default function LookPage() {
         })
       }
       const pinCredit = pinsRes.boardTitle ? `Pinterest — ${pinsRes.boardTitle}` : 'Pinterest'
-      for (const pin of (pinsRes.items || []) as Array<{ src: string; link: string }>) {
-        raw.push({ src: pin.src, type: 'image', credit: pinCredit, source: pin.link })
+      for (const pin of (pinsRes.items || []) as Array<{ src: string; link: string; type?: string }>) {
+        // Video pins are imported as self-hosted MP4s by the sync; the
+        // feed marks them type: 'video' so they render as <video>.
+        raw.push({
+          src: pin.src,
+          type: pin.type === 'video' ? 'video' : 'image',
+          credit: pinCredit,
+          source: pin.link,
+        })
       }
       const aspects = await Promise.all(raw.map(measureAspect))
       if (cancelled) return

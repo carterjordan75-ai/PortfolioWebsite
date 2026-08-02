@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
-import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
+import { readJsonBlob, writeJsonBlob, putMediaBlob } from '@/lib/blobStore'
 
 // Live feed — never serve from the edge cache; freshness is handled by
 // our own blob-backed TTL below.
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+// Video import downloads MP4s into Blob — allow more than the default.
+export const maxDuration = 60
 const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
 
 /**
@@ -40,12 +42,15 @@ const UA = 'Mozilla/5.0 (compatible; xoxo-studio-look/1.0)'
 
 type PinItem = {
   id: string        // numeric pin id — dedupe key
-  src: string       // image URL (736x jpg, or the animated GIF original)
+  src: string       // image URL, animated GIF original, or imported MP4
   link: string      // pin page URL — "Visit Source" in the lightbox
   pubDate: string
   lastSeenAt?: number
-  animated?: boolean   // src is an animated GIF original
-  gifChecked?: boolean // originals-.gif probe already done — don't re-probe
+  animated?: boolean     // src is an animated GIF original
+  gifChecked?: boolean   // originals-.gif probe done — don't re-probe
+  type?: 'image' | 'video'
+  videoChecked?: boolean // pins/info video lookup done — don't re-query
+  poster?: string        // still frame for the imported video
 }
 type FeedCache = {
   fetchedAt: number
@@ -56,6 +61,9 @@ type FeedCache = {
   // pins stay in the cache so they never resurface via re-capture —
   // GET just filters them out of the response.
   hidden?: string[]
+  // Reported by a refresh so the admin can show import progress.
+  videoImported?: number
+  videoRemaining?: number
 }
 
 const EMPTY: FeedCache = { fetchedAt: 0, boardTitle: '', items: [] }
@@ -185,6 +193,110 @@ async function probeGifOriginals(items: PinItem[]): Promise<void> {
   }))
 }
 
+/**
+ * VIDEO PINS — the real solution.
+ *
+ * Pinterest's widget pin-info endpoint (the one its own embeds use)
+ * returns each pin's `video_list` anonymously, and alongside the HLS
+ * stream it carries **V_720P: a complete progressive MP4 with audio**.
+ * No login, no player scraping, no segment stitching, no silence.
+ *
+ * So the sync itself imports video pins: batch-query unchecked pins,
+ * download any V_720P (or best available) MP4 into our own Blob
+ * storage, and flip the item to `type: 'video'` pointing at the stored
+ * file. Self-hosting the file means /look keeps working even if the
+ * pin is deleted, and Pinterest isn't hotlinked.
+ *
+ * Capped per run so a sync can't blow the function's time budget;
+ * remaining pins are picked up by the next sync (or a second click of
+ * the admin's Sync button). `videoChecked` makes every pin cost at
+ * most one lookup, ever.
+ */
+const PIN_INFO_URL = 'https://widgets.pinterest.com/v3/pidgets/pins/info/'
+const INFO_BATCH = 8            // pin ids per info request
+const MAX_VIDEO_IMPORTS = 5     // MP4 downloads per sync run
+
+type VideoRendition = { url?: string; width?: number; thumbnail?: string }
+
+/** Deep-search a pin payload for its video_list (nesting varies). */
+function findVideoList(node: unknown): Record<string, VideoRendition> | null {
+  if (!node || typeof node !== 'object') return null
+  const obj = node as Record<string, unknown>
+  if (obj.video_list && typeof obj.video_list === 'object') {
+    return obj.video_list as Record<string, VideoRendition>
+  }
+  for (const value of Object.values(obj)) {
+    const found = findVideoList(value)
+    if (found) return found
+  }
+  return null
+}
+
+/** Pick the best downloadable MP4 from a video_list. */
+function pickMp4(videoList: Record<string, VideoRendition>): VideoRendition | null {
+  const renditions = Object.entries(videoList)
+    .filter(([, v]) => typeof v?.url === 'string' && /\.mp4(?:$|\?)/i.test(v.url))
+    .map(([, v]) => v)
+  if (renditions.length === 0) return null
+  // Prefer the widest (720p is the usual max Pinterest exposes).
+  return renditions.sort((a, b) => (b.width || 0) - (a.width || 0))[0]
+}
+
+async function importVideoPins(items: PinItem[]): Promise<{ imported: number; remaining: number }> {
+  const unchecked = items.filter(i => !i.videoChecked && i.type !== 'video')
+  if (unchecked.length === 0) return { imported: 0, remaining: 0 }
+
+  let imported = 0
+  let budgetHit = false
+
+  for (let i = 0; i < unchecked.length; i += INFO_BATCH) {
+    if (budgetHit) break
+    const batch = unchecked.slice(i, i + INFO_BATCH)
+    let payload: { data?: unknown[] } | null = null
+    try {
+      const res = await fetch(`${PIN_INFO_URL}?pin_ids=${batch.map(b => b.id).join(',')}`, {
+        cache: 'no-store',
+        headers: { 'User-Agent': UA },
+      })
+      if (res.ok) payload = await res.json()
+    } catch { /* leave unchecked; next sync retries */ }
+    if (!payload?.data) continue
+
+    const byId = new Map(batch.map(b => [b.id, b]))
+    for (const pin of payload.data as Array<Record<string, unknown>>) {
+      const item = byId.get(String(pin.id))
+      if (!item) continue
+      item.videoChecked = true          // one lookup per pin, ever
+      const videoList = findVideoList(pin)
+      const best = videoList ? pickMp4(videoList) : null
+      if (!best?.url) continue          // ordinary image pin
+
+      if (imported >= MAX_VIDEO_IMPORTS) {
+        // Out of budget: un-check so a later run imports it.
+        item.videoChecked = false
+        budgetHit = true
+        continue
+      }
+      try {
+        const vres = await fetch(best.url, { cache: 'no-store', headers: { 'User-Agent': UA } })
+        if (!vres.ok) continue
+        const bytes = await vres.arrayBuffer()
+        if (bytes.byteLength === 0) continue
+        const { url } = await putMediaBlob(`media/look-pins/${item.id}.mp4`, bytes, 'video/mp4')
+        item.src = url
+        item.type = 'video'
+        if (best.thumbnail) item.poster = best.thumbnail
+        imported++
+      } catch {
+        item.videoChecked = false       // transient failure — retry later
+      }
+    }
+  }
+
+  const remaining = items.filter(i => !i.videoChecked && i.type !== 'video').length
+  return { imported, remaining }
+}
+
 /** Fetch every anonymous surface and merge into the cumulative cache. */
 async function refreshFeed(cached: FeedCache): Promise<FeedCache | null> {
   const [rss, pidgets, userPins] = await Promise.all([
@@ -217,12 +329,22 @@ async function refreshFeed(cached: FeedCache): Promise<FeedCache | null> {
   for (const old of cached.items) {
     const oldId = old.id || pinIdFromLink(old.link)
     if (seenIds.has(oldId)) {
-      // Carry earlier gif-probe results onto the fresh copy so pins are
-      // probed exactly once ever.
+      // Carry earlier probe results onto the fresh copy so each pin is
+      // only ever probed/imported once.
       const live = byId.get(oldId)
-      if (live && old.gifChecked) {
-        live.gifChecked = true
-        if (old.animated) { live.animated = true; live.src = old.src }
+      if (live) {
+        if (old.gifChecked) {
+          live.gifChecked = true
+          if (old.animated) { live.animated = true; live.src = old.src }
+        }
+        if (old.videoChecked) live.videoChecked = true
+        if (old.type === 'video') {
+          // Already-imported video: keep the self-hosted MP4, never let
+          // a feed refresh revert it to the static cover image.
+          live.type = 'video'
+          live.src = old.src
+          if (old.poster) live.poster = old.poster
+        }
       }
       continue
     }
@@ -230,14 +352,18 @@ async function refreshFeed(cached: FeedCache): Promise<FeedCache | null> {
     merged.push({ ...old, id: oldId })
   }
 
-  // Probe any never-checked pins for animated GIF originals.
-  await probeGifOriginals(merged)
+  // Import video pins (self-hosted MP4s), then probe the remaining
+  // still pins for animated GIF originals.
+  const video = await importVideoPins(merged)
+  await probeGifOriginals(merged.filter(i => i.type !== 'video'))
 
   return {
     fetchedAt: now,
     boardTitle: rss?.boardTitle || pidgets?.boardTitle || userPins?.boardTitle || cached.boardTitle,
     items: merged,
     hidden: cached.hidden || [],
+    videoImported: video.imported,
+    videoRemaining: video.remaining,
   }
 }
 
