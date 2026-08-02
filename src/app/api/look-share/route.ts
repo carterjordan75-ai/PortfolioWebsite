@@ -4,6 +4,9 @@ import { putMediaBlob, readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+// HLS stitching downloads a playlist + every segment — allow up to a
+// minute rather than the default function budget.
+export const maxDuration = 60
 
 /**
  * "Send to Look" — push media onto the /look moodboard from anywhere,
@@ -70,6 +73,76 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
 }
 
+/**
+ * Stitch a Pinterest CMAF/HLS stream into a single playable fMP4 file.
+ *
+ * Modern video pins have NO progressive mp4 — only an HLS master
+ * playlist whose variants reference fragmented-MP4 video segments
+ * (.cmfv) plus a SEPARATE audio rendition (.cmfa). Fragmented MP4 is
+ * concatenation-friendly: init segment + media segments in order = a
+ * valid file browsers play natively. Audio would need real muxing
+ * (ffmpeg-grade), so imports are VIDEO-ONLY — fine for the moodboard,
+ * where the grid autoplays muted anyway.
+ */
+async function stitchHls(playlistUrl: string): Promise<{ bytes: ArrayBuffer } | { error: string }> {
+  const MAX_SEGMENTS = 300
+  const MAX_BYTES = 80 * 1024 * 1024
+
+  const getText = async (url: string): Promise<string | null> => {
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': UA }, cache: 'no-store' })
+      return res.ok ? await res.text() : null
+    } catch { return null }
+  }
+
+  const master = await getText(playlistUrl)
+  if (!master || !master.includes('#EXTM3U')) return { error: 'Playlist fetch failed' }
+
+  // Master playlist → pick the highest-bandwidth video variant.
+  let mediaUrl = playlistUrl
+  let media = master
+  if (master.includes('#EXT-X-STREAM-INF')) {
+    const lines = master.split('\n')
+    let best: { bw: number; uri: string } | null = null
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue
+      const bw = Number(lines[i].match(/BANDWIDTH=(\d+)/)?.[1] || 0)
+      const uri = lines.slice(i + 1).find(l => l.trim() && !l.startsWith('#'))?.trim()
+      if (uri && (!best || bw > best.bw)) best = { bw, uri }
+    }
+    if (!best) return { error: 'No variants in master playlist' }
+    mediaUrl = new URL(best.uri, playlistUrl).toString()
+    const variant = await getText(mediaUrl)
+    if (!variant || !variant.includes('#EXTM3U')) return { error: 'Variant playlist fetch failed' }
+    media = variant
+  }
+
+  // Media playlist → init segment + media segments, in order.
+  const initUri = media.match(/#EXT-X-MAP:URI="([^"]+)"/)?.[1]
+  const segUris = media.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'))
+  if (segUris.length === 0) return { error: 'No segments in playlist' }
+  if (segUris.length > MAX_SEGMENTS) return { error: `Too many segments (${segUris.length})` }
+
+  const urls = [
+    ...(initUri ? [new URL(initUri, mediaUrl).toString()] : []),
+    ...segUris.map(u => new URL(u, mediaUrl).toString()),
+  ]
+  const chunks: Buffer[] = []
+  let total = 0
+  for (const url of urls) {
+    const res = await fetch(url, { headers: { 'User-Agent': UA }, cache: 'no-store' })
+    if (!res.ok) return { error: `Segment fetch failed (${res.status})` }
+    const buf = Buffer.from(await res.arrayBuffer())
+    total += buf.byteLength
+    if (total > MAX_BYTES) return { error: 'Video too large' }
+    chunks.push(buf)
+  }
+  const joined = Buffer.concat(chunks)
+  const out = new ArrayBuffer(joined.byteLength)
+  new Uint8Array(out).set(joined)
+  return { bytes: out }
+}
+
 async function registerLookItem(params: {
   bytes: ArrayBuffer
   contentType: string
@@ -128,10 +201,33 @@ export async function POST(request: NextRequest) {
     // JSON body — arrives as application/json (Shortcuts) or text/plain
     // (the bookmarklet uses text/plain to stay a CORS "simple request").
     const raw = await request.text()
-    let body: { token?: string; url?: string; mediaUrl?: string; credit?: string; link?: string } | null = null
+    let body: { token?: string; url?: string; mediaUrl?: string; hlsUrl?: string; credit?: string; link?: string } | null = null
     try { body = JSON.parse(raw) } catch { body = null }
     if (!body || String(body.token || '') !== expected) {
       return NextResponse.json({ error: 'Bad token' }, { status: 401, headers: CORS })
+    }
+
+    // ── HLS STITCH mode (modern Pinterest video pins) ─────────────
+    // hlsUrl points at an m3u8 playlist on Pinterest's video CDN. The
+    // bookmarklet finds it in the pin page; we assemble the stream's
+    // fMP4 segments into one playable (video-only) file.
+    if (typeof body.hlsUrl === 'string' && body.hlsUrl) {
+      const hlsUrl = body.hlsUrl
+      if (!/^https:\/\/v\d*\.pinimg\.com\/.+\.m3u8/i.test(hlsUrl)) {
+        return NextResponse.json({ error: 'Not a Pinterest HLS playlist URL' }, { status: 400, headers: CORS })
+      }
+      const result = await stitchHls(hlsUrl)
+      if ('error' in result) {
+        return NextResponse.json({ error: result.error }, { status: 502, headers: CORS })
+      }
+      const item = await registerLookItem({
+        bytes: result.bytes,
+        contentType: 'video/mp4',
+        ext: 'mp4',
+        credit: body.credit || 'Pinterest',
+        link: body.link || hlsUrl,
+      })
+      return NextResponse.json({ success: true, audio: false, ...item }, { headers: CORS })
     }
 
     // ── DIRECT MEDIA mode (Pinterest video bookmarklet) ───────────
