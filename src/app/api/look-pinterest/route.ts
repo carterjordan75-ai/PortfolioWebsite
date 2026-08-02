@@ -29,16 +29,23 @@ const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
  */
 const BOARD_RSS = 'https://au.pinterest.com/carterjordan75/widget.rss'
 const PIDGETS_URL = 'https://widgets.pinterest.com/v3/pidgets/boards/carterjordan75/widget/pins/'
+// The USER feed exposes the 50 newest pins — a much bigger window than
+// the board feed (which lags badly: it was serving 8 stale pins while
+// the user feed had 50 fresh ones). Filtered to the WIDGET board.
+const USER_PIDGETS_URL = 'https://widgets.pinterest.com/v3/pidgets/users/carterjordan75/pins/'
+const BOARD_NAME = 'WIDGET'
 const BLOB_KEY = 'state/pinterest-feed.json'
 const TTL_MS = 6 * 60 * 60 * 1000 // 6 hours
 const UA = 'Mozilla/5.0 (compatible; xoxo-studio-look/1.0)'
 
 type PinItem = {
   id: string        // numeric pin id — dedupe key
-  src: string       // image URL (736x rendition)
+  src: string       // image URL (736x jpg, or the animated GIF original)
   link: string      // pin page URL — "Visit Source" in the lightbox
   pubDate: string
   lastSeenAt?: number
+  animated?: boolean   // src is an animated GIF original
+  gifChecked?: boolean // originals-.gif probe already done — don't re-probe
 }
 type FeedCache = {
   fetchedAt: number
@@ -77,7 +84,7 @@ async function fetchRss(): Promise<{ boardTitle: string; items: PinItem[] } | nu
   }
 }
 
-/** Pidgets: same window as RSS but a second net — occasionally differs. */
+/** Pidgets board feed: same window as RSS but a second net. */
 async function fetchPidgets(): Promise<{ boardTitle: string; items: PinItem[] } | null> {
   try {
     const res = await fetch(PIDGETS_URL, { cache: 'no-store', headers: { 'User-Agent': UA } })
@@ -107,35 +114,122 @@ async function fetchPidgets(): Promise<{ boardTitle: string; items: PinItem[] } 
   }
 }
 
-/** Fetch both anonymous surfaces and merge into the cumulative cache. */
+/** User pidgets feed: the 50 newest pins across the account, filtered to
+ *  the WIDGET board — the widest anonymous window Pinterest offers. */
+async function fetchUserPidgets(): Promise<{ boardTitle: string; items: PinItem[] } | null> {
+  try {
+    const res = await fetch(USER_PIDGETS_URL, { cache: 'no-store', headers: { 'User-Agent': UA } })
+    if (!res.ok) return null
+    const json = await res.json() as {
+      data?: {
+        pins?: Array<{
+          id?: string
+          images?: Record<string, { url?: string }>
+          board?: { name?: string; url?: string }
+        }>
+      }
+    }
+    const items: PinItem[] = []
+    for (const pin of json.data?.pins || []) {
+      if (!pin.id) continue
+      const boardOk = pin.board?.name === BOARD_NAME
+        || (pin.board?.url || '').toLowerCase().includes('/widget')
+      if (!boardOk) continue
+      const anySize = pin.images && Object.values(pin.images)[0]?.url
+      if (!anySize) continue
+      items.push({
+        id: pin.id,
+        src: anySize.replace(/\/\d+x\//, '/736x/'),
+        link: `https://au.pinterest.com/pin/${pin.id}/`,
+        pubDate: '',
+      })
+    }
+    return items.length > 0 ? { boardTitle: BOARD_NAME, items } : null
+  } catch {
+    return null
+  }
+}
+
+/** Motion support: Pinterest thumbnails are ALWAYS static jpgs, even for
+ *  animated GIF pins — but the untouched original survives at
+ *  i.pinimg.com/originals/<hash>.gif. Probe once per pin; on a hit the
+ *  item's src becomes the animated original (plays natively in <img>).
+ *  Results are remembered via gifChecked so each pin is probed exactly
+ *  once across all future syncs. */
+async function probeGifOriginals(items: PinItem[]): Promise<void> {
+  const unchecked = items.filter(i => !i.gifChecked)
+  await Promise.all(unchecked.map(async item => {
+    item.gifChecked = true
+    const hash = item.src.match(/\/(?:\d+x\d*|originals)\/(.+)\.(?:jpg|jpeg|png|webp)$/i)?.[1]
+    if (!hash) return
+    try {
+      const gifUrl = `https://i.pinimg.com/originals/${hash}.gif`
+      const res = await fetch(gifUrl, {
+        method: 'HEAD',
+        headers: { 'User-Agent': UA },
+        signal: AbortSignal.timeout(5000),
+      })
+      if (res.ok) {
+        item.src = gifUrl
+        item.animated = true
+      }
+    } catch {
+      /* static jpg stays */
+    }
+  }))
+}
+
+/** Fetch every anonymous surface and merge into the cumulative cache. */
 async function refreshFeed(cached: FeedCache): Promise<FeedCache | null> {
-  const [rss, pidgets] = await Promise.all([fetchRss(), fetchPidgets()])
-  if (!rss && !pidgets) return null
+  const [rss, pidgets, userPins] = await Promise.all([
+    fetchRss(),
+    fetchPidgets(),
+    fetchUserPidgets(),
+  ])
+  if (!rss && !pidgets && !userPins) return null
   const now = Date.now()
 
-  // Union of the two live windows, RSS order first (it carries pubDates).
+  // Union of the live windows. The user feed leads (newest 50, freshest
+  // ordering), then RSS (carries pubDates), then the board feed.
   const liveMap = new Map<string, PinItem>()
-  for (const item of [...(rss?.items || []), ...(pidgets?.items || [])]) {
+  for (const item of [
+    ...(userPins?.items || []),
+    ...(rss?.items || []),
+    ...(pidgets?.items || []),
+  ]) {
     if (!liveMap.has(item.id)) liveMap.set(item.id, { ...item, lastSeenAt: now })
   }
 
   // Cumulative merge: live items lead (fresh order), then previously
   // cached pins that have rolled out of the feed window — they keep
-  // their original relative order and their old lastSeenAt. Legacy
-  // cache entries predate the `id` field, so derive it from the link
-  // before comparing or they'd duplicate their live twins forever.
+  // their original relative order, lastSeenAt, and gif-probe results.
+  // Legacy cache entries predate the `id` field, so derive it from the
+  // link before comparing or they'd duplicate their live twins forever.
   const merged: PinItem[] = Array.from(liveMap.values())
   const seenIds = new Set(Array.from(liveMap.keys()))
+  const byId = new Map(merged.map(i => [i.id, i]))
   for (const old of cached.items) {
     const oldId = old.id || pinIdFromLink(old.link)
-    if (seenIds.has(oldId)) continue
+    if (seenIds.has(oldId)) {
+      // Carry earlier gif-probe results onto the fresh copy so pins are
+      // probed exactly once ever.
+      const live = byId.get(oldId)
+      if (live && old.gifChecked) {
+        live.gifChecked = true
+        if (old.animated) { live.animated = true; live.src = old.src }
+      }
+      continue
+    }
     seenIds.add(oldId)
     merged.push({ ...old, id: oldId })
   }
 
+  // Probe any never-checked pins for animated GIF originals.
+  await probeGifOriginals(merged)
+
   return {
     fetchedAt: now,
-    boardTitle: rss?.boardTitle || pidgets?.boardTitle || cached.boardTitle,
+    boardTitle: rss?.boardTitle || pidgets?.boardTitle || userPins?.boardTitle || cached.boardTitle,
     items: merged,
   }
 }
