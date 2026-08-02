@@ -82,17 +82,33 @@ export default function LookPage() {
   // Uploaded items + Pinterest pins feed the same grid.
   const galleryItems = uploadedItems.concat(pinItems)
 
+  // Editorial mosaic: a repeating span pattern (some 2×2 statements, some
+  // wides, some talls, mostly singles) applied to the BASE list — before
+  // the loop multiplication — so every repeated copy lays out identically
+  // and the silent scroll-loop jump stays invisible. grid-auto-flow:
+  // dense (set on the container) backfills any gaps the spans leave.
+  const SPAN_PATTERN = [
+    { cols: 2, rows: 2 }, { cols: 1, rows: 1 }, { cols: 1, rows: 1 },
+    { cols: 1, rows: 2 }, { cols: 1, rows: 1 }, { cols: 2, rows: 1 },
+    { cols: 1, rows: 1 }, { cols: 1, rows: 1 }, { cols: 2, rows: 1 },
+    { cols: 1, rows: 1 }, { cols: 1, rows: 2 }, { cols: 1, rows: 1 },
+  ]
+  const patterned = galleryItems.map((item, i) => ({
+    ...item,
+    ...SPAN_PATTERN[i % SPAN_PATTERN.length],
+  }))
+
   // Repeat the items enough times to make the infinite-scroll loop feel
   // continuous. With a dozen+ items we triple them (existing behaviour);
   // with fewer we multiply more aggressively so 1-2 items still produce
   // a scrollable, looping gallery instead of three sad cells in the
   // top-left.
   const allItems = (() => {
-    if (galleryItems.length === 0) return []
+    if (patterned.length === 0) return []
     // Aim for ~36 total cells (≈9 rows in the 4-col grid → easy to loop).
-    const multiplier = Math.max(3, Math.ceil(36 / galleryItems.length))
+    const multiplier = Math.max(3, Math.ceil(36 / patterned.length))
     const out: GalleryItem[] = []
-    for (let i = 0; i < multiplier; i++) out.push(...galleryItems)
+    for (let i = 0; i < multiplier; i++) out.push(...patterned)
     return out
   })()
 
@@ -155,7 +171,12 @@ export default function LookPage() {
             className="grid"
             style={{
               gridTemplateColumns: 'repeat(4, 1fr)',
-              gridAutoRows: '25vh',
+              // Shorter base row so spanned tiles compose nicely: 1×1 tiles
+              // are 22vh, the 2-row statements land at 44vh.
+              gridAutoRows: '22vh',
+              // Backfill gaps left by the span pattern — keeps the mosaic
+              // edge-to-edge with no holes.
+              gridAutoFlow: 'dense',
               width: '100%',
             }}
           >
@@ -187,11 +208,14 @@ export default function LookPage() {
                 }}
               >
                 {item.type === 'image' ? (
+                  // object-cover in the grid so the mosaic tiles butt up
+                  // edge-to-edge with no letterboxing — the lightbox still
+                  // shows the full uncropped image (object-contain there).
                   <Image
                     src={item.src}
                     alt=""
                     fill
-                    className="object-contain"
+                    className="object-cover"
                     sizes="(max-width: 768px) 50vw, 25vw"
                     unoptimized
                   />
@@ -202,7 +226,7 @@ export default function LookPage() {
                     muted
                     loop
                     playsInline
-                    className="absolute inset-0 w-full h-full object-contain"
+                    className="absolute inset-0 w-full h-full object-cover"
                   />
                 )}
 
