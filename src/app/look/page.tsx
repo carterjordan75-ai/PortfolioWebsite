@@ -18,6 +18,64 @@ type GalleryItem = {
   source?: string
 }
 
+type RawItem = Omit<GalleryItem, 'cols' | 'rows'>
+
+// Measure a media item's natural aspect ratio (w/h) by preloading it.
+// Falls back to 4:3 (images) / 16:9 (videos) on error or after 4s so a
+// single broken URL can't hold the whole gallery hostage.
+const measureAspect = (item: RawItem): Promise<number> =>
+  new Promise(resolve => {
+    let settled = false
+    const settle = (v: number) => {
+      if (!settled) { settled = true; resolve(v) }
+    }
+    const fallback = setTimeout(() => settle(item.type === 'video' ? 16 / 9 : 4 / 3), 4000)
+    if (item.type === 'image') {
+      const img = new window.Image()
+      img.onload = () => { clearTimeout(fallback); settle(img.naturalWidth / Math.max(1, img.naturalHeight)) }
+      img.onerror = () => { clearTimeout(fallback); settle(4 / 3) }
+      img.src = item.src
+    } else {
+      const v = document.createElement('video')
+      v.preload = 'metadata'
+      v.muted = true
+      v.onloadedmetadata = () => { clearTimeout(fallback); settle(v.videoWidth / Math.max(1, v.videoHeight)) }
+      v.onerror = () => { clearTimeout(fallback); settle(16 / 9) }
+      v.src = item.src
+    }
+  })
+
+// Pick the tile span whose cell shape sits closest to the media's true
+// aspect ratio — portrait images get tall cells, wides get wide ones —
+// so object-cover only ever crops a sliver. Cell shapes are computed
+// from a FIXED design basis (1440×900 desktop → a 1×1 cell is ~1.82:1)
+// rather than the live viewport, so the choice is deterministic and
+// doesn't wobble with window size or measure-time quirks. Log-distance
+// compares ratios symmetrically; the small area penalty stops
+// everything from grabbing the biggest cell on near-ties.
+const chooseSpan = (aspect: number, index: number): { cols: number; rows: number } => {
+  const CELL_W = 1440 / 4
+  const CELL_H = 900 * 0.22
+  const candidates = [
+    { cols: 1, rows: 1 }, { cols: 2, rows: 1 }, { cols: 1, rows: 2 },
+    { cols: 1, rows: 3 }, { cols: 2, rows: 3 },
+  ]
+  let best = candidates[0]
+  let bestScore = Infinity
+  for (const c of candidates) {
+    const cellAspect = (c.cols * CELL_W) / (c.rows * CELL_H)
+    const score = Math.abs(Math.log(cellAspect / Math.max(0.01, aspect))) + c.cols * c.rows * 0.02
+    if (score < bestScore) { bestScore = score; best = c }
+  }
+  // Rhythm: every 5th item that landed on a 1×1 doubles to 2×2 — the
+  // shape (and therefore the crop) is identical, it's purely a scale
+  // statement to keep the mosaic lively.
+  if (best.cols === 1 && best.rows === 1 && index % 5 === 0) {
+    return { cols: 2, rows: 2 }
+  }
+  return best
+}
+
 // Look gallery is admin-only — there is no default / fallback list. Items come
 // from /api/look, which reads per-file metadata stored in Vercel Blob.
 
@@ -28,75 +86,48 @@ export default function LookPage() {
   const animRef = useRef<number>(0)
   const speedRef = useRef(0.5)
   const [activeItem, setActiveItem] = useState<number | null>(null)
-  const [uploadedItems, setUploadedItems] = useState<GalleryItem[]>([])
-  const [pinItems, setPinItems] = useState<GalleryItem[]>([])
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showEmail, setShowEmail] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
 
-  // Fetch uploaded look items + the Pinterest board feed in parallel.
-  // Each is independently fault-tolerant — one failing doesn't blank
-  // the other's items.
+  // Fetch uploaded look items + the Pinterest board feed in parallel
+  // (each independently fault-tolerant), then preload every item to
+  // measure its NATURAL aspect ratio and give it the closest-matching
+  // tile shape. The grid renders once, fully measured — no reflow as
+  // images trickle in, and because spans are decided on the base list,
+  // every loop-copy lays out identically so the silent scroll-loop
+  // jump stays invisible.
   useEffect(() => {
-    const uploads = fetch('/api/look')
-      .then(r => r.json())
-      .then(data => {
-        if (data.items?.length) {
-          const mapped: GalleryItem[] = data.items.map((item: { path: string; originalName: string; credits: string; link: string }) => {
-            const isVideo = /\.(mp4|webm|mov)$/i.test(item.originalName || item.path)
-            return {
-              src: item.path,
-              type: isVideo ? 'video' as const : 'image' as const,
-              cols: 1,
-              rows: 1,
-              credit: item.credits || 'Uploaded',
-              source: item.link || undefined,
-            }
-          })
-          setUploadedItems(mapped)
-        }
-      })
-      .catch(() => {})
-
-    const pins = fetch('/api/look-pinterest')
-      .then(r => r.json())
-      .then(data => {
-        if (data.items?.length) {
-          const credit = data.boardTitle ? `Pinterest — ${data.boardTitle}` : 'Pinterest'
-          const mapped: GalleryItem[] = data.items.map((pin: { src: string; link: string }) => ({
-            src: pin.src,
-            type: 'image' as const,
-            cols: 1,
-            rows: 1,
-            credit,
-            source: pin.link,
-          }))
-          setPinItems(mapped)
-        }
-      })
-      .catch(() => {})
-
-    Promise.all([uploads, pins]).finally(() => setLoading(false))
+    let cancelled = false
+    const load = async () => {
+      const [uploadsRes, pinsRes] = await Promise.all([
+        fetch('/api/look').then(r => r.json()).catch(() => ({ items: [] })),
+        fetch('/api/look-pinterest').then(r => r.json()).catch(() => ({ items: [] })),
+      ])
+      const raw: RawItem[] = []
+      for (const item of (uploadsRes.items || []) as Array<{ path: string; fileName?: string; credits?: string; link?: string }>) {
+        if (!item.path) continue
+        const isVideo = /\.(mp4|webm|mov)$/i.test(item.fileName || item.path)
+        raw.push({
+          src: item.path,
+          type: isVideo ? 'video' : 'image',
+          credit: item.credits || 'Uploaded',
+          source: item.link || undefined,
+        })
+      }
+      const pinCredit = pinsRes.boardTitle ? `Pinterest — ${pinsRes.boardTitle}` : 'Pinterest'
+      for (const pin of (pinsRes.items || []) as Array<{ src: string; link: string }>) {
+        raw.push({ src: pin.src, type: 'image', credit: pinCredit, source: pin.link })
+      }
+      const aspects = await Promise.all(raw.map(measureAspect))
+      if (cancelled) return
+      setGalleryItems(raw.map((r, i) => ({ ...r, ...chooseSpan(aspects[i], i) })))
+      setLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
   }, [])
-
-  // Uploaded items + Pinterest pins feed the same grid.
-  const galleryItems = uploadedItems.concat(pinItems)
-
-  // Editorial mosaic: a repeating span pattern (some 2×2 statements, some
-  // wides, some talls, mostly singles) applied to the BASE list — before
-  // the loop multiplication — so every repeated copy lays out identically
-  // and the silent scroll-loop jump stays invisible. grid-auto-flow:
-  // dense (set on the container) backfills any gaps the spans leave.
-  const SPAN_PATTERN = [
-    { cols: 2, rows: 2 }, { cols: 1, rows: 1 }, { cols: 1, rows: 1 },
-    { cols: 1, rows: 2 }, { cols: 1, rows: 1 }, { cols: 2, rows: 1 },
-    { cols: 1, rows: 1 }, { cols: 1, rows: 1 }, { cols: 2, rows: 1 },
-    { cols: 1, rows: 1 }, { cols: 1, rows: 2 }, { cols: 1, rows: 1 },
-  ]
-  const patterned = galleryItems.map((item, i) => ({
-    ...item,
-    ...SPAN_PATTERN[i % SPAN_PATTERN.length],
-  }))
 
   // Repeat the items enough times to make the infinite-scroll loop feel
   // continuous. With a dozen+ items we triple them (existing behaviour);
@@ -104,11 +135,11 @@ export default function LookPage() {
   // a scrollable, looping gallery instead of three sad cells in the
   // top-left.
   const allItems = (() => {
-    if (patterned.length === 0) return []
+    if (galleryItems.length === 0) return []
     // Aim for ~36 total cells (≈9 rows in the 4-col grid → easy to loop).
-    const multiplier = Math.max(3, Math.ceil(36 / patterned.length))
+    const multiplier = Math.max(3, Math.ceil(36 / galleryItems.length))
     const out: GalleryItem[] = []
-    for (let i = 0; i < multiplier; i++) out.push(...patterned)
+    for (let i = 0; i < multiplier; i++) out.push(...galleryItems)
     return out
   })()
 

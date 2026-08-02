@@ -60,6 +60,11 @@ async function fetchBoardFeed(): Promise<FeedCache | null> {
       // img src sits inside the HTML-escaped description
       const imgMatch = block.match(/img src=(?:&quot;|")(https:\/\/i\.pinimg\.com[^"&]+)/)
       const thumb = imgMatch?.[1]
+      // VIDEO PINS: Pinterest's RSS emits them with an EMPTY img src (and
+      // no video URL), the public pin page is a login-gated JS shell, and
+      // oEmbed redirects — there is no server-accessible media for them,
+      // so they're skipped. Playable video on /look = upload the file via
+      // the Look admin panel instead.
       if (!link || !thumb) continue
       // RSS thumbnails are 236px wide; the CDN serves the same file at
       // higher widths by swapping the size segment. 736x is reliably
