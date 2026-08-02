@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { useDarkMode } from '@/contexts/DarkModeContext'
@@ -76,9 +76,13 @@ export default function Navigation() {
   const [featuredProjects, setFeaturedProjects] = useState(projects.filter(p => p.featured))
   const router = useRouter()
 
-  // Fetch latest featured projects from API (includes admin-added ones)
-  useEffect(() => {
-    fetch('/api/projects')
+  // Fetch latest featured projects from API (includes admin-added ones).
+  // Wrapped so it can re-run — a single mount-time fetch left the dropdown
+  // stale when a project was added via the admin modal (no reload happens),
+  // so we also refetch every time the INDEX dropdown opens and whenever an
+  // admin save broadcasts the `admin-saved` event.
+  const fetchFeatured = useCallback(() => {
+    fetch('/api/projects', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => {
         if (data.projects) {
@@ -88,6 +92,16 @@ export default function Navigation() {
       })
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    fetchFeatured()
+  }, [fetchFeatured])
+
+  useEffect(() => {
+    const onSaved = () => fetchFeatured()
+    window.addEventListener('admin-saved', onSaved)
+    return () => window.removeEventListener('admin-saved', onSaved)
+  }, [fetchFeatured])
   const [showInfo, setShowInfo] = useState(false)
   const [infoDismissable, setInfoDismissable] = useState(false)
   const [infoData, setInfoData] = useState<Record<string, string>>({})
@@ -403,7 +417,7 @@ export default function Navigation() {
                     ref={indexWrapperRef}
                     className="relative"
                     style={{ zIndex: 10000 }}
-                    onMouseEnter={() => setIndexHover(true)}
+                    onMouseEnter={() => { setIndexHover(true); fetchFeatured() }}
                     onMouseLeave={() => setIndexHover(false)}
                   >
                     {/* Index link — visually stays in its hover state (scale + opacity)
