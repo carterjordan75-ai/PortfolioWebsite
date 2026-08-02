@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 import PageTransition from '@/components/PageTransition'
@@ -90,6 +90,61 @@ export default function LookPage() {
   const [loading, setLoading] = useState(true)
   const [showEmail, setShowEmail] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
+
+  // Visibility-gated video playback. The gallery repeats its items to
+  // make the loop feel endless, so N videos become 3N <video> elements —
+  // far past the browser's concurrent-decoder limit (Safari gives up
+  // after a handful), which left most videos frozen on frame one. An
+  // IntersectionObserver plays only what's actually on screen and
+  // pauses the rest, so the decoder budget is never exceeded. Combined
+  // with preload="none" this also stops every clip (one is 24MB) from
+  // downloading at once.
+  const videoObserverRef = useRef<IntersectionObserver | null>(null)
+  useEffect(() => {
+    const root = scrollRef.current
+    if (!root) return
+    const obs = new IntersectionObserver(
+      entries => {
+        for (const entry of entries) {
+          const video = entry.target as HTMLVideoElement
+          if (entry.isIntersecting) {
+            video.play().catch(() => { /* autoplay policy / decoder busy */ })
+          } else {
+            video.pause()
+          }
+        }
+      },
+      { root, rootMargin: '200px 0px', threshold: 0.1 },
+    )
+    videoObserverRef.current = obs
+    // Adopt any videos that mounted before the observer existed.
+    root.querySelectorAll('video').forEach(v => obs.observe(v))
+
+    // Safety net: kick off playback for the first screenful directly,
+    // by geometry, rather than relying on the observer's initial
+    // callback. If the observer were ever throttled or delayed, this
+    // guarantees the visible tiles still play instead of a gallery of
+    // frozen frames.
+    const kick = window.setTimeout(() => {
+      const rr = root.getBoundingClientRect()
+      root.querySelectorAll('video').forEach(v => {
+        const r = v.getBoundingClientRect()
+        if (r.bottom > rr.top && r.top < rr.bottom) {
+          (v as HTMLVideoElement).play().catch(() => {})
+        }
+      })
+    }, 300)
+
+    return () => {
+      window.clearTimeout(kick)
+      obs.disconnect()
+      videoObserverRef.current = null
+    }
+  }, [galleryItems.length])
+
+  const registerVideo = useCallback((el: HTMLVideoElement | null) => {
+    if (el) videoObserverRef.current?.observe(el)
+  }, [])
 
   // Fetch uploaded look items + the Pinterest board feed in parallel
   // (each independently fault-tolerant), then preload every item to
@@ -258,12 +313,17 @@ export default function LookPage() {
                     unoptimized
                   />
                 ) : (
+                  // No autoPlay + preload="none": the IntersectionObserver
+                  // starts playback only for tiles actually on screen, so
+                  // the browser's concurrent-decoder limit is never hit and
+                  // off-screen clips cost no bandwidth.
                   <video
+                    ref={registerVideo}
                     src={item.src}
-                    autoPlay
                     muted
                     loop
                     playsInline
+                    preload="none"
                     className="absolute inset-0 w-full h-full object-cover"
                   />
                 )}
