@@ -29,13 +29,16 @@ export default function LookPage() {
   const speedRef = useRef(0.5)
   const [activeItem, setActiveItem] = useState<number | null>(null)
   const [uploadedItems, setUploadedItems] = useState<GalleryItem[]>([])
+  const [pinItems, setPinItems] = useState<GalleryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showEmail, setShowEmail] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
 
-  // Fetch uploaded look items from API
+  // Fetch uploaded look items + the Pinterest board feed in parallel.
+  // Each is independently fault-tolerant — one failing doesn't blank
+  // the other's items.
   useEffect(() => {
-    fetch('/api/look')
+    const uploads = fetch('/api/look')
       .then(r => r.json())
       .then(data => {
         if (data.items?.length) {
@@ -54,27 +57,49 @@ export default function LookPage() {
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false))
+
+    const pins = fetch('/api/look-pinterest')
+      .then(r => r.json())
+      .then(data => {
+        if (data.items?.length) {
+          const credit = data.boardTitle ? `Pinterest — ${data.boardTitle}` : 'Pinterest'
+          const mapped: GalleryItem[] = data.items.map((pin: { src: string; link: string }) => ({
+            src: pin.src,
+            type: 'image' as const,
+            cols: 1,
+            rows: 1,
+            credit,
+            source: pin.link,
+          }))
+          setPinItems(mapped)
+        }
+      })
+      .catch(() => {})
+
+    Promise.all([uploads, pins]).finally(() => setLoading(false))
   }, [])
 
-  // Repeat the uploaded items enough times to make the infinite-scroll loop
-  // feel continuous. With a dozen+ uploads we triple them (existing behaviour);
-  // with fewer uploads we multiply more aggressively so 1-2 uploads still
-  // produce a scrollable, looping gallery instead of three sad cells in the
+  // Uploaded items + Pinterest pins feed the same grid.
+  const galleryItems = uploadedItems.concat(pinItems)
+
+  // Repeat the items enough times to make the infinite-scroll loop feel
+  // continuous. With a dozen+ items we triple them (existing behaviour);
+  // with fewer we multiply more aggressively so 1-2 items still produce
+  // a scrollable, looping gallery instead of three sad cells in the
   // top-left.
   const allItems = (() => {
-    if (uploadedItems.length === 0) return []
+    if (galleryItems.length === 0) return []
     // Aim for ~36 total cells (≈9 rows in the 4-col grid → easy to loop).
-    const multiplier = Math.max(3, Math.ceil(36 / uploadedItems.length))
+    const multiplier = Math.max(3, Math.ceil(36 / galleryItems.length))
     const out: GalleryItem[] = []
-    for (let i = 0; i < multiplier; i++) out.push(...uploadedItems)
+    for (let i = 0; i < multiplier; i++) out.push(...galleryItems)
     return out
   })()
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    if (uploadedItems.length === 0) return
+    if (galleryItems.length === 0) return
 
     let lastTime = performance.now()
 
@@ -95,7 +120,7 @@ export default function LookPage() {
     el.scrollTop = el.scrollHeight / 3
     animRef.current = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(animRef.current)
-  }, [activeItem, uploadedItems.length])
+  }, [activeItem, galleryItems.length])
 
   useEffect(() => {
     const el = scrollRef.current
