@@ -51,6 +51,11 @@ type FeedCache = {
   fetchedAt: number
   boardTitle: string
   items: PinItem[]
+  // Pin ids the user has hidden from /look (promoted junk that slipped
+  // into a feed window, video-pin stills, anything unwanted). Hidden
+  // pins stay in the cache so they never resurface via re-capture —
+  // GET just filters them out of the response.
+  hidden?: string[]
 }
 
 const EMPTY: FeedCache = { fetchedAt: 0, boardTitle: '', items: [] }
@@ -132,9 +137,10 @@ async function fetchUserPidgets(): Promise<{ boardTitle: string; items: PinItem[
     const items: PinItem[] = []
     for (const pin of json.data?.pins || []) {
       if (!pin.id) continue
-      const boardOk = pin.board?.name === BOARD_NAME
-        || (pin.board?.url || '').toLowerCase().includes('/widget')
-      if (!boardOk) continue
+      // Exact board-name match ONLY. The account feed carries pins from
+      // every board plus the occasional promoted item — anything not
+      // verifiably on WIDGET stays out.
+      if (pin.board?.name !== BOARD_NAME) continue
       const anySize = pin.images && Object.values(pin.images)[0]?.url
       if (!anySize) continue
       items.push({
@@ -231,29 +237,66 @@ async function refreshFeed(cached: FeedCache): Promise<FeedCache | null> {
     fetchedAt: now,
     boardTitle: rss?.boardTitle || pidgets?.boardTitle || userPins?.boardTitle || cached.boardTitle,
     items: merged,
+    hidden: cached.hidden || [],
   }
+}
+
+/** The public shape: cached feed minus the hidden pins. */
+function visibleFeed(cache: FeedCache): FeedCache {
+  const hiddenSet = new Set(cache.hidden || [])
+  return { ...cache, items: cache.items.filter(i => !hiddenSet.has(i.id)) }
 }
 
 export async function GET() {
   const cached = await readJsonBlob<FeedCache>(BLOB_KEY, EMPTY)
   const fresh = cached.items.length > 0 && Date.now() - cached.fetchedAt < TTL_MS
   if (fresh) {
-    return NextResponse.json(cached, NO_CACHE)
+    return NextResponse.json(visibleFeed(cached), NO_CACHE)
   }
   const feed = await refreshFeed(cached)
   if (feed) {
     await writeJsonBlob(BLOB_KEY, feed)
-    return NextResponse.json(feed, NO_CACHE)
+    return NextResponse.json(visibleFeed(feed), NO_CACHE)
   }
   // Refresh failed — serve whatever we have rather than nothing.
-  return NextResponse.json(cached, NO_CACHE)
+  return NextResponse.json(visibleFeed(cached), NO_CACHE)
 }
 
 export async function POST(request: Request) {
-  // { action: 'sync' } forces a refresh regardless of TTL — wired to the
-  // "Sync Pinterest" button in the Look admin panel.
+  // Actions:
+  //   { action: 'sync' }             force refresh regardless of TTL
+  //   { action: 'hide',   id: ... }  banish a pin from /look permanently
+  //   { action: 'unhide', id: ... }  bring it back
+  // Wired to the Look admin panel (Sync button + per-tile ✕).
   try {
     const body = await request.json().catch(() => ({}))
+
+    // set-hidden replaces the ENTIRE hidden list. The admin panel is the
+    // authority: it loads the current list via GET, tracks changes
+    // locally and sends the complete list on every ✕ — so consecutive
+    // hides can't clobber each other even though blob overwrites take
+    // up to ~60s to propagate at the origin (a server-side
+    // read-modify-write of per-id hide/unhide could read stale state
+    // and silently drop an earlier hide).
+    if (body?.action === 'set-hidden' && Array.isArray(body.hidden)) {
+      const cached = await readJsonBlob<FeedCache>(BLOB_KEY, EMPTY)
+      const next = { ...cached, hidden: (body.hidden as unknown[]).map(String) }
+      await writeJsonBlob(BLOB_KEY, next)
+      return NextResponse.json({ success: true, hiddenCount: next.hidden.length, ...visibleFeed(next) }, NO_CACHE)
+    }
+
+    if (body?.action === 'hide' || body?.action === 'unhide') {
+      const id = String(body.id || '')
+      if (!id) return NextResponse.json({ error: 'No id' }, { status: 400 })
+      const cached = await readJsonBlob<FeedCache>(BLOB_KEY, EMPTY)
+      const hidden = new Set(cached.hidden || [])
+      if (body.action === 'hide') hidden.add(id)
+      else hidden.delete(id)
+      const next = { ...cached, hidden: Array.from(hidden) }
+      await writeJsonBlob(BLOB_KEY, next)
+      return NextResponse.json({ success: true, hiddenCount: next.hidden.length, ...visibleFeed(next) }, NO_CACHE)
+    }
+
     if (body?.action !== 'sync') {
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
     }
@@ -263,7 +306,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Pinterest fetch failed' }, { status: 502 })
     }
     await writeJsonBlob(BLOB_KEY, feed)
-    return NextResponse.json({ success: true, ...feed }, NO_CACHE)
+    return NextResponse.json({ success: true, ...visibleFeed(feed) }, NO_CACHE)
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

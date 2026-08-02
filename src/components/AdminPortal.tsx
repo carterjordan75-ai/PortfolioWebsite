@@ -1576,6 +1576,22 @@ function LookUploadPanel() {
   // board immediately instead of waiting out the 6-hour TTL.
   const [pinSyncing, setPinSyncing] = useState(false)
   const [pinSyncStatus, setPinSyncStatus] = useState<string | null>(null)
+  // The feed items currently showing on /look, for the hide-grid below.
+  // hiddenIdsRef mirrors the server's hidden list; on every ✕ the FULL
+  // updated list is sent (set-hidden) so rapid consecutive hides can't
+  // lose each other to blob-propagation lag.
+  const [pinFeed, setPinFeed] = useState<{ id: string; src: string; link: string }[]>([])
+  const hiddenIdsRef = useRef<string[]>([])
+
+  useEffect(() => {
+    fetch('/api/look-pinterest')
+      .then(r => r.json())
+      .then(d => {
+        setPinFeed(d.items || [])
+        hiddenIdsRef.current = Array.isArray(d.hidden) ? d.hidden : []
+      })
+      .catch(() => {})
+  }, [])
 
   const handlePinterestSync = async () => {
     setPinSyncing(true)
@@ -1589,12 +1605,38 @@ function LookUploadPanel() {
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`)
       setPinSyncStatus(`✓ Synced — ${data.items?.length ?? 0} pins on Look`)
+      if (data.items) setPinFeed(data.items)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setPinSyncStatus(`✗ Sync failed: ${msg}`)
     } finally {
       setPinSyncing(false)
       setTimeout(() => setPinSyncStatus(null), 4000)
+    }
+  }
+
+  // Banish a feed pin from /look permanently (ads that slipped through a
+  // feed window, video-pin stills, anything unwanted). Sends the FULL
+  // updated hidden list so consecutive clicks compose safely.
+  const handleHidePin = async (id: string) => {
+    const prev = pinFeed
+    const prevHidden = hiddenIdsRef.current
+    hiddenIdsRef.current = Array.from(new Set([...prevHidden, id]))
+    setPinFeed(list => list.filter(p => p.id !== id))
+    try {
+      const res = await fetch('/api/look-pinterest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-hidden', hidden: hiddenIdsRef.current }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setPinSyncStatus('✓ Hidden from Look (public page updates within a minute)')
+    } catch {
+      setPinFeed(prev)
+      hiddenIdsRef.current = prevHidden
+      setPinSyncStatus('✗ Hide failed')
+    } finally {
+      setTimeout(() => setPinSyncStatus(null), 3000)
     }
   }
 
@@ -1691,6 +1733,37 @@ function LookUploadPanel() {
         <p className={`text-[9px] mb-2 ${pinSyncStatus.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>{pinSyncStatus}</p>
       )}
       <p className="text-white/30 text-[9px] leading-[1.6] mb-4">Drag thumbnails to reorder. Upload new files below. Pinterest pins feed in automatically (every 6h or via Sync).</p>
+
+      {/* Pinterest feed — every pin currently showing on /look. The ✕
+          hides that pin from the site permanently (ads that snuck into a
+          feed window, video-pin stills, anything unwanted). */}
+      {pinFeed.length > 0 && (
+        <div className="mb-5">
+          <p className="text-white/50 text-[8px] uppercase tracking-[0.12em] font-bold mb-2">
+            Pinterest feed ({pinFeed.length}) <span className="text-white/25 font-normal normal-case tracking-normal">— ✕ hides a pin from the Look page for good</span>
+          </p>
+          <div className="grid grid-cols-6 gap-1.5">
+            {pinFeed.map(pin => (
+              <div
+                key={pin.id}
+                className="relative rounded-md overflow-hidden group"
+                style={{ aspectRatio: '1', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={pin.src} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                <button
+                  onClick={() => handleHidePin(pin.id)}
+                  title="Hide from Look"
+                  className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ background: 'rgba(248,113,113,0.9)' }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Existing media — draggable thumbnail grid */}
       {existingItems.length > 0 && (

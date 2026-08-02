@@ -64,7 +64,13 @@ export async function readJsonBlob<T>(
   const url = await findBlobUrl(key)
   if (url) {
     try {
-      const res = await fetch(url, { cache: 'no-store' })
+      // Cache-buster: overwritten blobs can be served stale by the blob
+      // CDN for up to ~a minute. A unique query string forces an edge
+      // MISS so read-after-write is immediately consistent — without it,
+      // rapid read-modify-write cycles (e.g. hiding two feed pins in
+      // quick succession) could clobber each other's writes.
+      const busted = `${url}${url.includes('?') ? '&' : '?'}cb=${Date.now()}`
+      const res = await fetch(busted, { cache: 'no-store' })
       if (res.ok) return (await res.json()) as T
     } catch {
       /* fall through */
