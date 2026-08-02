@@ -49,7 +49,8 @@ type PinItem = {
   animated?: boolean     // src is an animated GIF original
   gifChecked?: boolean   // originals-.gif probe done — don't re-probe
   type?: 'image' | 'video'
-  videoChecked?: boolean // pins/info video lookup done — don't re-query
+  videoChecked?: boolean // pins/info video lookup done (legacy flag)
+  videoCheckV?: number   // extractor version that did the lookup
   poster?: string        // still frame for the imported video
 }
 type FeedCache = {
@@ -215,35 +216,57 @@ async function probeGifOriginals(items: PinItem[]): Promise<void> {
 const PIN_INFO_URL = 'https://widgets.pinterest.com/v3/pidgets/pins/info/'
 const INFO_BATCH = 8            // pin ids per info request
 const MAX_VIDEO_IMPORTS = 5     // MP4 downloads per sync run
+// Bump when the video extractor improves — items carrying an older
+// version get re-examined once, so pins previously misfiled as
+// "checked, no video" are picked up instead of being stuck forever.
+const VIDEO_CHECK_VERSION = 2
 
-type VideoRendition = { url?: string; width?: number; thumbnail?: string }
+type VideoRendition = { url: string; width: number; thumbnail?: string }
 
-/** Deep-search a pin payload for its video_list (nesting varies). */
-function findVideoList(node: unknown): Record<string, VideoRendition> | null {
-  if (!node || typeof node !== 'object') return null
+/**
+ * Deep-collect every MP4 rendition anywhere in a pin payload.
+ *
+ * Pinterest is inconsistent about the shape: some pins give a FLAT
+ * video_list ({ V_720P: {url} }), others nest a whole second
+ * video_list inside a key of the same name
+ * ({ V_720P: { V_720P: {url}, V_HLSV4: {url} } }), and the same pin
+ * can carry several copies (story_pin_data.pages[].blocks[].video_data,
+ * .../video, page-level .../video). Rather than guess the shape, walk
+ * the entire object and take anything that looks like {url: '*.mp4'}.
+ */
+function collectMp4s(node: unknown, out: VideoRendition[] = [], depth = 0): VideoRendition[] {
+  if (!node || typeof node !== 'object' || depth > 12) return out
+  if (Array.isArray(node)) {
+    for (const v of node) collectMp4s(v, out, depth + 1)
+    return out
+  }
   const obj = node as Record<string, unknown>
-  if (obj.video_list && typeof obj.video_list === 'object') {
-    return obj.video_list as Record<string, VideoRendition>
+  if (typeof obj.url === 'string' && /\.mp4(?:$|\?)/i.test(obj.url)) {
+    out.push({
+      url: obj.url,
+      width: typeof obj.width === 'number' ? obj.width : 0,
+      thumbnail: typeof obj.thumbnail === 'string' ? obj.thumbnail : undefined,
+    })
   }
-  for (const value of Object.values(obj)) {
-    const found = findVideoList(value)
-    if (found) return found
-  }
-  return null
+  for (const value of Object.values(obj)) collectMp4s(value, out, depth + 1)
+  return out
 }
 
-/** Pick the best downloadable MP4 from a video_list. */
-function pickMp4(videoList: Record<string, VideoRendition>): VideoRendition | null {
-  const renditions = Object.entries(videoList)
-    .filter(([, v]) => typeof v?.url === 'string' && /\.mp4(?:$|\?)/i.test(v.url))
-    .map(([, v]) => v)
-  if (renditions.length === 0) return null
-  // Prefer the widest (720p is the usual max Pinterest exposes).
-  return renditions.sort((a, b) => (b.width || 0) - (a.width || 0))[0]
+/** Best (widest) MP4 in a pin payload, deduped by URL. */
+function pickMp4(pin: unknown): VideoRendition | null {
+  const all = collectMp4s(pin)
+  if (all.length === 0) return null
+  const seen = new Set<string>()
+  const unique = all.filter(r => !seen.has(r.url) && seen.add(r.url))
+  return unique.sort((a, b) => b.width - a.width)[0]
 }
+
+/** Pins needing a (re)check under the current extractor version. */
+const needsVideoCheck = (i: PinItem) =>
+  i.type !== 'video' && (i.videoCheckV ?? 0) < VIDEO_CHECK_VERSION
 
 async function importVideoPins(items: PinItem[]): Promise<{ imported: number; remaining: number }> {
-  const unchecked = items.filter(i => !i.videoChecked && i.type !== 'video')
+  const unchecked = items.filter(needsVideoCheck)
   if (unchecked.length === 0) return { imported: 0, remaining: 0 }
 
   let imported = 0
@@ -266,14 +289,14 @@ async function importVideoPins(items: PinItem[]): Promise<{ imported: number; re
     for (const pin of payload.data as Array<Record<string, unknown>>) {
       const item = byId.get(String(pin.id))
       if (!item) continue
-      item.videoChecked = true          // one lookup per pin, ever
-      const videoList = findVideoList(pin)
-      const best = videoList ? pickMp4(videoList) : null
+      item.videoChecked = true
+      item.videoCheckV = VIDEO_CHECK_VERSION   // one lookup per pin per version
+      const best = pickMp4(pin)
       if (!best?.url) continue          // ordinary image pin
 
       if (imported >= MAX_VIDEO_IMPORTS) {
         // Out of budget: un-check so a later run imports it.
-        item.videoChecked = false
+        item.videoCheckV = 0
         budgetHit = true
         continue
       }
@@ -288,12 +311,12 @@ async function importVideoPins(items: PinItem[]): Promise<{ imported: number; re
         if (best.thumbnail) item.poster = best.thumbnail
         imported++
       } catch {
-        item.videoChecked = false       // transient failure — retry later
+        item.videoCheckV = 0            // transient failure — retry later
       }
     }
   }
 
-  const remaining = items.filter(i => !i.videoChecked && i.type !== 'video').length
+  const remaining = items.filter(needsVideoCheck).length
   return { imported, remaining }
 }
 
@@ -338,6 +361,7 @@ async function refreshFeed(cached: FeedCache): Promise<FeedCache | null> {
           if (old.animated) { live.animated = true; live.src = old.src }
         }
         if (old.videoChecked) live.videoChecked = true
+        if (old.videoCheckV) live.videoCheckV = old.videoCheckV
         if (old.type === 'video') {
           // Already-imported video: keep the self-hosted MP4, never let
           // a feed refresh revert it to the static cover image.
