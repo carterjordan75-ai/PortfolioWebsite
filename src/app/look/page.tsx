@@ -304,12 +304,17 @@ export default function LookPage() {
                   // object-cover in the grid so the mosaic tiles butt up
                   // edge-to-edge with no letterboxing — the lightbox still
                   // shows the full uncropped image (object-contain there).
+                  // draggable=false + no context menu: this is other
+                  // people's work, so the page displays and credits it
+                  // rather than offering it for download.
                   <Image
                     src={item.src}
                     alt=""
                     fill
                     className="object-cover"
                     sizes="(max-width: 768px) 50vw, 25vw"
+                    draggable={false}
+                    onContextMenu={(e) => e.preventDefault()}
                     unoptimized
                   />
                 ) : (
@@ -324,6 +329,8 @@ export default function LookPage() {
                     loop
                     playsInline
                     preload="none"
+                    disablePictureInPicture
+                    onContextMenu={(e) => e.preventDefault()}
                     className="absolute inset-0 w-full h-full object-cover"
                   />
                 )}
@@ -369,7 +376,7 @@ export default function LookPage() {
               el.style.boxShadow = '0 4px 20px rgba(0,0,0,0.2)'
             }}
           >
-            A living archive of references, obsessions &amp; visual fragments that shape the work. Click any image for credit &amp; source.
+            A living archive of references, obsessions &amp; visual fragments that shape the work. None of it mine — click any piece, then follow it back to its source.
           </p>
         </div>
 
@@ -402,21 +409,32 @@ export default function LookPage() {
                     alt={activeData.credit}
                     fill
                     className="object-contain"
+                    draggable={false}
+                    onContextMenu={(e) => e.preventDefault()}
                     unoptimized
                   />
                 ) : (
+                  // controlsList/disablePictureInPicture strip the
+                  // download + PiP entries from the native control menu.
+                  // This is other people's work — the site shows it and
+                  // links back; it doesn't hand out the files.
                   <video
                     src={activeData.src}
                     autoPlay
                     loop
                     playsInline
                     controls
+                    controlsList="nodownload noplaybackrate"
+                    disablePictureInPicture
+                    onContextMenu={(e) => e.preventDefault()}
                     className="absolute inset-0 w-full h-full object-contain"
                   />
                 )}
               </motion.div>
 
-              {/* Credit overlay at bottom */}
+              {/* Credit overlay at bottom. The credit line IS the link to
+                  the original when we have one — one obvious target
+                  rather than a separate button. */}
               <motion.div
                 initial={{ y: 30, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
@@ -425,33 +443,36 @@ export default function LookPage() {
                 className="fixed bottom-0 left-0 right-0 py-5 px-8 flex items-center justify-between"
                 style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.8))' }}
               >
-                <p className="text-white text-[12px] font-bold uppercase tracking-[0.1em]">
-                  {activeData.credit}
-                </p>
-                <div className="flex items-center gap-4">
-                  {activeData.source && (
-                    <a
-                      href={activeData.source}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-[9px] uppercase tracking-[0.15em] text-white/70 px-4 py-1.5 rounded-full hover:text-white hover:scale-105 transition-all"
-                      style={{ border: '1px solid rgba(255,255,255,0.25)' }}
-                    >
-                      Visit Source ↗
-                    </a>
-                  )}
-                  <button
-                    onClick={() => {
-                      setActiveItem(null)
-                      setTimeout(() => { speedRef.current = 0.5 }, 500)
-                    }}
-                    className="text-[9px] uppercase tracking-[0.15em] text-white/50 px-4 py-1.5 rounded-full hover:text-white transition-all"
-                    style={{ border: '1px solid rgba(255,255,255,0.15)' }}
+                {activeData.source ? (
+                  <a
+                    href={activeData.source}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="group flex items-center gap-2 text-white text-[12px] font-bold uppercase tracking-[0.1em] hover:opacity-80 transition-opacity"
                   >
-                    Close
-                  </button>
-                </div>
+                    <span style={{ borderBottom: '1px solid rgba(255,255,255,0.35)' }}>
+                      {activeData.credit}
+                    </span>
+                    <span className="text-[10px] font-normal opacity-60 group-hover:opacity-100 transition-opacity">
+                      view original ↗
+                    </span>
+                  </a>
+                ) : (
+                  <p className="text-white text-[12px] font-bold uppercase tracking-[0.1em]">
+                    {activeData.credit}
+                  </p>
+                )}
+                <button
+                  onClick={() => {
+                    setActiveItem(null)
+                    setTimeout(() => { speedRef.current = 0.5 }, 500)
+                  }}
+                  className="text-[9px] uppercase tracking-[0.15em] text-white/50 px-4 py-1.5 rounded-full hover:text-white transition-all"
+                  style={{ border: '1px solid rgba(255,255,255,0.15)' }}
+                >
+                  Close
+                </button>
               </motion.div>
             </motion.div>
           )}
@@ -465,7 +486,7 @@ export default function LookPage() {
               <a href="https://instagram.com/jordanscarter" target="_blank" rel="noopener noreferrer" className="w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}`, color: fg }}>Insta</a>
             </div>
             <p className="hidden md:block text-[9px] leading-[1.5] tracking-[0.04em] uppercase max-w-2xl text-center" style={{ color: fg60 }}>
-              A curated gallery of visual references, inspirations, and things that catch the eye. A living moodboard.
+              A curated gallery of visual references and inspirations — collected, not created. All work belongs to its original makers; open any piece to follow it back to the source.
             </p>
             <div className="flex gap-3 flex-shrink-0">
               <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="w-14 h-14 rounded-full flex items-center justify-center text-[16px] hover:scale-105 transition-transform" style={{ border: `1.5px solid ${borderThick}`, color: fg }} aria-label="Back to top">↑</button>
