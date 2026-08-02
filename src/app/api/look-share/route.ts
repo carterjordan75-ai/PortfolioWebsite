@@ -42,14 +42,32 @@ const EXT_BY_MIME: Record<string, string> = {
   'image/gif': 'gif',
   'image/avif': 'avif',
   'image/heic': 'heic',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
 }
 
 function extFor(mime: string | null, fallbackName?: string): string {
   if (mime && EXT_BY_MIME[mime.toLowerCase().split(';')[0].trim()]) {
     return EXT_BY_MIME[mime.toLowerCase().split(';')[0].trim()]
   }
-  const fromName = fallbackName?.match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase()
+  const fromName = fallbackName?.match(/\.([a-z0-9]{2,5})(?:$|\?)/i)?.[1]?.toLowerCase()
   return fromName || 'jpg'
+}
+
+// Cross-origin access: the Pinterest video bookmarklet runs on
+// pinterest.com and POSTs here, so the response must carry CORS
+// headers for the browser to let the bookmarklet read the result.
+// (The request itself is sent as text/plain — a "simple request" —
+// so no preflight is needed; OPTIONS is handled anyway for safety.)
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS })
 }
 
 async function registerLookItem(params: {
@@ -85,15 +103,15 @@ export async function POST(request: NextRequest) {
     const expected = process.env.SITE_PASSCODE || 'changeme'
     const contentType = request.headers.get('content-type') || ''
 
-    // ── IMAGE mode ────────────────────────────────────────────────
+    // ── IMAGE mode (multipart upload from the phone Shortcut) ─────
     if (contentType.includes('multipart/form-data')) {
       const form = await request.formData()
       if (String(form.get('token') || '') !== expected) {
-        return NextResponse.json({ error: 'Bad token' }, { status: 401 })
+        return NextResponse.json({ error: 'Bad token' }, { status: 401, headers: CORS })
       }
       const file = form.get('file')
       if (!(file instanceof File) || file.size === 0) {
-        return NextResponse.json({ error: 'No file' }, { status: 400 })
+        return NextResponse.json({ error: 'No file' }, { status: 400, headers: CORS })
       }
       const bytes = await file.arrayBuffer()
       const mime = file.type || 'image/jpeg'
@@ -104,20 +122,53 @@ export async function POST(request: NextRequest) {
         credit: String(form.get('credit') || 'Instagram'),
         link: String(form.get('link') || ''),
       })
-      return NextResponse.json({ success: true, ...item })
+      return NextResponse.json({ success: true, ...item }, { headers: CORS })
     }
 
-    // ── URL mode ──────────────────────────────────────────────────
-    const body = await request.json().catch(() => null) as { token?: string; url?: string; credit?: string } | null
+    // JSON body — arrives as application/json (Shortcuts) or text/plain
+    // (the bookmarklet uses text/plain to stay a CORS "simple request").
+    const raw = await request.text()
+    let body: { token?: string; url?: string; mediaUrl?: string; credit?: string; link?: string } | null = null
+    try { body = JSON.parse(raw) } catch { body = null }
     if (!body || String(body.token || '') !== expected) {
-      return NextResponse.json({ error: 'Bad token' }, { status: 401 })
+      return NextResponse.json({ error: 'Bad token' }, { status: 401, headers: CORS })
     }
+
+    // ── DIRECT MEDIA mode (Pinterest video bookmarklet) ───────────
+    // mediaUrl points straight at a media FILE (mp4 / image). Download
+    // and store it as-is — this is how Pinterest-hosted video gets onto
+    // /look: the bookmarklet lifts the CDN URL from the logged-in pin
+    // page and hands it here.
+    if (body.mediaUrl && /^https?:\/\//i.test(body.mediaUrl)) {
+      const mediaRes = await fetch(body.mediaUrl, { headers: { 'User-Agent': UA }, cache: 'no-store' })
+      if (!mediaRes.ok) {
+        return NextResponse.json({ error: `Media fetch failed (${mediaRes.status})` }, { status: 502, headers: CORS })
+      }
+      const mime = (mediaRes.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim()
+      if (!/^(video|image)\//.test(mime)) {
+        return NextResponse.json({ error: `Not a media file (${mime})` }, { status: 422, headers: CORS })
+      }
+      const bytes = await mediaRes.arrayBuffer()
+      if (bytes.byteLength === 0) {
+        return NextResponse.json({ error: 'Empty media file' }, { status: 502, headers: CORS })
+      }
+      const item = await registerLookItem({
+        bytes,
+        contentType: mime,
+        ext: extFor(mime, body.mediaUrl),
+        credit: body.credit || 'Pinterest',
+        link: body.link || body.mediaUrl,
+      })
+      return NextResponse.json({ success: true, ...item }, { headers: CORS })
+    }
+
+    // ── URL mode (og:image scrape) ────────────────────────────────
     if (!body.url || !/^https?:\/\//i.test(body.url)) {
-      return NextResponse.json({ error: 'No url' }, { status: 400 })
+      return NextResponse.json({ error: 'No url' }, { status: 400, headers: CORS })
     }
     const pageRes = await fetch(body.url, { headers: { 'User-Agent': UA }, cache: 'no-store' })
     if (!pageRes.ok) {
-      return NextResponse.json({ error: `Page fetch failed (${pageRes.status})` }, { status: 502 })
+      return NextResponse.json({ error: `Page fetch failed (${pageRes.status})` }, { status: 502, headers: CORS })
     }
     const html = await pageRes.text()
     const ogImage =
@@ -126,12 +177,12 @@ export async function POST(request: NextRequest) {
     if (!ogImage) {
       return NextResponse.json(
         { error: 'No og:image on that page (Instagram links usually fail — share the image itself instead)' },
-        { status: 422 },
+        { status: 422, headers: CORS },
       )
     }
     const imgRes = await fetch(ogImage, { headers: { 'User-Agent': UA }, cache: 'no-store' })
     if (!imgRes.ok) {
-      return NextResponse.json({ error: `Image fetch failed (${imgRes.status})` }, { status: 502 })
+      return NextResponse.json({ error: `Image fetch failed (${imgRes.status})` }, { status: 502, headers: CORS })
     }
     const mime = imgRes.headers.get('content-type') || 'image/jpeg'
     const bytes = await imgRes.arrayBuffer()
@@ -142,9 +193,9 @@ export async function POST(request: NextRequest) {
       credit: body.credit || new URL(body.url).hostname.replace(/^www\./, ''),
       link: body.url,
     })
-    return NextResponse.json({ success: true, ...item })
+    return NextResponse.json({ success: true, ...item }, { headers: CORS })
   } catch (err) {
     console.error('look-share error:', err)
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    return NextResponse.json({ error: String(err) }, { status: 500, headers: CORS })
   }
 }
