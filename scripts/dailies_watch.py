@@ -1,38 +1,44 @@
 #!/usr/bin/env python3
-"""Run Claude Code against a Motion Dailies project, unattended.
+"""Connect a machine to a Motion Dailies project. Two modes.
 
-    export DAILIES_API_KEY=...
+UPLOAD ONLY — something else is already making the work; this just
+publishes it. Nothing is run, nothing is downloaded.
+
+    python3 dailies_watch.py --dir ~/state --out ~/renders --upload-only
+
+AGENT LOOP — this drives Claude Code itself, feeding it the brief and
+your feedback and publishing whatever it produces.
+
     python3 dailies_watch.py --dir ~/work --idle-run
 
-It follows the queue: the site marks exactly one project as current — the
+Both follow the queue: the site marks exactly one project as current — the
 oldest one set to "In progress" — and this works on that and nothing
 else. Marking it Done from your phone is what moves it to the next, so a
 project you're still writing a brief for is never picked up early.
 
-Each cycle it:
-  1. asks which project is current; each gets its own <dir>/<project>/
-  2. pulls that project's brief + references into ./references/
-  3. pulls any feedback submitted since last time (with its images)
-  4. runs the agent there, handing it the brief and that feedback
-  5. pushes whatever new files landed in ./out/ back to the portal
-  6. sleeps, then repeats
+In UPLOAD ONLY it watches --out and publishes anything new: name.mp4 is
+the piece, name.png alongside it becomes the contact sheet, name.txt
+becomes the note. Files already sent are never sent twice.
 
-So you leave it running: notes you write on your phone get picked up on
-the next cycle, and what it makes appears on the site as a new entry.
+The agent loop additionally pulls the brief and references into
+<dir>/<project>/references/, hands the agent any feedback you've left,
+and publishes what it writes to ./out/.
 
 The machine only ever makes OUTBOUND calls — nothing needs to reach it.
 
+  --upload-only   don't run anything, just publish what appears
+  --out PATH      the folder to watch (default <dir>/<project>/out)
   --once          one cycle, then exit (use this to try it out)
-  --idle-run      keep working from the brief even when there's no
-                  feedback; this is the overnight mode
+  --idle-run      agent loop: keep working from the brief even when
+                  there's no feedback; this is the overnight mode
   --interval N    seconds between cycles (default 300)
   --project ID    ignore the queue and pin to one project
   --agent-cmd     override how the agent is invoked
 
-SAFETY: this runs an agent unattended on instructions typed from a phone,
-with whatever file access the command you pass it allows. Point --dir at
-a project directory, not your home folder, and keep it in git so you can
-see and undo what it did.
+SAFETY (agent loop only): it runs an agent unattended on instructions
+typed from a phone, with whatever file access the command you pass it
+allows. Point --dir at a project directory, not your home folder, and
+keep it in git so you can see and undo what it did.
 """
 
 # Keeps `str | None` annotations working on Python 3.9, which is still
@@ -244,9 +250,8 @@ def run_agent(agent_cmd: str, prompt: str, work: Path, timeout: int) -> str:
 # ── outputs ─────────────────────────────────────────────────────────
 
 
-def collect_outputs(work: Path, state: dict) -> list:
-    """Finished pieces in ./out/ that haven't been pushed yet."""
-    out = work / "out"
+def collect_outputs(out: Path, state: dict) -> list:
+    """Finished pieces in the watched folder that haven't been pushed yet."""
     if not out.is_dir():
         return []
     pushed = set(state.get("pushed", []))
@@ -277,8 +282,8 @@ def push_output(project_id: str, path: Path, work: Path, agent_output: str, ques
 
     note_file = out / (path.stem + ".txt")
     note = note_file.read_text(encoding="utf-8").strip() if note_file.exists() else ""
-    if not note:
-        note = agent_output[-800:].strip() or "Produced by the overnight run."
+    if not note and agent_output:
+        note = agent_output[-800:].strip()
 
     payload = {
         "project_id": project_id,
@@ -323,12 +328,39 @@ def cycle(args, root: Path, log_state: dict) -> None:
     # one piece of work into another's directory.
     work = root / project_id if not args.project else root
     work.mkdir(parents=True, exist_ok=True)
-    (work / "out").mkdir(exist_ok=True)
+
+    # --out points at wherever the renders actually land. Without it we
+    # use ./out under the project's own folder.
+    out_dir = Path(args.out).expanduser().resolve() if args.out else work / "out"
+    if not args.out:
+        out_dir.mkdir(exist_ok=True)
 
     qfile = work / "questions.json"
     questions = json.loads(qfile.read_text()) if qfile.exists() else None
 
     state = load_state(work)
+
+    # Upload-only: something else is already making the work, so don't
+    # run an agent, don't pull references down, just publish what turns
+    # up in the watched folder.
+    if args.upload_only:
+        found = collect_outputs(out_dir, state)
+        if not found:
+            if log_state.get("empty_notice") != project_id:
+                log(f"  {project_id}: watching {out_dir} — nothing new yet")
+                log_state["empty_notice"] = project_id
+            return
+        log_state.pop("empty_notice", None)
+        for path, key in found:
+            try:
+                entry_id = push_output(project_id, path, out_dir, "", questions)
+                state.setdefault("pushed", []).append(key)
+                log(f"  pushed {path.name} -> {entry_id}")
+            except SystemExit as err:
+                log(f"  failed to push {path.name}: {err}")
+        save_state(work, state)
+        return
+
     sync_project(project, work)
     feedback = fetch_feedback(project_id, state.get("last_feedback_at"))
 
@@ -349,9 +381,9 @@ def cycle(args, root: Path, log_state: dict) -> None:
     if feedback:
         state["last_feedback_at"] = feedback[-1]["submitted_at"]
 
-    for path, key in collect_outputs(work, state):
+    for path, key in collect_outputs(out_dir, state):
         try:
-            entry_id = push_output(project_id, path, work, output, questions)
+            entry_id = push_output(project_id, path, out_dir, output, questions)
             state.setdefault("pushed", []).append(key)
             log(f"  pushed {path.name} -> {entry_id}")
         except SystemExit as err:
@@ -371,6 +403,15 @@ def main():
         required=True,
         help="workspace root — each project gets its own folder inside it",
     )
+    parser.add_argument(
+        "--out",
+        help="folder the finished files land in (default: <dir>/<project>/out)",
+    )
+    parser.add_argument(
+        "--upload-only",
+        action="store_true",
+        help="don't run an agent — just publish what appears in --out",
+    )
     parser.add_argument("--interval", type=int, default=300, help="seconds between cycles")
     parser.add_argument("--timeout", type=int, default=3600, help="max seconds per agent run")
     parser.add_argument("--once", action="store_true", help="one cycle, then exit")
@@ -384,7 +425,10 @@ def main():
     root = Path(args.dir).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
 
+    log(f"mode:      {'upload only' if args.upload_only else 'agent loop'}")
     log(f"workspace: {root}")
+    if args.out:
+        log(f"watching:  {Path(args.out).expanduser().resolve()}")
     log(f"portal:    {BASE_URL}/dailies")
     log(
         "following the queue — whichever project is 'In progress'"

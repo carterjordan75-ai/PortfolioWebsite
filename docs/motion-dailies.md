@@ -351,3 +351,18 @@ re-completed. `POST /api/dailies/projects` reports how many were added as
 
 Prune before you finish: entries deleted from the project never reach Misc,
 so an overnight run's rejects can be cleared first.
+
+### Upload-only mode
+
+When the machine is already producing work by itself, `--upload-only` skips
+the agent entirely and just publishes what appears:
+
+```bash
+python3 scripts/dailies_watch.py --dir ~/state --out ~/renders --upload-only
+```
+
+`--out` is the folder the finished files land in; `--dir` only holds the
+record of what's been sent. Nothing is run and nothing is downloaded — the
+same naming rules apply (`name.mp4` + optional `name.png` + optional
+`name.txt`), files already sent are never sent twice, and entries go to
+whichever project is currently In progress.
