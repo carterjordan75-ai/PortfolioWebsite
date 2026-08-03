@@ -38,3 +38,8 @@ next-env.d.ts
 # Raw source assets (not deployed) — keep these out of the repo; only
 # files inside public/assets are shipped to production.
 /Assets/
+
+# Standalone side projects that happen to live in this folder but deploy
+# on their own (Cloudflare Worker, etc). They carry their own node_modules
+# and must not be pushed with the website.
+/property-watch/

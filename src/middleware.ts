@@ -25,10 +25,23 @@ export function middleware(request: NextRequest) {
   // /api/look-share is exempt because the phone share-sheet Shortcut has
   // no gate cookie — the route authenticates every request itself against
   // SITE_PASSCODE before writing anything.
+  //
+  // The Motion Dailies portal is likewise exempt from BOTH the site
+  // passcode and the phone lock, because:
+  //   - it carries its own password (see src/lib/dailies.ts), so the
+  //     site gate would just be a second, redundant prompt;
+  //   - /api/dailies + /api/feedback are called by the render PC with a
+  //     Bearer key and no cookie;
+  //   - the portal is explicitly meant to be reviewed on a phone, which
+  //     the site-wide mobile lock would otherwise block.
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api/gate') ||
     pathname.startsWith('/api/look-share') ||
+    pathname.startsWith('/api/dailies') ||
+    pathname.startsWith('/api/feedback') ||
+    pathname === '/dailies' ||
+    pathname.startsWith('/dailies/') ||
     pathname === '/gate' ||
     pathname.startsWith('/assets') ||
     pathname.startsWith('/placeholder') ||

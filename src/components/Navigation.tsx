@@ -235,7 +235,11 @@ export default function Navigation() {
 
   // No header on the passcode gate — clean, focused screen. (Check is here at
   // the very end so all hooks above always run, preserving React's rules of hooks.)
+  // Same for the private Motion Dailies portal: it's an internal tool with its
+  // own sticky header, and the public nav would both overlap it and offer
+  // links that make no sense from inside a review session.
   if (pathname === '/gate') return null
+  if (pathname === '/dailies' || pathname.startsWith('/dailies/')) return null
 
   return (
     <>
