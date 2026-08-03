@@ -5,7 +5,7 @@ import {
   checkSession,
   currentProjectId,
   deleteEntry,
-  entrySource,
+  entryAssets,
   miscSources,
   getEntry,
   getFeedback,
@@ -162,14 +162,14 @@ export async function GET(request: Request) {
     const misc = await miscSources(seedMisc)
     const withFeedback = await Promise.all(
       entries.map(async entry => {
-        const src = entrySource(entry)
+        // Per FILE, not per entry: a video and its contact sheet are
+        // published separately, so each needs its own state.
+        const urls = entryAssets(entry).map(a => a.url)
         return {
           ...entry,
           feedback: await getFeedback(entry.id),
-          // So the card can say "on Misc" instead of offering to publish
-          // something that's already there — or was deliberately removed.
-          in_misc: !!src && misc.present.has(src),
-          misc_removed: !!src && misc.tombstoned.has(src),
+          in_misc_urls: urls.filter(u => misc.present.has(u)),
+          misc_removed_urls: urls.filter(u => misc.tombstoned.has(u)),
         }
       }),
     )

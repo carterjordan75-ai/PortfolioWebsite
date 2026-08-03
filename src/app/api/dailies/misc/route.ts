@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server'
 import seedMisc from '../../../../../data/misc.json'
 import {
   checkSession,
-  entrySource,
+  entryAssets,
   getEntry,
   getProject,
   isValidId,
-  mirrorProjectToMisc,
   miscSources,
+  publishToMisc,
 } from '@/lib/dailies'
 
 export const dynamic = 'force-dynamic'
@@ -15,10 +15,15 @@ export const revalidate = 0
 const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
 
 /**
- * Publish ONE entry to /misc, tagged generative — the per-piece version
- * of what marking a whole project Done does. Session only: publishing to
- * the public site is a decision, not something the render machine should
- * be able to trigger with its API key.
+ * Publish ONE asset to /misc, tagged generative.
+ *
+ * The unit is the file, not the entry: a video and its contact sheet are
+ * different pictures at different aspect ratios, and only one of them may
+ * be worth showing. `url` says which; omit it and the entry's video (or
+ * its still, if there's no video) is used.
+ *
+ * Session only — publishing to the public site is a decision, not
+ * something the render machine should reach with its API key.
  */
 export async function POST(request: Request) {
   if (!(await checkSession(request))) {
@@ -40,9 +45,20 @@ export async function POST(request: Request) {
   if (!entry) {
     return NextResponse.json({ error: `No entry ${body.entry_id}` }, { status: 404 })
   }
-  const src = entrySource(entry)
-  if (!src) {
+
+  const assets = entryAssets(entry)
+  if (assets.length === 0) {
     return NextResponse.json({ error: 'That entry has no media to publish' }, { status: 400 })
+  }
+
+  // Only this entry's own files are publishable through it — otherwise
+  // the endpoint would happily put any URL on the public page.
+  const asset =
+    body.url === undefined
+      ? assets[0]
+      : assets.find(a => a.url === body.url)
+  if (!asset) {
+    return NextResponse.json({ error: 'url is not one of this entry\'s files' }, { status: 400 })
   }
 
   const project = await getProject(entry.project_id)
@@ -51,7 +67,7 @@ export async function POST(request: Request) {
   }
 
   const { tombstoned } = await miscSources(seedMisc)
-  if (tombstoned.has(src)) {
+  if (tombstoned.has(asset.url)) {
     return NextResponse.json(
       { error: 'This was deleted from Misc — undelete it there rather than re-pushing.' },
       { status: 409 },
@@ -59,10 +75,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    // mirrorProjectToMisc already skips duplicates, so a second press is
-    // harmless and reports 0 added.
-    const added = await mirrorProjectToMisc(project, [entry], seedMisc)
-    return NextResponse.json({ success: true, added }, NO_CACHE)
+    const added = await publishToMisc(project, entry, asset.url, asset.kind, seedMisc)
+    return NextResponse.json({ success: true, added: added ? 1 : 0 }, NO_CACHE)
   } catch (err) {
     console.error('POST /api/dailies/misc error:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })

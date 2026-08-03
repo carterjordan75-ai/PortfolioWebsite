@@ -5,9 +5,9 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 import {
-  Chip, Gate, Header, Page, SCALE, STATUS_OPTIONS, card, downloadAsset, field, ghostBtn,
-  isVideoRef, label, solidBtn, uploadViaTicket,
-  type Asset, type Entry, type Project, type ProjectStatus,
+  Chip, Gate, Header, Page, SCALE, STATUS_OPTIONS, card, downloadAsset, entryAssets, field,
+  ghostBtn, isVideoRef, label, solidBtn, uploadViaTicket,
+  type Asset, type Entry, type EntryAsset, type Project, type ProjectStatus,
 } from '../ui'
 
 /**
@@ -37,7 +37,7 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [missing, setMissing] = useState(false)
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [openUrl, setOpenUrl] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!projectId) return
@@ -89,7 +89,10 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
     )
   }
 
-  const open = project.entries.find(e => e.id === openId) || null
+  // Every media file, flattened: a 9:16 clip and its 1:1 sheet sit side
+  // by side in the lineup rather than being folded into one tile.
+  const assets = project.entries.flatMap(entryAssets)
+  const open = assets.find(a => a.url === openUrl) || null
 
   return (
     <Page>
@@ -119,7 +122,7 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
 
         <div>
           <span style={{ ...label, marginBottom: 12 }}>
-            Entries {project.entries.length > 0 && `(${project.entries.length})`}
+            Media {assets.length > 0 && `(${assets.length})`}
           </span>
           {project.entries.length === 0 ? (
             <p style={{ ...card, padding: 24, textAlign: 'center', fontSize: 11, opacity: 0.4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
@@ -130,8 +133,8 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
             // cell, which is exactly what letterboxes a mixed set of
             // aspect ratios. Columns let each piece keep its own.
             <div style={{ columnWidth: 250, columnGap: 12 }}>
-              {project.entries.map(entry => (
-                <Tile key={entry.id} entry={entry} onOpen={() => setOpenId(entry.id)} />
+              {assets.map(asset => (
+                <Tile key={asset.url} asset={asset} onOpen={() => setOpenUrl(asset.url)} />
               ))}
             </div>
           )}
@@ -146,12 +149,7 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
       </main>
 
       {open && (
-        <EntryOverlay
-          entry={open}
-          project={project}
-          onClose={() => setOpenId(null)}
-          onSaved={load}
-        />
+        <AssetOverlay asset={open} project={project} onClose={() => setOpenUrl(null)} onSaved={load} />
       )}
     </Page>
   )
@@ -159,71 +157,71 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
 
 // ── grid tile ───────────────────────────────────────────────────────
 
-function Tile({ entry, onOpen }: { entry: Entry; onOpen: () => void }) {
-  const isVideo = !!entry.video_url
-  const poster = entry.contact_sheet_url
+function Tile({ asset, onOpen }: { asset: EntryAsset; onOpen: () => void }) {
+  const { entry, url, kind } = asset
+  const onMisc = entry.in_misc_urls.includes(url)
+
   return (
     <div style={{ breakInside: 'avoid', marginBottom: 12 }}>
-    <button
-      onClick={onOpen}
-      style={{
-        ...card, padding: 0, width: '100%', textAlign: 'left', cursor: 'pointer',
-        display: 'block', color: 'inherit', font: 'inherit',
-      }}
-    >
-      {/* height:auto everywhere — the media dictates the tile, not the reverse */}
-      <div style={{ position: 'relative', background: 'rgba(255,255,255,0.04)' }}>
-        {poster ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={poster} alt="" style={{ width: '100%', height: 'auto', display: 'block' }} />
-        ) : entry.video_url ? (
-          // No contact sheet, so let the browser paint the first frame.
-          <video
-            src={`${entry.video_url}#t=0.1`}
-            muted
-            playsInline
-            preload="metadata"
-            style={{ width: '100%', height: 'auto', display: 'block' }}
-          />
-        ) : (
-          <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 9, opacity: 0.3, letterSpacing: '0.12em', textTransform: 'uppercase' }}>No media</div>
-        )}
+      <button
+        onClick={onOpen}
+        style={{
+          ...card, padding: 0, width: '100%', textAlign: 'left', cursor: 'pointer',
+          display: 'block', color: 'inherit', font: 'inherit',
+        }}
+      >
+        {/* height:auto throughout — the media sets the tile, not the reverse */}
+        <div style={{ position: 'relative', background: 'rgba(255,255,255,0.04)' }}>
+          {kind === 'video' ? (
+            <video
+              src={`${url}#t=0.1`}
+              muted
+              playsInline
+              preload="metadata"
+              style={{ width: '100%', height: 'auto', display: 'block' }}
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={url} alt="" style={{ width: '100%', height: 'auto', display: 'block' }} />
+          )}
 
-        {entry.video_url && (
-          <span style={{
-            position: 'absolute', left: 8, bottom: 8, width: 22, height: 22, borderRadius: 999,
-            background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 9, color: '#fff', paddingLeft: 2,
-          }}>
-            ▶
+          {kind === 'video' && (
+            <span style={{
+              position: 'absolute', left: 8, bottom: 8, width: 22, height: 22, borderRadius: 999,
+              background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 9, color: '#fff', paddingLeft: 2,
+            }}>
+              ▶
+            </span>
+          )}
+          {!entry.feedback && (
+            <span style={{
+              position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 999,
+              background: 'rgb(252,211,77)', boxShadow: '0 0 0 3px rgba(10,10,10,0.5)',
+            }} />
+          )}
+        </div>
+
+        <div style={{ padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.3 }}>{entry.title || 'Untitled'}</span>
+          <span style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.35 }}>
+            {kind === 'video' ? 'Video' : 'Still'} · {entry.date}
+            {onMisc && ' · on misc'}
           </span>
-        )}
-        {!entry.feedback && (
-          <span style={{
-            position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 999,
-            background: 'rgb(252,211,77)', boxShadow: '0 0 0 3px rgba(10,10,10,0.5)',
-          }} />
-        )}
-      </div>
-
-      <div style={{ padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.3 }}>{entry.title || 'Untitled'}</span>
-        <span style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.35 }}>
-          {isVideo ? 'Video' : 'Still'} · {entry.date}
-          {entry.in_misc && ' · on misc'}
-        </span>
-      </div>
-    </button>
+        </div>
+      </button>
     </div>
   )
 }
 
-// ── entry overlay ───────────────────────────────────────────────────
+// ── asset overlay ───────────────────────────────────────────────────
 
-function EntryOverlay({
-  entry, project, onClose, onSaved,
-}: { entry: Entry; project: Project; onClose: () => void; onSaved: () => void }) {
+/** One media file, full size, with the entry's feedback attached. */
+function AssetOverlay({
+  asset, project, onClose, onSaved,
+}: { asset: EntryAsset; project: Project; onClose: () => void; onSaved: () => void }) {
+  const { entry, url, kind } = asset
   useEscapeToClose(true, onClose)
 
   return (
@@ -260,16 +258,31 @@ function EntryOverlay({
         }}>
           <div style={{ minWidth: 0 }}>
             <p style={{ fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', opacity: 0.45 }}>
-              {entry.video_url ? 'Video' : 'Still'} · {entry.date}
+              {kind === 'video' ? 'Video' : 'Still'} · {entry.date}
             </p>
             <h3 style={{ fontSize: 15, fontWeight: 800, marginTop: 3 }}>{entry.title || 'Untitled'}</h3>
           </div>
           <Chip tone={entry.feedback ? 'green' : 'grey'}>{entry.feedback ? 'Feedback sent' : 'Awaiting'}</Chip>
         </div>
 
-        <Player entry={entry} project={project} onSaved={onSaved} />
+        {kind === 'video' ? (
+          <Player entry={entry} url={url} project={project} onSaved={onSaved} />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt="" style={{ width: '100%', display: 'block', background: '#000' }} />
+        )}
 
         <div style={{ padding: 15, display: 'flex', flexDirection: 'column', gap: 15 }}>
+          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+            <DownloadButton
+              url={url}
+              filename={`${entry.title || entry.id}${kind === 'video' ? '.mp4' : '.png'}`}
+              labelText={kind === 'video' ? 'Download video' : 'Download still'}
+            />
+          </div>
+
+          <MiscButton entry={entry} url={url} onSaved={onSaved} />
+
           {entry.note && (
             <div>
               <span style={label}>Note</span>
@@ -277,36 +290,6 @@ function EntryOverlay({
             </div>
           )}
 
-          {entry.contact_sheet_url && entry.video_url && (
-            <div>
-              <span style={label}>Contact sheet</span>
-              <a href={entry.contact_sheet_url} target="_blank" rel="noopener noreferrer">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={entry.contact_sheet_url}
-                  alt="Contact sheet"
-                  style={{ width: '100%', borderRadius: 8, display: 'block', border: '1px solid rgba(255,255,255,0.1)' }}
-                />
-              </a>
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
-            <DownloadButton
-              url={entry.video_url || entry.contact_sheet_url || ''}
-              filename={`${entry.title || entry.id}${entry.video_url ? '.mp4' : '.png'}`}
-              labelText={entry.video_url ? 'Download video' : 'Download still'}
-            />
-            {entry.video_url && entry.contact_sheet_url && (
-              <DownloadButton
-                url={entry.contact_sheet_url}
-                filename={`${entry.title || entry.id}_sheet.png`}
-                labelText="Download sheet"
-              />
-            )}
-          </div>
-
-          <MiscButton entry={entry} onSaved={onSaved} />
           <FeedbackForm entry={entry} projectId={project.id} onSaved={onSaved} />
         </div>
       </div>
@@ -350,7 +333,7 @@ function DownloadButton({ url, filename, labelText }: { url: string; filename: s
  * and the element sets crossOrigin — without both, the canvas would be
  * tainted and toBlob() would throw a security error.
  */
-function Player({ entry, project, onSaved }: { entry: Entry; project: Project; onSaved: () => void }) {
+function Player({ entry, url, project, onSaved }: { entry: Entry; url: string; project: Project; onSaved: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
@@ -396,18 +379,11 @@ function Player({ entry, project, onSaved }: { entry: Entry; project: Project; o
     }
   }
 
-  if (!entry.video_url) {
-    return entry.contact_sheet_url ? (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={entry.contact_sheet_url} alt="" style={{ width: '100%', display: 'block', background: '#000' }} />
-    ) : null
-  }
-
   return (
     <div>
       <video
         ref={videoRef}
-        src={entry.video_url}
+        src={url}
         controls
         playsInline
         crossOrigin="anonymous"
@@ -435,7 +411,7 @@ function Player({ entry, project, onSaved }: { entry: Entry; project: Project; o
   )
 }
 
-function MiscButton({ entry, onSaved }: { entry: Entry; onSaved: () => void }) {
+function MiscButton({ entry, url, onSaved }: { entry: Entry; url: string; onSaved: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -446,7 +422,7 @@ function MiscButton({ entry, onSaved }: { entry: Entry; onSaved: () => void }) {
       const res = await fetch('/api/dailies/misc', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entry_id: entry.id }),
+        body: JSON.stringify({ entry_id: entry.id, url }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
@@ -458,7 +434,7 @@ function MiscButton({ entry, onSaved }: { entry: Entry; onSaved: () => void }) {
     }
   }
 
-  if (entry.in_misc) {
+  if (entry.in_misc_urls.includes(url)) {
     return (
       <p style={{ fontSize: 11, opacity: 0.5, display: 'flex', alignItems: 'center', gap: 8 }}>
         <Chip tone="green">On Misc</Chip>
@@ -467,7 +443,7 @@ function MiscButton({ entry, onSaved }: { entry: Entry; onSaved: () => void }) {
     )
   }
 
-  if (entry.misc_removed) {
+  if (entry.misc_removed_urls.includes(url)) {
     return (
       <p style={{ fontSize: 11, opacity: 0.4, lineHeight: 1.5 }}>
         You deleted this from Misc. Restore it there rather than pushing again.
@@ -515,7 +491,9 @@ function Status({ project, onSaved }: { project: Project; onSaved: () => void })
   const change = async (status: ProjectStatus) => {
     // Finishing asks what to publish rather than sending everything: an
     // overnight run makes plenty that shouldn't go on the public site.
-    const publishable = project.entries.filter(e => !e.in_misc && !e.misc_removed)
+    const publishable = project.entries
+      .flatMap(entryAssets)
+      .filter(a => !a.entry.in_misc_urls.includes(a.url) && !a.entry.misc_removed_urls.includes(a.url))
     if (status === 'done' && publishable.length > 0) {
       setPicking(true)
       return
@@ -587,7 +565,9 @@ function Status({ project, onSaved }: { project: Project; onSaved: () => void })
 function PublishPicker({
   project, onCancel, onDone,
 }: { project: Project; onCancel: () => void; onDone: () => Promise<void> }) {
-  const candidates = project.entries.filter(e => !e.in_misc && !e.misc_removed)
+  const candidates = project.entries
+    .flatMap(entryAssets)
+    .filter(a => !a.entry.in_misc_urls.includes(a.url) && !a.entry.misc_removed_urls.includes(a.url))
   const [chosen, setChosen] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -605,11 +585,13 @@ function PublishPicker({
     setBusy(true)
     setError(null)
     try {
-      for (const id of Array.from(chosen)) {
+      for (const url of Array.from(chosen)) {
+        const asset = candidates.find(a => a.url === url)
+        if (!asset) continue
         const res = await fetch('/api/dailies/misc', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ entry_id: id }),
+          body: JSON.stringify({ entry_id: asset.entry.id, url }),
         })
         if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`)
       }
@@ -637,7 +619,7 @@ function PublishPicker({
         </p>
 
         <div style={{ display: 'flex', gap: 8, margin: '14px 0 10px' }}>
-          <button type="button" onClick={() => setChosen(new Set(candidates.map(e => e.id)))} style={{ ...ghostBtn, padding: '5px 11px' }}>
+          <button type="button" onClick={() => setChosen(new Set(candidates.map(a => a.url)))} style={{ ...ghostBtn, padding: '5px 11px' }}>
             Select all
           </button>
           <button type="button" onClick={() => setChosen(new Set())} style={{ ...ghostBtn, padding: '5px 11px' }}>
@@ -646,13 +628,14 @@ function PublishPicker({
         </div>
 
         <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))' }}>
-          {candidates.map(entry => {
-            const on = chosen.has(entry.id)
+          {candidates.map(asset => {
+            const entry = asset.entry
+            const on = chosen.has(asset.url)
             return (
               <button
-                key={entry.id}
+                key={asset.url}
                 type="button"
-                onClick={() => toggle(entry.id)}
+                onClick={() => toggle(asset.url)}
                 style={{
                   padding: 0, cursor: 'pointer', textAlign: 'left', color: 'inherit', font: 'inherit',
                   borderRadius: 10, overflow: 'hidden', background: 'rgba(255,255,255,0.03)',
@@ -660,12 +643,12 @@ function PublishPicker({
                 }}
               >
                 <div style={{ position: 'relative', background: '#000' }}>
-                  {entry.contact_sheet_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={entry.contact_sheet_url} alt="" style={{ width: '100%', height: 78, objectFit: 'cover', display: 'block', opacity: on ? 1 : 0.5 }} />
-                  ) : (
-                    <video src={`${entry.video_url}#t=0.1`} muted playsInline preload="metadata"
+                  {asset.kind === 'video' ? (
+                    <video src={`${asset.url}#t=0.1`} muted playsInline preload="metadata"
                       style={{ width: '100%', height: 78, objectFit: 'cover', display: 'block', opacity: on ? 1 : 0.5 }} />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={asset.url} alt="" style={{ width: '100%', height: 78, objectFit: 'cover', display: 'block', opacity: on ? 1 : 0.5 }} />
                   )}
                   {on && (
                     <span style={{
@@ -677,6 +660,7 @@ function PublishPicker({
                 </div>
                 <span style={{ display: 'block', padding: '7px 9px', fontSize: 11, fontWeight: 600 }}>
                   {entry.title || 'Untitled'}
+                  <span style={{ opacity: 0.4, fontWeight: 400 }}> · {asset.kind === 'video' ? 'video' : 'still'}</span>
                 </span>
               </button>
             )

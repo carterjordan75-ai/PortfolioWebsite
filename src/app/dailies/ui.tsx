@@ -40,8 +40,29 @@ export type Entry = {
   created_at: string
   updated_at: string
   feedback: Feedback | null
-  in_misc: boolean
-  misc_removed: boolean
+  in_misc_urls: string[]
+  misc_removed_urls: string[]
+}
+
+/**
+ * One media FILE belonging to an entry.
+ *
+ * A video and its contact sheet are different pictures at different
+ * aspect ratios, so they get their own tile, their own download and
+ * their own decision about going public. The feedback still belongs to
+ * the entry — that's the thing being reviewed.
+ */
+export type EntryAsset = {
+  entry: Entry
+  url: string
+  kind: 'video' | 'still'
+}
+
+export function entryAssets(entry: Entry): EntryAsset[] {
+  const out: EntryAsset[] = []
+  if (entry.video_url) out.push({ entry, url: entry.video_url, kind: 'video' })
+  if (entry.contact_sheet_url) out.push({ entry, url: entry.contact_sheet_url, kind: 'still' })
+  return out
 }
 
 export type Asset = {

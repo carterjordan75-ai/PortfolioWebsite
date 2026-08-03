@@ -364,8 +364,20 @@ has a download button. Projects keep a fixed order — oldest first, so a new
 one lands on the end and nothing ever moves — and a finished project stops
 showing an "awaiting" count, since finishing means you've seen it.
 
+**The unit on this page is the FILE, not the entry.** A video and its contact
+sheet are different pictures at different aspect ratios, so they get their own
+tile, their own download, and their own decision about going public — a 9:16
+clip sits next to its 1:1 sheet in the lineup rather than being folded into
+it. Feedback still belongs to the entry, since that's the thing being
+reviewed.
+
 Pieces are laid out in columns at their own aspect ratio rather than cropped
 into uniform cells, with a `Video` / `Still` label under each.
+
+`POST /api/dailies/misc` takes `{ entry_id, url }` — `url` must be one of that
+entry's own files, so the endpoint can't be used to put arbitrary URLs on the
+public page. Omitting `url` falls back to the entry's video, or its still if
+there is no video.
 
 ### Upload-only mode
 

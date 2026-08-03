@@ -339,9 +339,17 @@ type MiscData = { items: MiscItem[]; tombstones?: string[] }
 
 const fileNameOf = (url: string) => url.split('?')[0].split('/').pop() || 'file'
 
-/** The source URL an entry publishes as: the piece, not its contact sheet. */
-export const entrySource = (entry: Entry): string | null =>
-  entry.video_url || entry.contact_sheet_url || null
+/**
+ * Every media file an entry holds, as its own asset. A video and its
+ * contact sheet are different pictures at different aspect ratios, so
+ * they're listed, published and reviewed separately.
+ */
+export function entryAssets(entry: Entry): Array<{ url: string; kind: 'video' | 'still' }> {
+  const out: Array<{ url: string; kind: 'video' | 'still' }> = []
+  if (entry.video_url) out.push({ url: entry.video_url, kind: 'video' })
+  if (entry.contact_sheet_url) out.push({ url: entry.contact_sheet_url, kind: 'still' })
+  return out
+}
 
 /**
  * Every source already on /misc, plus every one that's been deleted from
@@ -359,53 +367,38 @@ export async function miscSources(
 }
 
 /**
- * Copy a finished project's entries onto /misc, tagged generative.
+ * Publish one asset to /misc, tagged generative.
  *
- * One item per entry: the video if there is one, otherwise the contact
- * sheet — pushing both would double up, since the sheet is a working
- * artefact of the same piece. Oldest first, so the run reads as a
- * progression.
- *
- * Skips anything already on /misc and anything tombstoned there, so
- * re-completing a project can't resurrect an item that was deliberately
- * deleted, and can't add it twice.
+ * Refuses anything already there or tombstoned, so pressing the button
+ * twice adds nothing and something deliberately deleted from Misc is
+ * never resurrected. Returns whether it actually added anything.
  */
-export async function mirrorProjectToMisc(
+export async function publishToMisc(
   project: Project,
-  entries: Entry[],
+  entry: Entry,
+  url: string,
+  kind: 'video' | 'still',
   seed: unknown,
-): Promise<number> {
+): Promise<boolean> {
   const current = await readVersionedJson<MiscData>(MISC_KEY, seed as MiscData)
   const items = Array.isArray(current.items) ? current.items : []
   const tombstones = new Set(current.tombstones || [])
-  const present = new Set(items.map(i => i.src))
+  if (tombstones.has(url) || items.some(i => i.src === url)) return false
 
-  const additions: MiscItem[] = []
-  const chronological = [...entries].sort((a, b) =>
-    (a.created_at || '').localeCompare(b.created_at || ''),
-  )
-
-  for (const entry of chronological) {
-    const src = entry.video_url || entry.contact_sheet_url
-    if (!src || present.has(src) || tombstones.has(src)) continue
-    present.add(src)
-    additions.push({
-      src,
-      type: entry.video_url ? 'video' : 'image',
-      title: entry.title || project.title,
-      year: Number((entry.date || entry.created_at || '').slice(0, 4)) || new Date().getFullYear(),
-      medium: [GEN_TAG],
-      fileName: fileNameOf(src),
-    })
+  const item: MiscItem = {
+    src: url,
+    type: kind === 'video' ? 'video' : 'image',
+    title: entry.title || project.title,
+    year: Number((entry.date || entry.created_at || '').slice(0, 4)) || new Date().getFullYear(),
+    medium: [GEN_TAG],
+    fileName: fileNameOf(url),
   }
 
-  if (additions.length === 0) return 0
-
   await writeVersionedJson(MISC_KEY, {
-    items: [...items, ...additions],
+    items: [...items, item],
     tombstones: current.tombstones || [],
   })
-  return additions.length
+  return true
 }
 
 // ── deletion ────────────────────────────────────────────────────────
