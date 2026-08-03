@@ -293,6 +293,80 @@ export async function listFeedback(): Promise<Feedback[]> {
     .sort((a, b) => (b.submitted_at || '').localeCompare(a.submitted_at || ''))
 }
 
+// ── mirroring finished work into /misc ──────────────────────────────
+
+const MISC_KEY = 'state/misc.json'
+
+/**
+ * The tag that lands an item in the generative panel on /misc. It has to
+ * be exactly this string — the page splits on it (see the isGenerative
+ * check in src/app/misc/page.tsx), so a looser label would show up but
+ * sort onto the wrong side.
+ */
+export const GEN_TAG = 'Generative'
+
+type MiscItem = {
+  src: string
+  type: 'video' | 'image'
+  title: string
+  year: number
+  medium?: string | string[]
+  fileName?: string
+}
+type MiscData = { items: MiscItem[]; tombstones?: string[] }
+
+const fileNameOf = (url: string) => url.split('?')[0].split('/').pop() || 'file'
+
+/**
+ * Copy a finished project's entries onto /misc, tagged generative.
+ *
+ * One item per entry: the video if there is one, otherwise the contact
+ * sheet — pushing both would double up, since the sheet is a working
+ * artefact of the same piece. Oldest first, so the run reads as a
+ * progression.
+ *
+ * Skips anything already on /misc and anything tombstoned there, so
+ * re-completing a project can't resurrect an item that was deliberately
+ * deleted, and can't add it twice.
+ */
+export async function mirrorProjectToMisc(
+  project: Project,
+  entries: Entry[],
+  seed: unknown,
+): Promise<number> {
+  const current = await readVersionedJson<MiscData>(MISC_KEY, seed as MiscData)
+  const items = Array.isArray(current.items) ? current.items : []
+  const tombstones = new Set(current.tombstones || [])
+  const present = new Set(items.map(i => i.src))
+
+  const additions: MiscItem[] = []
+  const chronological = [...entries].sort((a, b) =>
+    (a.created_at || '').localeCompare(b.created_at || ''),
+  )
+
+  for (const entry of chronological) {
+    const src = entry.video_url || entry.contact_sheet_url
+    if (!src || present.has(src) || tombstones.has(src)) continue
+    present.add(src)
+    additions.push({
+      src,
+      type: entry.video_url ? 'video' : 'image',
+      title: entry.title || project.title,
+      year: Number((entry.date || entry.created_at || '').slice(0, 4)) || new Date().getFullYear(),
+      medium: [GEN_TAG],
+      fileName: fileNameOf(src),
+    })
+  }
+
+  if (additions.length === 0) return 0
+
+  await writeVersionedJson(MISC_KEY, {
+    items: [...items, ...additions],
+    tombstones: current.tombstones || [],
+  })
+  return additions.length
+}
+
 // ── deletion ────────────────────────────────────────────────────────
 // An unattended overnight run can produce dozens of entries, so pruning
 // is a first-class operation, not an afterthought. Deletes take the

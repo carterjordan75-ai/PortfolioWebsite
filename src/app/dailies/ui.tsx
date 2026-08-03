@@ -55,7 +55,11 @@ export type ProjectStatus = 'draft' | 'active' | 'done'
 export const STATUS_OPTIONS: Array<{ value: ProjectStatus; label: string; hint: string }> = [
   { value: 'draft', label: 'Not started', hint: 'The PC ignores this — time to write the brief' },
   { value: 'active', label: 'In progress', hint: 'The PC works on this one' },
-  { value: 'done', label: 'Done', hint: 'Finished — the PC moves to the next started project' },
+  {
+    value: 'done',
+    label: 'Done',
+    hint: 'Finished — publishes the entries to Misc as generative, and the PC moves to the next started project',
+  },
 ]
 
 export const STATUS_LABEL: Record<ProjectStatus, string> = {

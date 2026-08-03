@@ -332,3 +332,22 @@ created as `draft` for that reason.
 Run the watcher without `--project` to follow the queue; each project gets its
 own folder under `--dir`. Pass `--project` to ignore the queue and pin to one,
 in which case `--dir` is that project's folder directly.
+
+### Publishing to /misc
+
+Marking a project **Done** copies its entries onto `/misc`, tagged
+`Generative`. That exact string matters — the Misc page splits its two panels
+on it, so a looser label would show up but sort onto the wrong side.
+
+One item per entry: the video if there is one, otherwise the contact sheet.
+Pushing both would double up, since the sheet is a working artefact of the
+same piece. Oldest first, so the run reads as a progression.
+
+It fires on the transition only, and skips anything already on `/misc` or
+tombstoned there. So re-saving a finished project doesn't duplicate it, and an
+item you deliberately deleted from Misc doesn't come back if the project is
+re-completed. `POST /api/dailies/projects` reports how many were added as
+`mirrored_to_misc`.
+
+Prune before you finish: entries deleted from the project never reach Misc,
+so an overnight run's rejects can be cleared first.

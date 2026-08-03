@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
+import { readVersionedJson, writeVersionedJson } from '@/lib/blobStore'
 import seedMisc from '../../../../data/misc.json'
+
+// Versioned reads/writes, not plain ones. Overwriting a blob keeps its
+// URL and that URL is CDN-fronted, so a save was invisible here for up
+// to a minute afterwards — measured directly: an 88-item write still
+// read back as 86 with `x-vercel-cache: HIT`. Worse than the lag, the
+// admin panel does read-modify-write, so a second edit inside that
+// window would drop the first. The versioned helpers never overwrite:
+// each save lands on a fresh pathname and readers resolve the newest
+// through list(), which is immediately consistent. Legacy unversioned
+// blobs are picked up unchanged, so no migration was needed.
 
 // Live admin data — always rerun, never serve from edge/static cache.
 export const dynamic = 'force-dynamic'
@@ -19,7 +29,7 @@ type MiscData = { items: MiscItem[]; tombstones?: string[] }
 // the next reload. Tombstones make deletes sticky.
 
 async function getData(): Promise<MiscData> {
-  return readJsonBlob<MiscData>(BLOB_KEY, seedMisc as MiscData)
+  return readVersionedJson<MiscData>(BLOB_KEY, seedMisc as MiscData)
 }
 
 export async function GET() {
@@ -39,7 +49,7 @@ export async function POST(request: NextRequest) {
     if (body.action === 'append' && Array.isArray(body.items)) {
       const current = await getData()
       const next = [...(current.items || []), ...body.items]
-      await writeJsonBlob(BLOB_KEY, { items: next, tombstones: current.tombstones || [] })
+      await writeVersionedJson(BLOB_KEY, { items: next, tombstones: current.tombstones || [] })
       return NextResponse.json({ success: true, items: next })
     }
     // Full-replace path. Tombstones are MERGED with whatever's already in
@@ -49,7 +59,7 @@ export async function POST(request: NextRequest) {
     const existing = current.tombstones || []
     const incoming = Array.isArray(tombstones) ? tombstones : []
     const mergedTombstones = Array.from(new Set([...existing, ...incoming]))
-    await writeJsonBlob(BLOB_KEY, { items, tombstones: mergedTombstones })
+    await writeVersionedJson(BLOB_KEY, { items, tombstones: mergedTombstones })
     return NextResponse.json({ success: true, items, tombstones: mergedTombstones })
   } catch (err) {
     console.error('Misc API error:', err)

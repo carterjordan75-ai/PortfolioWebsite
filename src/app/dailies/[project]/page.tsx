@@ -190,15 +190,19 @@ function Hero({ project, onSaved }: { project: Project; onSaved: () => void }) {
  */
 function Status({ project, onSaved }: { project: Project; onSaved: () => void }) {
   const [saving, setSaving] = useState(false)
+  const [mirrored, setMirrored] = useState<number | null>(null)
 
   const change = async (status: ProjectStatus) => {
     setSaving(true)
+    setMirrored(null)
     try {
-      await fetch('/api/dailies/projects', {
+      const res = await fetch('/api/dailies/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: project.id, status }),
       })
+      const data = await res.json().catch(() => ({}))
+      if (data.mirrored_to_misc) setMirrored(data.mirrored_to_misc)
       onSaved()
     } finally {
       setSaving(false)
@@ -241,6 +245,20 @@ function Status({ project, onSaved }: { project: Project; onSaved: () => void })
       {queued && (
         <p style={{ fontSize: 11, marginTop: 10, lineHeight: 1.5, color: 'rgb(252,211,77)' }}>
           {saving ? 'Saving…' : 'Queued behind an earlier project — the PC starts this once that one is marked Done.'}
+        </p>
+      )}
+      {mirrored !== null && (
+        <p style={{ fontSize: 11, marginTop: 8, lineHeight: 1.5, color: 'rgb(74,222,128)' }}>
+          Published {mirrored} {mirrored === 1 ? 'piece' : 'pieces'} to{' '}
+          <a href="/misc" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>
+            Misc
+          </a>{' '}
+          as generative.
+        </p>
+      )}
+      {project.status === 'done' && mirrored === null && (
+        <p style={{ fontSize: 11, opacity: 0.4, marginTop: 8, lineHeight: 1.5 }}>
+          Entries were published to Misc as generative when this was marked Done.
         </p>
       )}
     </section>
