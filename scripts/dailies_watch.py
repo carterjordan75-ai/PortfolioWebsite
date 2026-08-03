@@ -43,6 +43,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -201,8 +202,27 @@ def build_prompt(project: dict, feedback: list, work: Path) -> str:
 # ── the agent ───────────────────────────────────────────────────────
 
 
+def resolve_command(cmd: list) -> list:
+    """
+    Make the command actually launchable.
+
+    On Windows, npm installs CLIs as `.cmd` shims and CreateProcess can't
+    run those directly — they have to go through the command interpreter,
+    or subprocess raises FileNotFoundError even though the command works
+    fine when typed by hand.
+    """
+    exe = shutil.which(cmd[0])
+    if exe is None:
+        return cmd  # let it fail with the friendly message below
+    if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
+        return ["cmd", "/c", exe] + cmd[1:]
+    return [exe] + cmd[1:]
+
+
 def run_agent(agent_cmd: str, prompt: str, work: Path, timeout: int) -> str:
-    cmd = shlex.split(agent_cmd) + [prompt]
+    # posix=False on Windows so backslashes in paths survive splitting.
+    parts = shlex.split(agent_cmd, posix=(os.name != "nt"))
+    cmd = resolve_command(parts) + [prompt]
     log(f"  running: {' '.join(shlex.quote(c) for c in cmd[:-1])} <prompt>")
     try:
         proc = subprocess.run(
