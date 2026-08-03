@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import {
   checkApiKey,
   checkSession,
+  currentProjectId,
   deleteEntry,
   getEntry,
   getFeedback,
@@ -159,6 +160,10 @@ export async function GET(request: Request) {
       entries.map(async entry => ({ ...entry, feedback: await getFeedback(entry.id) })),
     )
 
+    // Computed across ALL projects, not the filtered view — otherwise a
+    // single-project request would always call itself the current one.
+    const current = currentProjectId(projects)
+
     const shaped = projects
       .filter(p => !projectFilter || p.id === projectFilter)
       .map(p => {
@@ -169,11 +174,12 @@ export async function GET(request: Request) {
           entry_count: mine.length,
           awaiting_count: mine.filter(e => !e.feedback).length,
           latest_entry_at: mine[0]?.created_at ?? null,
+          is_current: p.id === current,
           entries: mine,
         }
       })
 
-    return NextResponse.json({ projects: shaped }, NO_CACHE)
+    return NextResponse.json({ projects: shaped, current_project_id: current }, NO_CACHE)
   } catch (err) {
     console.error('GET /api/dailies error:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })

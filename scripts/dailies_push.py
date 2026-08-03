@@ -116,8 +116,10 @@ def cmd_projects(args):
     if not projects:
         print("No projects yet — make one at", f"{BASE_URL}/dailies")
         return
+    labels = {"draft": "not started", "active": "in progress", "done": "done"}
     for p in projects:
-        print(f"{p['id']}  —  {p['title']}")
+        mark = " <- PC is on this" if p.get("is_current") else ""
+        print(f"{p['id']}  —  {p['title']}  [{labels.get(p.get('status'), '?')}]{mark}")
         print(f"    {p['entry_count']} entries, {len(p.get('references', []))} references")
         if p.get("brief"):
             first = p["brief"].strip().splitlines()[0]

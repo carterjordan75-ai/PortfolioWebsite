@@ -60,15 +60,37 @@ export type Reference = {
   added_at: string
 }
 
+/**
+ * Where a project sits in the queue.
+ *
+ * `draft` exists so finishing one project doesn't immediately hand the
+ * machine a half-written brief — a new project stays out of the queue
+ * until it's deliberately started.
+ */
+export type ProjectStatus = 'draft' | 'active' | 'done'
+export const PROJECT_STATUSES: ProjectStatus[] = ['draft', 'active', 'done']
+
 export type Project = {
   id: string
   title: string
   brief: string
   hero_url: string | null
   references: Reference[]
-  archived: boolean
+  status: ProjectStatus
   created_at: string
   updated_at: string
+}
+
+/**
+ * The one project the machine should be working on: the oldest that's
+ * been started. Single-focus by design — the queue advances only when
+ * you mark the current one done.
+ */
+export function currentProjectId(projects: Project[]): string | null {
+  const active = projects
+    .filter(p => p.status === 'active')
+    .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+  return active[0]?.id ?? null
 }
 
 export type Entry = {

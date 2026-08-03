@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
-  Chip, Gate, Header, Page, SCALE, card, field, ghostBtn, label, solidBtn,
-  uploadViaTicket, type Entry, type Project, type Reference,
+  Chip, Gate, Header, Page, SCALE, STATUS_OPTIONS, card, field, ghostBtn, label, solidBtn,
+  uploadViaTicket, type Entry, type Project, type ProjectStatus, type Reference,
 } from '../ui'
 
 /**
@@ -91,6 +91,7 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
 
       <main style={{ maxWidth: 860, margin: '0 auto', padding: '22px 16px', display: 'flex', flexDirection: 'column', gap: 26 }}>
         <Hero project={project} onSaved={load} />
+        <Status project={project} onSaved={load} />
         <Brief project={project} onSaved={load} />
         <References project={project} onSaved={load} />
 
@@ -175,6 +176,73 @@ function Hero({ project, onSaved }: { project: Project; onSaved: () => void }) {
         {uploading && <span style={{ fontSize: 10, opacity: 0.6, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Uploading…</span>}
         {error && <span style={{ fontSize: 10, color: '#f87171' }}>{error}</span>}
       </div>
+    </section>
+  )
+}
+
+// ── status ──────────────────────────────────────────────────────────
+
+/**
+ * The queue control. The machine works on the oldest project marked
+ * "In progress" and nothing else, so marking this one Done is what
+ * releases it to the next — and a project sitting in "Not started" is
+ * one you can gather a brief and references for at your own pace.
+ */
+function Status({ project, onSaved }: { project: Project; onSaved: () => void }) {
+  const [saving, setSaving] = useState(false)
+
+  const change = async (status: ProjectStatus) => {
+    setSaving(true)
+    try {
+      await fetch('/api/dailies/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: project.id, status }),
+      })
+      onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // "In progress" doesn't mean "being worked on" if something older is
+  // still open, so the queued warning replaces the generic hint.
+  const queued = project.status === 'active' && !project.is_current
+  const hint = queued ? null : STATUS_OPTIONS.find(o => o.value === project.status)?.hint
+
+  return (
+    <section style={{ ...card, padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <span style={{ ...label, marginBottom: 0 }}>Status</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {project.is_current && <Chip tone="green">PC is on this</Chip>}
+          <select
+            value={project.status}
+            disabled={saving}
+            onChange={e => change(e.target.value as ProjectStatus)}
+            style={{
+              ...field, width: 'auto', padding: '9px 12px', cursor: 'pointer',
+              // Native select menus render their options in the OS palette;
+              // without this the list is white-on-white on some browsers.
+              colorScheme: 'dark',
+            }}
+          >
+            {STATUS_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {hint && (
+        <p style={{ fontSize: 11, opacity: 0.45, marginTop: 10, lineHeight: 1.5 }}>
+          {saving ? 'Saving…' : hint}
+        </p>
+      )}
+      {queued && (
+        <p style={{ fontSize: 11, marginTop: 10, lineHeight: 1.5, color: 'rgb(252,211,77)' }}>
+          {saving ? 'Saving…' : 'Queued behind an earlier project — the PC starts this once that one is marked Done.'}
+        </p>
+      )}
     </section>
   )
 }

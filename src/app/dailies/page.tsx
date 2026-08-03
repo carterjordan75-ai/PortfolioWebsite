@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  Chip, Gate, Header, Page, card, field, ghostBtn, label, solidBtn,
+  Chip, Gate, Header, Page, STATUS_LABEL, card, field, ghostBtn, label, solidBtn,
   type Project,
 } from './ui'
 
@@ -65,6 +65,11 @@ function Index({ signOut }: { signOut: () => Promise<void> }) {
 
   const awaiting = projects.reduce((n, p) => n + p.awaiting_count, 0)
 
+  // What the PC is on leads; finished work sinks. Within a band the API's
+  // most-recently-touched order is kept.
+  const rank = (p: Project) => (p.is_current ? 0 : p.status === 'active' ? 1 : p.status === 'draft' ? 2 : 3)
+  const ordered = [...projects].sort((a, b) => rank(a) - rank(b))
+
   return (
     <Page>
       <Header
@@ -113,7 +118,7 @@ function Index({ signOut }: { signOut: () => Promise<void> }) {
           display: 'grid', gap: 16,
           gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
         }}>
-          {projects.map(p => (
+          {ordered.map(p => (
             <Link key={p.id} href={`/dailies/${p.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
               <article style={{ ...card, height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <div style={{
@@ -137,6 +142,15 @@ function Index({ signOut }: { signOut: () => Promise<void> }) {
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                     <h2 style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.3 }}>{p.title}</h2>
                     {p.awaiting_count > 0 && <Chip tone="amber">{p.awaiting_count} new</Chip>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {p.is_current ? (
+                      <Chip tone="green">PC is on this</Chip>
+                    ) : p.status === 'active' ? (
+                      <Chip tone="amber">Queued</Chip>
+                    ) : (
+                      <Chip tone="grey">{STATUS_LABEL[p.status]}</Chip>
+                    )}
                   </div>
                   {p.brief && (
                     <p style={{

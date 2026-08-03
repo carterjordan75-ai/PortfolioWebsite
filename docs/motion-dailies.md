@@ -309,3 +309,26 @@ name, size and mtime, so a file already pushed isn't pushed again.
 This runs an agent unattended on instructions typed from a phone. Point
 `--dir` at a project directory rather than a home folder, and keep it under
 git so every change is visible and reversible.
+
+### The queue
+
+Every project has a status, set from the dropdown on its page:
+
+| Status | Meaning |
+| --- | --- |
+| `draft` | Not started — the machine ignores it entirely |
+| `active` | In progress |
+| `done` | Finished |
+
+The machine works on **exactly one project**: the oldest `active` one. Both
+`GET /api/dailies` and `GET /api/dailies/projects` report it as
+`current_project_id`, with `is_current` on each project.
+
+Marking the current project Done is what advances the queue. `draft` is the
+half of it that matters — a finished project hands off to the next *started*
+one, never to a project whose brief is still being written. New projects are
+created as `draft` for that reason.
+
+Run the watcher without `--project` to follow the queue; each project gets its
+own folder under `--dir`. Pass `--project` to ignore the queue and pin to one,
+in which case `--dir` is that project's folder directly.

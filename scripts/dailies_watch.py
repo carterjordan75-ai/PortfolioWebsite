@@ -2,14 +2,20 @@
 """Run Claude Code against a Motion Dailies project, unattended.
 
     export DAILIES_API_KEY=...
-    python3 dailies_watch.py --project kinetic-type --dir ~/work/kinetic
+    python3 dailies_watch.py --dir ~/work --idle-run
+
+It follows the queue: the site marks exactly one project as current — the
+oldest one set to "In progress" — and this works on that and nothing
+else. Marking it Done from your phone is what moves it to the next, so a
+project you're still writing a brief for is never picked up early.
 
 Each cycle it:
-  1. pulls the project's brief + references into <dir>/references/
-  2. pulls any feedback submitted since last time (with its images)
-  3. runs the agent in <dir>, handing it the brief and that feedback
-  4. pushes whatever new files landed in <dir>/out/ back to the portal
-  5. sleeps, then repeats
+  1. asks which project is current; each gets its own <dir>/<project>/
+  2. pulls that project's brief + references into ./references/
+  3. pulls any feedback submitted since last time (with its images)
+  4. runs the agent there, handing it the brief and that feedback
+  5. pushes whatever new files landed in ./out/ back to the portal
+  6. sleeps, then repeats
 
 So you leave it running: notes you write on your phone get picked up on
 the next cycle, and what it makes appears on the site as a new entry.
@@ -20,6 +26,7 @@ The machine only ever makes OUTBOUND calls — nothing needs to reach it.
   --idle-run      keep working from the brief even when there's no
                   feedback; this is the overnight mode
   --interval N    seconds between cycles (default 300)
+  --project ID    ignore the queue and pin to one project
   --agent-cmd     override how the agent is invoked
 
 SAFETY: this runs an agent unattended on instructions typed from a phone,
@@ -83,13 +90,31 @@ def save_state(work: Path, state: dict):
 # ── inputs ──────────────────────────────────────────────────────────
 
 
-def sync_project(project_id: str, work: Path) -> dict:
-    """Brief + references into <dir>/references/. Returns the project."""
-    data = _api("/api/dailies/projects")
-    project = next((p for p in data.get("projects", []) if p["id"] == project_id), None)
-    if project is None:
-        raise SystemExit(f"No project '{project_id}'. Create it at {BASE_URL}/dailies")
+def pick_project(pinned: str | None) -> dict | None:
+    """
+    Which project to work on now.
 
+    Unpinned, this follows the queue: the site marks exactly one project
+    as current — the oldest one set to "In progress" — and the machine
+    works on that and nothing else. Marking it Done on the phone is what
+    releases the machine to the next one, which is also what stops it
+    picking up a project whose brief isn't written yet.
+    """
+    data = _api("/api/dailies/projects")
+    projects = data.get("projects", [])
+
+    if pinned:
+        project = next((p for p in projects if p["id"] == pinned), None)
+        if project is None:
+            raise SystemExit(f"No project '{pinned}'. Create it at {BASE_URL}/dailies")
+        return project
+
+    current = data.get("current_project_id")
+    return next((p for p in projects if p["id"] == current), None) if current else None
+
+
+def sync_project(project: dict, work: Path) -> dict:
+    """Brief + references into <dir>/references/. Returns the project."""
     refs = work / "references"
     refs.mkdir(parents=True, exist_ok=True)
     (refs / "BRIEF.txt").write_text(project.get("brief") or "", encoding="utf-8")
@@ -262,17 +287,38 @@ def push_output(project_id: str, path: Path, work: Path, agent_output: str, ques
 # ── the loop ────────────────────────────────────────────────────────
 
 
-def cycle(args, work: Path, questions) -> None:
-    state = load_state(work)
+def cycle(args, root: Path, log_state: dict) -> None:
+    project = pick_project(args.project)
+    if project is None:
+        # Said once, not every cycle — this is the normal state while
+        # you're writing the brief for whatever comes next.
+        if log_state.get("idle_notice") != "none":
+            log("  no project in progress — mark one 'In progress' on the site")
+            log_state["idle_notice"] = "none"
+        return
+    log_state["idle_notice"] = project["id"]
 
-    project = sync_project(args.project, work)
-    feedback = fetch_feedback(args.project, state.get("last_feedback_at"))
+    project_id = project["id"]
+    # Each project gets its own folder, so switching projects never mixes
+    # one piece of work into another's directory.
+    work = root / project_id if not args.project else root
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "out").mkdir(exist_ok=True)
+
+    qfile = work / "questions.json"
+    questions = json.loads(qfile.read_text()) if qfile.exists() else None
+
+    state = load_state(work)
+    sync_project(project, work)
+    feedback = fetch_feedback(project_id, state.get("last_feedback_at"))
 
     if feedback:
-        log(f"  {len(feedback)} new piece(s) of feedback")
+        log(f"  {project_id}: {len(feedback)} new piece(s) of feedback")
     elif not args.idle_run:
-        log("  nothing new — skipping the agent (pass --idle-run to work anyway)")
+        log(f"  {project_id}: nothing new (pass --idle-run to work anyway)")
         return
+    else:
+        log(f"  {project_id}: working from the brief")
 
     prompt = build_prompt(project, feedback, work)
     (work / ".dailies-last-prompt.txt").write_text(prompt, encoding="utf-8")
@@ -285,7 +331,7 @@ def cycle(args, work: Path, questions) -> None:
 
     for path, key in collect_outputs(work, state):
         try:
-            entry_id = push_output(args.project, path, work, output, questions)
+            entry_id = push_output(project_id, path, work, output, questions)
             state.setdefault("pushed", []).append(key)
             log(f"  pushed {path.name} -> {entry_id}")
         except SystemExit as err:
@@ -296,8 +342,15 @@ def cycle(args, work: Path, questions) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--project", required=True, help="project id, e.g. kinetic-type")
-    parser.add_argument("--dir", required=True, help="working directory for the agent")
+    parser.add_argument(
+        "--project",
+        help="pin to one project; omit to follow the queue (recommended)",
+    )
+    parser.add_argument(
+        "--dir",
+        required=True,
+        help="workspace root — each project gets its own folder inside it",
+    )
     parser.add_argument("--interval", type=int, default=300, help="seconds between cycles")
     parser.add_argument("--timeout", type=int, default=3600, help="max seconds per agent run")
     parser.add_argument("--once", action="store_true", help="one cycle, then exit")
@@ -308,20 +361,21 @@ def main():
     if not os.environ.get("DAILIES_API_KEY"):
         raise SystemExit("Set DAILIES_API_KEY in the environment first.")
 
-    work = Path(args.dir).expanduser().resolve()
-    work.mkdir(parents=True, exist_ok=True)
-    (work / "out").mkdir(exist_ok=True)
+    root = Path(args.dir).expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
 
-    # Optional: questions attached to everything this project pushes.
-    qfile = work / "questions.json"
-    questions = json.loads(qfile.read_text()) if qfile.exists() else None
+    log(f"workspace: {root}")
+    log(f"portal:    {BASE_URL}/dailies")
+    log(
+        "following the queue — whichever project is 'In progress'"
+        if not args.project
+        else f"pinned to {args.project}"
+    )
 
-    log(f"watching {args.project} in {work}")
-    log(f"portal: {BASE_URL}/dailies/{args.project}")
-
+    log_state: dict = {}
     while True:
         try:
-            cycle(args, work, questions)
+            cycle(args, root, log_state)
         except (urllib.error.URLError, TimeoutError) as err:
             log(f"  network problem, will retry: {err}")
         except SystemExit as err:

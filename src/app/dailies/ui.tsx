@@ -49,18 +49,34 @@ export type Reference = {
   added_at: string
 }
 
+export type ProjectStatus = 'draft' | 'active' | 'done'
+
+/** Ordered as they appear in the dropdown. */
+export const STATUS_OPTIONS: Array<{ value: ProjectStatus; label: string; hint: string }> = [
+  { value: 'draft', label: 'Not started', hint: 'The PC ignores this — time to write the brief' },
+  { value: 'active', label: 'In progress', hint: 'The PC works on this one' },
+  { value: 'done', label: 'Done', hint: 'Finished — the PC moves to the next started project' },
+]
+
+export const STATUS_LABEL: Record<ProjectStatus, string> = {
+  draft: 'Not started',
+  active: 'In progress',
+  done: 'Done',
+}
+
 export type Project = {
   id: string
   title: string
   brief: string
   hero_url: string | null
   references: Reference[]
-  archived: boolean
+  status: ProjectStatus
   created_at: string
   updated_at: string
   entry_count: number
   awaiting_count: number
   latest_entry_at: string | null
+  is_current: boolean
   entries: Entry[]
 }
 

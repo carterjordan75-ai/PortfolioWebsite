@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import {
+  PROJECT_STATUSES,
   checkApiKey,
   checkSession,
+  currentProjectId,
   deleteProject,
   getProject,
   isValidId,
@@ -10,6 +12,7 @@ import {
   saveProject,
   slugify,
   type Project,
+  type ProjectStatus,
   type Reference,
 } from '@/lib/dailies'
 
@@ -59,23 +62,24 @@ export async function GET(request: Request) {
 
   try {
     const [projects, entries] = await Promise.all([listProjects(), listEntries()])
-    const includeArchived = new URL(request.url).searchParams.get('archived') === '1'
+    const current = currentProjectId(projects)
 
-    const withCounts = projects
-      .filter(p => includeArchived || !p.archived)
-      .map(p => {
-        const mine = entries.filter(e => e.project_id === p.id)
-        return {
-          ...p,
-          entry_count: mine.length,
-          latest_entry_at: mine[0]?.created_at ?? null,
-          // A project with no hero still needs a face in the grid: fall
-          // back to the newest contact sheet it has produced.
-          hero_url: p.hero_url || mine.find(e => e.contact_sheet_url)?.contact_sheet_url || null,
-        }
-      })
+    const withCounts = projects.map(p => {
+      const mine = entries.filter(e => e.project_id === p.id)
+      return {
+        ...p,
+        entry_count: mine.length,
+        latest_entry_at: mine[0]?.created_at ?? null,
+        // The machine works on exactly one project at a time; this is
+        // how both the page and the watcher agree on which.
+        is_current: p.id === current,
+        // A project with no hero still needs a face in the grid: fall
+        // back to the newest contact sheet it has produced.
+        hero_url: p.hero_url || mine.find(e => e.contact_sheet_url)?.contact_sheet_url || null,
+      }
+    })
 
-    return NextResponse.json({ projects: withCounts }, NO_CACHE)
+    return NextResponse.json({ projects: withCounts, current_project_id: current }, NO_CACHE)
   } catch (err) {
     console.error('GET /api/dailies/projects error:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -120,6 +124,16 @@ export async function POST(request: Request) {
     references = parsed
   }
 
+  if (
+    body.status !== undefined &&
+    !PROJECT_STATUSES.includes(body.status as ProjectStatus)
+  ) {
+    return NextResponse.json(
+      { error: `status must be one of ${PROJECT_STATUSES.join(' | ')}` },
+      { status: 400 },
+    )
+  }
+
   const existing = await getProject(id)
   const now = new Date().toISOString()
 
@@ -131,7 +145,9 @@ export async function POST(request: Request) {
     brief: typeof body.brief === 'string' ? body.brief : existing?.brief ?? '',
     hero_url: typeof body.hero_url === 'string' ? body.hero_url : existing?.hero_url ?? null,
     references: references ?? existing?.references ?? [],
-    archived: typeof body.archived === 'boolean' ? body.archived : existing?.archived ?? false,
+    // New projects start as drafts: nothing enters the queue until you
+    // say so, which is what buys the time to write a brief.
+    status: (body.status as ProjectStatus) ?? existing?.status ?? 'draft',
     created_at: existing?.created_at ?? now,
     updated_at: now,
   }
