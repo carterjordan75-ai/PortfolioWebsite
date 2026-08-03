@@ -343,22 +343,29 @@ in which case `--dir` is that project's folder directly.
 
 ### Publishing to /misc
 
-Marking a project **Done** copies its entries onto `/misc`, tagged
+Marking a project **Done** asks which entries should go onto `/misc`, tagged
 `Generative`. That exact string matters — the Misc page splits its two panels
 on it, so a looser label would show up but sort onto the wrong side.
+
+Finishing does not publish on its own: an overnight run makes plenty that
+shouldn't be public, so the page shows a picker and posts the chosen entries
+to `/api/dailies/misc` individually. Nothing is selected by default.
 
 One item per entry: the video if there is one, otherwise the contact sheet.
 Pushing both would double up, since the sheet is a working artefact of the
 same piece. Oldest first, so the run reads as a progression.
 
-It fires on the transition only, and skips anything already on `/misc` or
-tombstoned there. So re-saving a finished project doesn't duplicate it, and an
-item you deliberately deleted from Misc doesn't come back if the project is
-re-completed. `POST /api/dailies/projects` reports how many were added as
-`mirrored_to_misc`.
+Pushing skips anything already on `/misc` or tombstoned there, so pressing
+twice adds nothing and an item deliberately deleted from Misc never comes
+back.
 
-Prune before you finish: entries deleted from the project never reach Misc,
-so an overnight run's rejects can be cleared first.
+The entries grid is an **archive**: entries cannot be deleted, and every piece
+has a download button. Projects keep a fixed order — oldest first, so a new
+one lands on the end and nothing ever moves — and a finished project stops
+showing an "awaiting" count, since finishing means you've seen it.
+
+Pieces are laid out in columns at their own aspect ratio rather than cropped
+into uniform cells, with a `Video` / `Still` label under each.
 
 ### Upload-only mode
 

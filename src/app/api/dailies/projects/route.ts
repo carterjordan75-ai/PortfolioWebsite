@@ -1,11 +1,6 @@
 import { NextResponse } from 'next/server'
-// Statically imported so Next bundles it: /misc falls back to this seed
-// when nothing has been written to Blob yet, and mirroring must append to
-// the seed rather than replace it with just the new items.
-import seedMisc from '../../../../../data/misc.json'
 import {
   PROJECT_STATUSES,
-  mirrorProjectToMisc,
   referenceType,
   checkApiKey,
   checkSession,
@@ -174,26 +169,11 @@ export async function POST(request: Request) {
 
   try {
     await saveProject(project)
-
-    // Finishing a project publishes it to /misc, tagged generative. Fires
-    // on the TRANSITION only — re-saving an already-done project must not
-    // mirror it a second time.
-    let mirrored = 0
-    if (project.status === 'done' && existing?.status !== 'done') {
-      try {
-        const entries = (await listEntries()).filter(e => e.project_id === id)
-        mirrored = await mirrorProjectToMisc(project, entries, seedMisc)
-      } catch (err) {
-        // A mirroring failure must not lose the status change itself —
-        // that's the thing the reviewer actually asked for.
-        console.error('mirror to misc failed:', err)
-      }
-    }
-
-    return NextResponse.json(
-      { success: true, created: !existing, project, mirrored_to_misc: mirrored },
-      NO_CACHE,
-    )
+    // Finishing a project no longer publishes it automatically. Not
+    // everything an overnight run makes belongs on the public site, so
+    // the page asks which pieces to send and posts them to
+    // /api/dailies/misc individually.
+    return NextResponse.json({ success: true, created: !existing, project }, NO_CACHE)
   } catch (err) {
     console.error('POST /api/dailies/projects error:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })

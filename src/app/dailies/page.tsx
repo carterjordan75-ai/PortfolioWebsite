@@ -63,12 +63,12 @@ function Index({ signOut }: { signOut: () => Promise<void> }) {
     }
   }
 
-  const awaiting = projects.reduce((n, p) => n + p.awaiting_count, 0)
+  const awaiting = projects.reduce((n, p) => n + (p.status === 'done' ? 0 : p.awaiting_count), 0)
 
-  // What the PC is on leads; finished work sinks. Within a band the API's
-  // most-recently-touched order is kept.
-  const rank = (p: Project) => (p.is_current ? 0 : p.status === 'active' ? 1 : p.status === 'draft' ? 2 : 3)
-  const ordered = [...projects].sort((a, b) => rank(a) - rank(b))
+  // Fixed order: oldest first, so a new project lands on the end and
+  // nothing ever moves. Sorting by status would reshuffle the grid every
+  // time something changed, and you'd lose where things are.
+  const ordered = [...projects].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
 
   return (
     <Page>
@@ -141,7 +141,10 @@ function Index({ signOut }: { signOut: () => Promise<void> }) {
                 <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                     <h2 style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.3 }}>{p.title}</h2>
-                    {p.awaiting_count > 0 && <Chip tone="amber">{p.awaiting_count} new</Chip>}
+                    {/* A finished project has been seen — nothing is "new" on it. */}
+                    {p.awaiting_count > 0 && p.status !== 'done' && (
+                      <Chip tone="amber">{p.awaiting_count} new</Chip>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {p.is_current ? (

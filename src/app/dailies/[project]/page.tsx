@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 import {
-  Chip, Gate, Header, Page, SCALE, STATUS_OPTIONS, card, field, ghostBtn, isVideoRef,
-  label, solidBtn, uploadViaTicket,
+  Chip, Gate, Header, Page, SCALE, STATUS_OPTIONS, card, downloadAsset, field, ghostBtn,
+  isVideoRef, label, solidBtn, uploadViaTicket,
   type Asset, type Entry, type Project, type ProjectStatus,
 } from '../ui'
 
@@ -14,9 +14,10 @@ import {
  * One project: the standing brief, the references the PC builds from,
  * and a grid of everything it has produced.
  *
- * Entries are a scrollable grid rather than a stack of full cards — an
- * overnight run makes dozens, and stacked players make that unreadable.
- * Tapping a tile opens the piece with its feedback form.
+ * The entries grid is an archive: nothing here deletes, and nothing
+ * reorders itself. Pieces are laid out at their own aspect ratio rather
+ * than cropped into uniform cells — a 9:16 clip and a wide still are
+ * both the finished thing, and squaring them off hides what they are.
  *
  * Two kinds of reference live here and they are not the same thing:
  *   references          standing material for the project — the PC pulls
@@ -125,10 +126,10 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
               Nothing yet — the PC hasn&apos;t posted to this project.
             </p>
           ) : (
-            <div style={{
-              display: 'grid', gap: 12,
-              gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
-            }}>
+            // Multi-column, not grid: grid rows stretch to the tallest
+            // cell, which is exactly what letterboxes a mixed set of
+            // aspect ratios. Columns let each piece keep its own.
+            <div style={{ columnWidth: 250, columnGap: 12 }}>
               {project.entries.map(entry => (
                 <Tile key={entry.id} entry={entry} onOpen={() => setOpenId(entry.id)} />
               ))}
@@ -138,9 +139,9 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
 
         <button
           onClick={removeProject}
-          style={{ ...ghostBtn, alignSelf: 'flex-start', color: 'rgba(248,113,113,0.8)', borderColor: 'rgba(248,113,113,0.3)' }}
+          style={{ ...ghostBtn, alignSelf: 'flex-start', color: 'rgba(248,113,113,0.5)', borderColor: 'rgba(248,113,113,0.18)' }}
         >
-          Delete project
+          Delete whole project
         </button>
       </main>
 
@@ -159,22 +160,22 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
 // ── grid tile ───────────────────────────────────────────────────────
 
 function Tile({ entry, onOpen }: { entry: Entry; onOpen: () => void }) {
+  const isVideo = !!entry.video_url
   const poster = entry.contact_sheet_url
   return (
+    <div style={{ breakInside: 'avoid', marginBottom: 12 }}>
     <button
       onClick={onOpen}
       style={{
-        ...card, padding: 0, textAlign: 'left', cursor: 'pointer',
-        display: 'flex', flexDirection: 'column', color: 'inherit', font: 'inherit',
+        ...card, padding: 0, width: '100%', textAlign: 'left', cursor: 'pointer',
+        display: 'block', color: 'inherit', font: 'inherit',
       }}
     >
-      <div style={{
-        position: 'relative', aspectRatio: '16 / 10', background: 'rgba(255,255,255,0.04)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-      }}>
+      {/* height:auto everywhere — the media dictates the tile, not the reverse */}
+      <div style={{ position: 'relative', background: 'rgba(255,255,255,0.04)' }}>
         {poster ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <img src={poster} alt="" style={{ width: '100%', height: 'auto', display: 'block' }} />
         ) : entry.video_url ? (
           // No contact sheet, so let the browser paint the first frame.
           <video
@@ -182,10 +183,10 @@ function Tile({ entry, onOpen }: { entry: Entry; onOpen: () => void }) {
             muted
             playsInline
             preload="metadata"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            style={{ width: '100%', height: 'auto', display: 'block' }}
           />
         ) : (
-          <span style={{ fontSize: 9, opacity: 0.3, letterSpacing: '0.12em', textTransform: 'uppercase' }}>No media</span>
+          <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 9, opacity: 0.3, letterSpacing: '0.12em', textTransform: 'uppercase' }}>No media</div>
         )}
 
         {entry.video_url && (
@@ -206,14 +207,15 @@ function Tile({ entry, onOpen }: { entry: Entry; onOpen: () => void }) {
         )}
       </div>
 
-      <div style={{ padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <div style={{ padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.3 }}>{entry.title || 'Untitled'}</span>
         <span style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.35 }}>
-          {entry.date}
+          {isVideo ? 'Video' : 'Still'} · {entry.date}
           {entry.in_misc && ' · on misc'}
         </span>
       </div>
     </button>
+    </div>
   )
 }
 
@@ -228,11 +230,26 @@ function EntryOverlay({
     <div
       onClick={onClose}
       style={{
-        position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(6,6,6,0.88)',
-        backdropFilter: 'blur(8px)', overflowY: 'auto', padding: '24px 12px',
+        position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(6,6,6,0.9)',
+        backdropFilter: 'blur(8px)', overflowY: 'auto', padding: '18px 12px 40px',
         display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
       }}
     >
+      {/* Fixed, so it stays reachable however far down the form you scroll.
+          Clicking the space around the panel and Escape both work too. */}
+      <button
+        onClick={onClose}
+        aria-label="Close"
+        style={{
+          position: 'fixed', top: 14, right: 14, zIndex: 60,
+          width: 38, height: 38, borderRadius: 999, cursor: 'pointer',
+          background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.25)',
+          color: '#fff', fontSize: 17, lineHeight: 1, backdropFilter: 'blur(6px)',
+        }}
+      >
+        ×
+      </button>
+
       <div
         onClick={e => e.stopPropagation()}
         style={{ ...card, width: '100%', maxWidth: 760, background: '#0d0d0d' }}
@@ -243,14 +260,11 @@ function EntryOverlay({
         }}>
           <div style={{ minWidth: 0 }}>
             <p style={{ fontSize: 9, letterSpacing: '0.16em', textTransform: 'uppercase', opacity: 0.45 }}>
-              {entry.date} · {new Date(entry.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {entry.video_url ? 'Video' : 'Still'} · {entry.date}
             </p>
             <h3 style={{ fontSize: 15, fontWeight: 800, marginTop: 3 }}>{entry.title || 'Untitled'}</h3>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Chip tone={entry.feedback ? 'green' : 'grey'}>{entry.feedback ? 'Feedback sent' : 'Awaiting'}</Chip>
-            <button onClick={onClose} style={{ ...ghostBtn, padding: '5px 11px' }}>Close</button>
-          </div>
+          <Chip tone={entry.feedback ? 'green' : 'grey'}>{entry.feedback ? 'Feedback sent' : 'Awaiting'}</Chip>
         </div>
 
         <Player entry={entry} project={project} onSaved={onSaved} />
@@ -277,11 +291,54 @@ function EntryOverlay({
             </div>
           )}
 
+          <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+            <DownloadButton
+              url={entry.video_url || entry.contact_sheet_url || ''}
+              filename={`${entry.title || entry.id}${entry.video_url ? '.mp4' : '.png'}`}
+              labelText={entry.video_url ? 'Download video' : 'Download still'}
+            />
+            {entry.video_url && entry.contact_sheet_url && (
+              <DownloadButton
+                url={entry.contact_sheet_url}
+                filename={`${entry.title || entry.id}_sheet.png`}
+                labelText="Download sheet"
+              />
+            )}
+          </div>
+
           <MiscButton entry={entry} onSaved={onSaved} />
-          <FeedbackForm entry={entry} projectId={project.id} onSaved={onSaved} onClose={onClose} />
+          <FeedbackForm entry={entry} projectId={project.id} onSaved={onSaved} />
         </div>
       </div>
     </div>
+  )
+}
+
+function DownloadButton({ url, filename, labelText }: { url: string; filename: string; labelText: string }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  if (!url) return null
+
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true)
+        setError(null)
+        try {
+          await downloadAsset(url, filename)
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err))
+        } finally {
+          setBusy(false)
+          setTimeout(() => setError(null), 4000)
+        }
+      }}
+      style={{ ...ghostBtn, opacity: busy ? 0.5 : 1 }}
+    >
+      {busy ? 'Saving…' : error ? `✗ ${error}` : labelText}
+    </button>
   )
 }
 
@@ -439,23 +496,31 @@ function MiscButton({ entry, onSaved }: { entry: Entry; onSaved: () => void }) {
  */
 function Status({ project, onSaved }: { project: Project; onSaved: () => void }) {
   const [saving, setSaving] = useState(false)
-  const [mirrored, setMirrored] = useState<number | null>(null)
+  const [picking, setPicking] = useState(false)
 
-  const change = async (status: ProjectStatus) => {
+  const save = async (status: ProjectStatus) => {
     setSaving(true)
-    setMirrored(null)
     try {
-      const res = await fetch('/api/dailies/projects', {
+      await fetch('/api/dailies/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: project.id, status }),
       })
-      const data = await res.json().catch(() => ({}))
-      if (data.mirrored_to_misc) setMirrored(data.mirrored_to_misc)
       onSaved()
     } finally {
       setSaving(false)
     }
+  }
+
+  const change = async (status: ProjectStatus) => {
+    // Finishing asks what to publish rather than sending everything: an
+    // overnight run makes plenty that shouldn't go on the public site.
+    const publishable = project.entries.filter(e => !e.in_misc && !e.misc_removed)
+    if (status === 'done' && publishable.length > 0) {
+      setPicking(true)
+      return
+    }
+    await save(status)
   }
 
   // "In progress" doesn't mean "being worked on" if something older is
@@ -506,18 +571,132 @@ function Status({ project, onSaved }: { project: Project; onSaved: () => void })
           {saving ? 'Saving…' : 'Queued behind an earlier project — the PC starts this once that one is marked Done.'}
         </p>
       )}
-      {mirrored !== null && (
-        <p style={{ fontSize: 11, marginTop: 8, lineHeight: 1.5, color: 'rgb(74,222,128)' }}>
-          Published {mirrored} {mirrored === 1 ? 'piece' : 'pieces'} to{' '}
-          <a href="/misc" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>Misc</a> as generative.
-        </p>
-      )}
-      {project.status === 'done' && mirrored === null && (
-        <p style={{ fontSize: 11, opacity: 0.4, marginTop: 8, lineHeight: 1.5 }}>
-          Entries were published to Misc as generative when this was marked Done.
-        </p>
+
+      {picking && (
+        <PublishPicker
+          project={project}
+          onCancel={() => setPicking(false)}
+          onDone={async () => { setPicking(false); await save('done') }}
+        />
       )}
     </section>
+  )
+}
+
+/** Asked when you finish a project: which pieces go public? */
+function PublishPicker({
+  project, onCancel, onDone,
+}: { project: Project; onCancel: () => void; onDone: () => Promise<void> }) {
+  const candidates = project.entries.filter(e => !e.in_misc && !e.misc_removed)
+  const [chosen, setChosen] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEscapeToClose(true, onCancel)
+
+  const toggle = (id: string) =>
+    setChosen(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const finish = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      for (const id of Array.from(chosen)) {
+        const res = await fetch('/api/dailies/misc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entry_id: id }),
+        })
+        if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`)
+      }
+      await onDone()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(6,6,6,0.9)',
+        backdropFilter: 'blur(8px)', overflowY: 'auto', padding: '24px 12px 40px',
+        display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
+      }}
+    >
+      <div onClick={e => e.stopPropagation()} style={{ ...card, width: '100%', maxWidth: 620, background: '#0d0d0d', padding: 18 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 800 }}>Finishing “{project.title}”</h3>
+        <p style={{ fontSize: 12, opacity: 0.55, marginTop: 7, lineHeight: 1.6 }}>
+          Which pieces should go on the public Misc page, tagged generative?
+          Everything stays in the archive here either way.
+        </p>
+
+        <div style={{ display: 'flex', gap: 8, margin: '14px 0 10px' }}>
+          <button type="button" onClick={() => setChosen(new Set(candidates.map(e => e.id)))} style={{ ...ghostBtn, padding: '5px 11px' }}>
+            Select all
+          </button>
+          <button type="button" onClick={() => setChosen(new Set())} style={{ ...ghostBtn, padding: '5px 11px' }}>
+            Clear
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))' }}>
+          {candidates.map(entry => {
+            const on = chosen.has(entry.id)
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => toggle(entry.id)}
+                style={{
+                  padding: 0, cursor: 'pointer', textAlign: 'left', color: 'inherit', font: 'inherit',
+                  borderRadius: 10, overflow: 'hidden', background: 'rgba(255,255,255,0.03)',
+                  border: `2px solid ${on ? '#fff' : 'rgba(255,255,255,0.12)'}`,
+                }}
+              >
+                <div style={{ position: 'relative', background: '#000' }}>
+                  {entry.contact_sheet_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={entry.contact_sheet_url} alt="" style={{ width: '100%', height: 78, objectFit: 'cover', display: 'block', opacity: on ? 1 : 0.5 }} />
+                  ) : (
+                    <video src={`${entry.video_url}#t=0.1`} muted playsInline preload="metadata"
+                      style={{ width: '100%', height: 78, objectFit: 'cover', display: 'block', opacity: on ? 1 : 0.5 }} />
+                  )}
+                  {on && (
+                    <span style={{
+                      position: 'absolute', top: 5, right: 5, width: 18, height: 18, borderRadius: 999,
+                      background: '#fff', color: '#000', fontSize: 11, fontWeight: 800,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>✓</span>
+                  )}
+                </div>
+                <span style={{ display: 'block', padding: '7px 9px', fontSize: 11, fontWeight: 600 }}>
+                  {entry.title || 'Untitled'}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {error && <p style={{ color: '#f87171', fontSize: 11, marginTop: 12 }}>{error}</p>}
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 18, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button type="button" onClick={finish} disabled={busy} style={{ ...solidBtn, opacity: busy ? 0.5 : 1 }}>
+            {busy
+              ? 'Publishing…'
+              : chosen.size === 0
+                ? 'Mark done, publish nothing'
+                : `Publish ${chosen.size} & mark done`}
+          </button>
+          <button type="button" onClick={onCancel} disabled={busy} style={ghostBtn}>Cancel</button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -688,6 +867,13 @@ function AssetGrid({
                 placeholder="Note…"
                 style={{ ...field, padding: '5px 8px', fontSize: 10, marginTop: 5, borderRadius: 6 }}
               />
+              <button
+                type="button"
+                onClick={() => downloadAsset(ref.url, ref.filename)}
+                style={{ ...ghostBtn, width: '100%', marginTop: 4, padding: '4px 8px', fontSize: 8 }}
+              >
+                Download
+              </button>
             </figure>
           ))}
         </div>
@@ -717,8 +903,8 @@ function AssetGrid({
 // ── feedback ────────────────────────────────────────────────────────
 
 function FeedbackForm({
-  entry, projectId, onSaved, onClose,
-}: { entry: Entry; projectId: string; onSaved: () => void; onClose: () => void }) {
+  entry, projectId, onSaved,
+}: { entry: Entry; projectId: string; onSaved: () => void }) {
   const existing = entry.feedback
   const [answers, setAnswers] = useState<Record<string, string | number>>(existing?.answers || {})
   const [brief, setBrief] = useState(existing?.brief || '')
@@ -769,13 +955,6 @@ function FeedbackForm({
       setSaving(false)
       setTimeout(() => setStatus(null), 4000)
     }
-  }
-
-  const remove = async () => {
-    if (!confirm('Delete this entry and its video?')) return
-    await fetch(`/api/dailies?id=${encodeURIComponent(entry.id)}`, { method: 'DELETE' })
-    onClose()
-    onSaved()
   }
 
   return (
@@ -905,12 +1084,6 @@ function FeedbackForm({
         {uploading && (
           <span style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.6 }}>Uploading…</span>
         )}
-        <button
-          type="button" onClick={remove}
-          style={{ ...ghostBtn, marginLeft: 'auto', color: 'rgba(248,113,113,0.75)', borderColor: 'rgba(248,113,113,0.28)' }}
-        >
-          Delete
-        </button>
       </div>
 
       {existing && (

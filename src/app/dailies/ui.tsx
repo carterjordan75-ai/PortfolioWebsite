@@ -180,6 +180,31 @@ export async function uploadViaTicket(
   return (await put.json()).url as string
 }
 
+// ── downloads ───────────────────────────────────────────────────────
+
+/**
+ * Save an asset to disk.
+ *
+ * A plain `<a download>` is ignored for cross-origin URLs — the browser
+ * navigates to the file instead of saving it. Blob serves these with
+ * `access-control-allow-origin: *`, so fetching the bytes and handing
+ * over an object URL is what actually produces a download.
+ */
+export async function downloadAsset(url: string, filename?: string) {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`download failed (${res.status})`)
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objectUrl
+  a.download = filename || url.split('?')[0].split('/').pop() || 'download'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  // Revoking immediately can cancel the save on some browsers.
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000)
+}
+
 // ── auth gate ───────────────────────────────────────────────────────
 
 /**
