@@ -5,7 +5,7 @@
 
     # what should I work on, and what am I building from?
     dailies_push.py projects
-    dailies_push.py refs --project kinetic-type --into ./refs
+    dailies_push.py refs --project kinetic-type --into ./inputs
 
     # post something it made (repeatable — a run posts many)
     dailies_push.py push --project kinetic-type --title "Loop 05" \
@@ -120,10 +120,32 @@ def cmd_projects(args):
     for p in projects:
         mark = " <- PC is on this" if p.get("is_current") else ""
         print(f"{p['id']}  —  {p['title']}  [{labels.get(p.get('status'), '?')}]{mark}")
-        print(f"    {p['entry_count']} entries, {len(p.get('references', []))} references")
+        print(f"    {p['entry_count']} entries, "
+              f"{len(p.get('references', []))} references, "
+              f"{len(p.get('sources', []))} source files")
         if p.get("brief"):
             first = p["brief"].strip().splitlines()[0]
             print(f"    brief: {first[:100]}")
+
+
+def download_collection(project, key, out: Path) -> int:
+    """Pull one collection down, with a NOTES.txt of what each file is for."""
+    items = project.get(key) or []
+    if not items:
+        return 0
+    out.mkdir(parents=True, exist_ok=True)
+    notes = []
+    for i, item in enumerate(items, 1):
+        name = item["url"].rsplit("/", 1)[-1].split("?")[0]
+        dest = out / f"{i:02d}_{name}"
+        if not dest.exists():
+            _download(item["url"], dest)
+            print(f"  saved {dest}")
+        if item.get("note"):
+            notes.append(f"{dest.name}: {item['note']}")
+    if notes:
+        (out / "NOTES.txt").write_text("\n".join(notes) + "\n", encoding="utf-8")
+    return len(items)
 
 
 def cmd_refs(args):
@@ -135,21 +157,16 @@ def cmd_refs(args):
     out = Path(args.into)
     out.mkdir(parents=True, exist_ok=True)
 
-    # The brief is the standing instruction — write it next to the images
-    # so whatever reads this folder gets the words as well as the pictures.
+    # The brief is the standing instruction — write it next to the files
+    # so whatever reads this folder gets the words as well as the media.
     (out / "BRIEF.txt").write_text(project.get("brief") or "", encoding="utf-8")
 
-    notes = []
-    for i, ref in enumerate(project.get("references", []), 1):
-        name = ref["url"].rsplit("/", 1)[-1].split("?")[0]
-        dest = out / f"{i:02d}_{name}"
-        _download(ref["url"], dest)
-        print(f"  saved {dest}")
-        if ref.get("note"):
-            notes.append(f"{dest.name}: {ref['note']}")
-    if notes:
-        (out / "NOTES.txt").write_text("\n".join(notes) + "\n", encoding="utf-8")
-    print(f"{len(project.get('references', []))} references -> {out}")
+    # Kept apart on disk as well as in the data: references are direction,
+    # sources are the material the piece is built from. Mixing them is how
+    # a mood clip ends up spliced into the edit.
+    n_refs = download_collection(project, "references", out / "references")
+    n_src = download_collection(project, "sources", out / "source")
+    print(f"{n_refs} references, {n_src} source files -> {out}")
 
 
 def cmd_push(args):

@@ -52,15 +52,28 @@ export type Question = {
   options?: string[]
 }
 
-/** Material the reviewer supplies for the PC to build from. */
-export type Reference = {
+/**
+ * A file the reviewer supplies. Two collections use this shape and the
+ * difference matters to whatever is building:
+ *
+ *   references  direction — "make it feel like this". Not to be reused.
+ *   sources     the actual material the piece is built FROM: footage,
+ *               plates, stills to composite.
+ *
+ * Keeping them apart stops a mood clip being treated as usable footage,
+ * or a plate being copied as a style cue.
+ */
+export type Asset = {
   url: string
   filename: string
   note: string
-  /** Motion references are often the clearest way to say "like this". */
+  /** Motion is often the clearest way to say "like this". */
   type: 'image' | 'video'
   added_at: string
 }
+
+/** Kept as an alias: `references` was the original name for this shape. */
+export type Reference = Asset
 
 const VIDEO_EXT_RE = /\.(mp4|mov|webm|m4v)(\?|$)/i
 
@@ -83,7 +96,8 @@ export type Project = {
   title: string
   brief: string
   hero_url: string | null
-  references: Reference[]
+  references: Asset[]
+  sources: Asset[]
   status: ProjectStatus
   created_at: string
   updated_at: string

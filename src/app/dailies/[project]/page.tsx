@@ -7,7 +7,7 @@ import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 import {
   Chip, Gate, Header, Page, SCALE, STATUS_OPTIONS, card, field, ghostBtn, isVideoRef,
   label, solidBtn, uploadViaTicket,
-  type Entry, type Project, type ProjectStatus, type Reference,
+  type Asset, type Entry, type Project, type ProjectStatus,
 } from '../ui'
 
 /**
@@ -101,7 +101,20 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 22 }}>
         <Status project={project} onSaved={load} />
         <Brief project={project} onSaved={load} />
-        <References project={project} onSaved={load} />
+        <AssetGrid
+          project={project}
+          collection="references"
+          heading="References — direction, not content"
+          blurb="How it should feel. The PC matches these, it doesn't reuse them. Stills or clips."
+          onSaved={load}
+        />
+        <AssetGrid
+          project={project}
+          collection="sources"
+          heading="Source material — what it's built from"
+          blurb="The actual footage and plates to work with. Stills or clips."
+          onSaved={load}
+        />
 
         <div>
           <span style={{ ...label, marginBottom: 12 }}>
@@ -564,15 +577,24 @@ function Brief({ project, onSaved }: { project: Project; onSaved: () => void }) 
 
 // ── references ──────────────────────────────────────────────────────
 
-function References({ project, onSaved }: { project: Project; onSaved: () => void }) {
+function AssetGrid({
+  project, collection, heading, blurb, onSaved,
+}: {
+  project: Project
+  collection: 'references' | 'sources'
+  heading: string
+  blurb: string
+  onSaved: () => void
+}) {
+  const items = project[collection] || []
   const [uploading, setUploading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
 
-  const persist = async (references: Reference[]) => {
+  const persist = async (next: Asset[]) => {
     await fetch('/api/dailies/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: project.id, references }),
+      body: JSON.stringify({ id: project.id, [collection]: next }),
     })
     onSaved()
   }
@@ -581,9 +603,12 @@ function References({ project, onSaved }: { project: Project; onSaved: () => voi
     setUploading(true)
     setStatus(null)
     try {
-      const added: Reference[] = []
+      const added: Asset[] = []
       for (const file of Array.from(files)) {
-        const url = await uploadViaTicket(file, { project_id: project.id, kind: 'reference' })
+        const url = await uploadViaTicket(file, {
+          project_id: project.id,
+          kind: collection === 'sources' ? 'source' : 'reference',
+        })
         added.push({
           url,
           filename: file.name,
@@ -592,7 +617,7 @@ function References({ project, onSaved }: { project: Project; onSaved: () => voi
           added_at: new Date().toISOString(),
         })
       }
-      await persist([...project.references, ...added])
+      await persist([...items, ...added])
       setStatus(`✓ ${added.length} added`)
     } catch (err) {
       setStatus(`✗ ${err instanceof Error ? err.message : String(err)}`)
@@ -602,23 +627,23 @@ function References({ project, onSaved }: { project: Project; onSaved: () => voi
     }
   }
 
-  const remove = (url: string) => persist(project.references.filter(r => r.url !== url))
+  const remove = (url: string) => persist(items.filter(r => r.url !== url))
 
   const setNote = (url: string, note: string) =>
-    persist(project.references.map(r => (r.url === url ? { ...r, note } : r)))
+    persist(items.map(r => (r.url === url ? { ...r, note } : r)))
 
   return (
     <section style={{ ...card, padding: 15 }}>
       <span style={label}>
-        References {project.references.length > 0 && `(${project.references.length})`} — the PC downloads these
+        {heading} {items.length > 0 && `(${items.length})`}
       </span>
 
-      {project.references.length > 0 && (
+      {items.length > 0 && (
         <div style={{
           display: 'grid', gap: 10, marginBottom: 12,
           gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
         }}>
-          {project.references.map(ref => (
+          {items.map(ref => (
             <figure key={ref.url} style={{ position: 'relative', margin: 0 }}>
               {isVideoRef(ref) ? (
                 <video
@@ -684,7 +709,7 @@ function References({ project, onSaved }: { project: Project; onSaved: () => voi
           </span>
         )}
       </div>
-      <p style={{ fontSize: 10, opacity: 0.3, marginTop: 8 }}>Stills or clips — both work.</p>
+      <p style={{ fontSize: 10, opacity: 0.3, marginTop: 8, lineHeight: 1.5 }}>{blurb}</p>
     </section>
   )
 }

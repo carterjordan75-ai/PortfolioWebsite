@@ -44,13 +44,16 @@ export type Entry = {
   misc_removed: boolean
 }
 
-export type Reference = {
+export type Asset = {
   url: string
   filename: string
   note: string
   type: 'image' | 'video'
   added_at: string
 }
+
+/** Kept as an alias: `references` was the original name for this shape. */
+export type Reference = Asset
 
 const VIDEO_EXT_RE = /\.(mp4|mov|webm|m4v)(\?|$)/i
 
@@ -82,7 +85,8 @@ export type Project = {
   title: string
   brief: string
   hero_url: string | null
-  references: Reference[]
+  references: Asset[]
+  sources: Asset[]
   status: ProjectStatus
   created_at: string
   updated_at: string
@@ -158,7 +162,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 /** Ticket → direct PUT to Blob → public URL. */
 export async function uploadViaTicket(
   file: Blob & { name?: string },
-  params: { project_id: string; kind: 'reference' | 'hero'; entry_id?: string },
+  params: { project_id: string; kind: 'reference' | 'source' | 'hero'; entry_id?: string },
 ): Promise<string> {
   const ticketRes = await fetch('/api/dailies/upload-url', {
     method: 'POST',

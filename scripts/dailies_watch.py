@@ -120,22 +120,28 @@ def pick_project(pinned: str | None) -> dict | None:
     return next((p for p in projects if p["id"] == current), None) if current else None
 
 
-def sync_project(project: dict, work: Path) -> dict:
-    """Brief + references into <dir>/references/. Returns the project."""
-    refs = work / "references"
-    refs.mkdir(parents=True, exist_ok=True)
-    (refs / "BRIEF.txt").write_text(project.get("brief") or "", encoding="utf-8")
-
+def _sync_collection(project: dict, key: str, out: Path, kindLabel: str):
+    items = project.get(key) or []
+    out.mkdir(parents=True, exist_ok=True)
     notes = []
-    for i, ref in enumerate(project.get("references", []), 1):
-        name = ref["url"].rsplit("/", 1)[-1].split("?")[0]
-        dest = refs / f"{i:02d}_{name}"
+    for i, item in enumerate(items, 1):
+        name = item["url"].rsplit("/", 1)[-1].split("?")[0]
+        dest = out / f"{i:02d}_{name}"
         if not dest.exists():
-            _download(ref["url"], dest)
-            log(f"  new reference: {dest.name}")
-        if ref.get("note"):
-            notes.append(f"{dest.name}: {ref['note']}")
-    (refs / "NOTES.txt").write_text("\n".join(notes) + ("\n" if notes else ""), encoding="utf-8")
+            _download(item["url"], dest)
+            log(f"  new {kindLabel}: {dest.name}")
+        if item.get("note"):
+            notes.append(f"{dest.name}: {item['note']}")
+    (out / "NOTES.txt").write_text("\n".join(notes) + ("\n" if notes else ""), encoding="utf-8")
+    return len(items)
+
+
+def sync_project(project: dict, work: Path) -> dict:
+    """Brief, references and source material onto disk. Returns the project."""
+    (work / "BRIEF.txt").write_text(project.get("brief") or "", encoding="utf-8")
+    # Separate folders because they mean different things — see the prompt.
+    _sync_collection(project, "references", work / "references", "reference")
+    _sync_collection(project, "sources", work / "source", "source file")
     return project
 
 
@@ -171,7 +177,13 @@ def build_prompt(project: dict, feedback: list, work: Path) -> str:
         "STANDING BRIEF:",
         project.get("brief") or "(none set)",
         "",
-        "Reference material is in ./references/ (see NOTES.txt for what each one is for).",
+        "REFERENCES — ./references/",
+        "Direction only: match the feel, the pacing, the palette. Do NOT reuse",
+        "these files in the piece itself. NOTES.txt says what each one is for.",
+        "",
+        "SOURCE MATERIAL — ./source/",
+        "The actual footage and plates to build the piece FROM. These are the",
+        "assets to cut, composite and grade. NOTES.txt says what each one is.",
     ]
 
     if feedback:

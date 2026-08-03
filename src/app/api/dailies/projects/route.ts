@@ -19,7 +19,7 @@ import {
   slugify,
   type Project,
   type ProjectStatus,
-  type Reference,
+  type Asset,
 } from '@/lib/dailies'
 
 export const dynamic = 'force-dynamic'
@@ -40,15 +40,16 @@ const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
  *        overnight script can't wipe a project.
  */
 
-function parseReferences(raw: unknown): Reference[] | { error: string } {
-  if (!Array.isArray(raw)) return { error: 'references must be an array' }
-  const out: Reference[] = []
+/** Shared by `references` and `sources` — same shape, different meaning. */
+function parseAssets(raw: unknown, field: string): Asset[] | { error: string } {
+  if (!Array.isArray(raw)) return { error: `${field} must be an array` }
+  const out: Asset[] = []
   for (let i = 0; i < raw.length; i++) {
     const r = raw[i]
-    if (!r || typeof r !== 'object') return { error: `references[${i}] must be an object` }
+    if (!r || typeof r !== 'object') return { error: `${field}[${i}] must be an object` }
     const { url, filename, note, type, added_at } = r as Record<string, unknown>
     if (typeof url !== 'string' || !/^https:\/\//.test(url)) {
-      return { error: `references[${i}].url must be an https URL` }
+      return { error: `${field}[${i}].url must be an https URL` }
     }
     out.push({
       url,
@@ -124,13 +125,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'id or title is required' }, { status: 400 })
   }
 
-  let references: Reference[] | undefined
+  let references: Asset[] | undefined
   if (body.references !== undefined) {
-    const parsed = parseReferences(body.references)
+    const parsed = parseAssets(body.references, 'references')
     if ('error' in parsed) {
       return NextResponse.json({ error: parsed.error }, { status: 400 })
     }
     references = parsed
+  }
+
+  let sources: Asset[] | undefined
+  if (body.sources !== undefined) {
+    const parsed = parseAssets(body.sources, 'sources')
+    if ('error' in parsed) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 })
+    }
+    sources = parsed
   }
 
   if (
@@ -154,6 +164,7 @@ export async function POST(request: Request) {
     brief: typeof body.brief === 'string' ? body.brief : existing?.brief ?? '',
     hero_url: typeof body.hero_url === 'string' ? body.hero_url : existing?.hero_url ?? null,
     references: references ?? existing?.references ?? [],
+    sources: sources ?? existing?.sources ?? [],
     // New projects start as drafts: nothing enters the queue until you
     // say so, which is what buys the time to write a brief.
     status: (body.status as ProjectStatus) ?? existing?.status ?? 'draft',

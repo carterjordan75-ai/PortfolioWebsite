@@ -18,8 +18,8 @@ export const revalidate = 0
  *
  * Which credential may upload what:
  *   video, contact_sheet   machine only — the page can't fake a render
- *   reference              session only — material FOR the PC to build
- *                          from, so the PC has no business writing it
+ *   reference, source      session only — both are input FOR the PC, so
+ *                          it has no business writing either
  *   hero                   either — whoever has a good frame for it
  */
 
@@ -40,10 +40,12 @@ const EXT_BY_TYPE: Record<string, string> = {
   'video/x-m4v': 'm4v',
 }
 
-type Kind = 'video' | 'contact_sheet' | 'reference' | 'hero'
-const KINDS: Kind[] = ['video', 'contact_sheet', 'reference', 'hero']
+type Kind = 'video' | 'contact_sheet' | 'reference' | 'source' | 'hero'
+const KINDS: Kind[] = ['video', 'contact_sheet', 'reference', 'source', 'hero']
 const MACHINE_ONLY: Kind[] = ['video', 'contact_sheet']
-const HUMAN_ONLY: Kind[] = ['reference']
+// Both are input FOR the machine, so the machine has no business
+// writing either: references are direction, sources are the material.
+const HUMAN_ONLY: Kind[] = ['reference', 'source']
 
 /** Filename → a safe, readable path segment. */
 const safeName = (raw: string | undefined, fallback: string) =>
@@ -141,7 +143,8 @@ export async function POST(request: Request) {
       // Random suffix keeps reference URLs unguessable, so the PC can
       // fetch them without auth but nobody can enumerate them. It also
       // means two files with the same name both survive.
-      pathname = `media/dailies/${projectId}/refs/${safeName(body.filename, 'ref')}.${ext}`
+      const folder = kind === 'source' ? 'sources' : 'refs'
+      pathname = `media/dailies/${projectId}/${folder}/${safeName(body.filename, kind)}.${ext}`
       addRandomSuffix = true
     }
   }

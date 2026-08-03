@@ -10,7 +10,8 @@ produces many entries and several projects can be live at once, so a date
 identifies nothing — it's metadata on each entry.
 
 ```
-Project ── references[]   material the reviewer uploads; the PC builds from it
+Project ── references[]   direction — "make it feel like this", not to be reused
+        ├─ sources[]      the actual material the piece is built FROM
         ├─ brief          standing direction for the whole project
         ├─ hero           the image that identifies it in the grid
         └─ Entry[]        what the PC produced (video + contact sheet + note)
@@ -64,10 +65,17 @@ path it was issued for.
 | `video` | machine | `media/dailies/<project>/entries/<entry>/video.mp4` |
 | `contact_sheet` | machine | `media/dailies/<project>/entries/<entry>/contact.png` |
 | `reference` | session | `media/dailies/<project>/refs/<name>-<random>.<ext>` |
+| `source` | session | `media/dailies/<project>/sources/<name>-<random>.<ext>` |
 | `hero` | either | `media/dailies/<project>/hero.<ext>` |
 
-The page can't fake a render and the PC can't write references — references
-are input *for* the PC, so it has no business producing them.
+The page can't fake a render, and the PC can't write references or sources —
+both are input *for* the PC, so it has no business producing either.
+
+**References and sources are deliberately separate.** A reference is direction:
+match the feel, don't reuse the pixels. A source is material: the footage and
+plates the piece is actually built from. They land in different folders, carry
+their own notes, and the agent prompt spells out which is which — mixing them
+is how a mood clip ends up spliced into the edit. Both accept stills or video.
 
 ---
 
