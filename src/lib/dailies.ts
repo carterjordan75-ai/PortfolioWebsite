@@ -1,6 +1,5 @@
 import { createHash, timingSafeEqual, randomBytes } from 'crypto'
 import {
-  readJsonBlob,
   readVersionedJson,
   writeVersionedJson,
   listVersionedJson,
@@ -148,8 +147,13 @@ export function newEntryId(projectId: string, when = new Date()): string {
   return `${head}-${stamp}-${rand}`
 }
 
+/**
+ * Versioned, not plain: an overwritten blob keeps its URL and can serve
+ * the previous body from CDN cache for a long time. For credentials that
+ * would mean a rotated password silently not taking effect.
+ */
 async function authRecord(): Promise<AuthRecord | null> {
-  const rec = await readJsonBlob<AuthRecord | null>(AUTH_KEY, null)
+  const rec = await readVersionedJson<AuthRecord | null>(AUTH_KEY, null)
   return rec && rec.apiKeyHash && rec.passwordHash ? rec : null
 }
 
