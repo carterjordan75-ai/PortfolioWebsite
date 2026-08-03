@@ -269,3 +269,43 @@ and the old credential stops working immediately.
 
 Only SHA-256 hashes are stored server-side (`state/dailies-auth.json`) — the
 Blob store is public with guessable paths, so no secret is ever written there.
+
+---
+
+## Unattended runs
+
+`scripts/dailies_watch.py` is the loop that connects the phone to the PC.
+
+```bash
+export DAILIES_API_KEY=...
+python3 scripts/dailies_watch.py --project kinetic-type --dir ~/work/kinetic
+```
+
+Each cycle it syncs the brief and references down, pulls any feedback
+submitted since last time (with its images), runs the agent in `--dir` with
+all of that in the prompt, then uploads anything new in `<dir>/out/`.
+
+Conventions inside the working directory:
+
+| Path | Meaning |
+| --- | --- |
+| `out/name.mp4` | the piece — becomes an entry |
+| `out/name.png` | same stem as a video → that entry's contact sheet |
+| `out/name.txt` | same stem → the note shown under it |
+| `questions.json` | attached to every entry this project pushes |
+| `references/` | written by the watcher; the agent reads it |
+| `.dailies-watch.json` | what's been handled — delete to replay everything |
+| `.dailies-last-prompt.txt` | exactly what the agent was last told |
+
+Flags: `--once` (single cycle), `--idle-run` (work from the brief even with no
+feedback — the overnight mode), `--interval` (seconds, default 300),
+`--timeout` (per agent run, default 3600), `--agent-cmd` (defaults to
+`claude -p --permission-mode acceptEdits`; override if your install differs).
+
+Feedback is marked handled only after the agent has been given it, so a crash
+mid-cycle replays it rather than dropping it. Outputs are fingerprinted by
+name, size and mtime, so a file already pushed isn't pushed again.
+
+This runs an agent unattended on instructions typed from a phone. Point
+`--dir` at a project directory rather than a home folder, and keep it under
+git so every change is visible and reversible.
