@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 
 interface EmailPopupProps {
   show: boolean
@@ -26,6 +27,7 @@ interface Heart {
 }
 
 export default function EmailPopup({ show, onClose }: EmailPopupProps) {
+  useEscapeToClose(show, onClose)
   const [copied, setCopied] = useState(false)
   const [hovered, setHovered] = useState(false)
   const [showHearts, setShowHearts] = useState(false)
