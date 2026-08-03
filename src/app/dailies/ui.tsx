@@ -40,14 +40,23 @@ export type Entry = {
   created_at: string
   updated_at: string
   feedback: Feedback | null
+  in_misc: boolean
+  misc_removed: boolean
 }
 
 export type Reference = {
   url: string
   filename: string
   note: string
+  type: 'image' | 'video'
   added_at: string
 }
+
+const VIDEO_EXT_RE = /\.(mp4|mov|webm|m4v)(\?|$)/i
+
+/** References saved before `type` existed fall back to the extension. */
+export const isVideoRef = (r: { url: string; type?: string }) =>
+  r.type === 'video' || (r.type !== 'image' && VIDEO_EXT_RE.test(r.url))
 
 export type ProjectStatus = 'draft' | 'active' | 'done'
 
@@ -148,7 +157,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
 /** Ticket → direct PUT to Blob → public URL. */
 export async function uploadViaTicket(
-  file: File,
+  file: Blob & { name?: string },
   params: { project_id: string; kind: 'reference' | 'hero'; entry_id?: string },
 ): Promise<string> {
   const ticketRes = await fetch('/api/dailies/upload-url', {
@@ -157,7 +166,7 @@ export async function uploadViaTicket(
     body: JSON.stringify({
       ...params,
       content_type: file.type || 'image/jpeg',
-      filename: file.name,
+      filename: file.name || 'frame',
     }),
   })
   if (!ticketRes.ok) throw new Error((await ticketRes.json()).error || 'ticket failed')

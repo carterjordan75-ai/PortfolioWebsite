@@ -32,6 +32,12 @@ const EXT_BY_TYPE: Record<string, string> = {
   'image/gif': 'gif',
   'image/avif': 'avif',
   'image/heic': 'heic',
+  // References can be motion too — a clip is often the clearest way to
+  // say "like this".
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'video/x-m4v': 'm4v',
 }
 
 type Kind = 'video' | 'contact_sheet' | 'reference' | 'hero'
@@ -110,16 +116,28 @@ export async function POST(request: Request) {
       }
       pathname = `${base}/contact.png`
     }
-  } else {
+  } else if (kind === 'hero') {
+    // The hero is a still — it's either a frame grabbed off a video or an
+    // image file, never a clip.
     contentType = body.content_type || 'image/jpeg'
     if (!contentType.startsWith('image/')) {
       return NextResponse.json({ error: 'content_type must be image/*' }, { status: 400 })
     }
     const ext = EXT_BY_TYPE[contentType.toLowerCase().split(';')[0].trim()] || 'jpg'
-    if (kind === 'hero') {
-      // Fixed path so replacing the hero doesn't strand the old one.
-      pathname = `media/dailies/${projectId}/hero.${ext}`
-    } else {
+    // Fixed path so replacing the hero doesn't strand the old one.
+    pathname = `media/dailies/${projectId}/hero.${ext}`
+  } else {
+    contentType = body.content_type || 'image/jpeg'
+    if (!contentType.startsWith('image/') && !contentType.startsWith('video/')) {
+      return NextResponse.json(
+        { error: 'content_type must be image/* or video/*' },
+        { status: 400 },
+      )
+    }
+    const ext =
+      EXT_BY_TYPE[contentType.toLowerCase().split(';')[0].trim()] ||
+      (contentType.startsWith('video/') ? 'mp4' : 'jpg')
+    {
       // Random suffix keeps reference URLs unguessable, so the PC can
       // fetch them without auth but nobody can enumerate them. It also
       // means two files with the same name both survive.

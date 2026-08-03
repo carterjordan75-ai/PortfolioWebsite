@@ -57,8 +57,16 @@ export type Reference = {
   url: string
   filename: string
   note: string
+  /** Motion references are often the clearest way to say "like this". */
+  type: 'image' | 'video'
   added_at: string
 }
+
+const VIDEO_EXT_RE = /\.(mp4|mov|webm|m4v)(\?|$)/i
+
+/** Older references predate the type field; fall back to the extension. */
+export const referenceType = (r: { url: string; type?: string }): 'image' | 'video' =>
+  r.type === 'video' || r.type === 'image' ? r.type : VIDEO_EXT_RE.test(r.url) ? 'video' : 'image'
 
 /**
  * Where a project sits in the queue.
@@ -316,6 +324,25 @@ type MiscItem = {
 type MiscData = { items: MiscItem[]; tombstones?: string[] }
 
 const fileNameOf = (url: string) => url.split('?')[0].split('/').pop() || 'file'
+
+/** The source URL an entry publishes as: the piece, not its contact sheet. */
+export const entrySource = (entry: Entry): string | null =>
+  entry.video_url || entry.contact_sheet_url || null
+
+/**
+ * Every source already on /misc, plus every one that's been deleted from
+ * it. Used to show which entries have been published, and to stop a
+ * "push to Misc" button resurrecting something deliberately removed.
+ */
+export async function miscSources(
+  seed: unknown,
+): Promise<{ present: Set<string>; tombstoned: Set<string> }> {
+  const current = await readVersionedJson<MiscData>(MISC_KEY, seed as MiscData)
+  return {
+    present: new Set((current.items || []).map(i => i.src)),
+    tombstoned: new Set(current.tombstones || []),
+  }
+}
 
 /**
  * Copy a finished project's entries onto /misc, tagged generative.

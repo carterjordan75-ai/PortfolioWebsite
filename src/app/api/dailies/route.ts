@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
+import seedMisc from '../../../../data/misc.json'
 import {
   checkApiKey,
   checkSession,
   currentProjectId,
   deleteEntry,
+  entrySource,
+  miscSources,
   getEntry,
   getFeedback,
   getProject,
@@ -156,8 +159,19 @@ export async function GET(request: Request) {
       ? allEntries.filter(e => e.project_id === projectFilter)
       : allEntries
 
+    const misc = await miscSources(seedMisc)
     const withFeedback = await Promise.all(
-      entries.map(async entry => ({ ...entry, feedback: await getFeedback(entry.id) })),
+      entries.map(async entry => {
+        const src = entrySource(entry)
+        return {
+          ...entry,
+          feedback: await getFeedback(entry.id),
+          // So the card can say "on Misc" instead of offering to publish
+          // something that's already there — or was deliberately removed.
+          in_misc: !!src && misc.present.has(src),
+          misc_removed: !!src && misc.tombstoned.has(src),
+        }
+      }),
     )
 
     // Computed across ALL projects, not the filtered view — otherwise a

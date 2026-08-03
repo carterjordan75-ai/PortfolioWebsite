@@ -366,3 +366,28 @@ record of what's been sent. Nothing is run and nothing is downloaded — the
 same naming rules apply (`name.mp4` + optional `name.png` + optional
 `name.txt`), files already sent are never sent twice, and entries go to
 whichever project is currently In progress.
+
+### Reviewing
+
+Entries are a grid of tiles; tapping one opens the piece with its feedback
+form, and Escape or a click outside closes it. Tiles show a dot when feedback
+is still outstanding and `on misc` once published.
+
+**Hero from a frame.** Scrub the video to the frame you want and press "Use
+this frame as hero". The frame is grabbed off the `<video>` into a canvas
+client-side — possible only because Blob serves media with
+`access-control-allow-origin: *` and the element sets `crossOrigin`; without
+both the canvas would be tainted and `toBlob()` would throw. The result is
+uploaded as `kind: hero` and stored with a `?v=` marker, since the hero sits
+at a fixed path and its URL would otherwise never change.
+
+**Push to Misc** publishes a single entry, the per-piece version of marking a
+whole project Done. `POST /api/dailies/misc` with `{ entry_id }`, session
+only — publishing to the public site shouldn't be reachable with the machine
+key. Pressing it twice adds nothing, and it refuses outright for anything
+tombstoned on /misc.
+
+**References take video as well as stills** — a clip is often the clearest way
+to say "like this". They upload with `kind: reference` the same way; the
+`type` field records which, falling back to the file extension for references
+saved before that field existed.

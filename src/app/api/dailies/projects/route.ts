@@ -6,6 +6,7 @@ import seedMisc from '../../../../../data/misc.json'
 import {
   PROJECT_STATUSES,
   mirrorProjectToMisc,
+  referenceType,
   checkApiKey,
   checkSession,
   currentProjectId,
@@ -45,7 +46,7 @@ function parseReferences(raw: unknown): Reference[] | { error: string } {
   for (let i = 0; i < raw.length; i++) {
     const r = raw[i]
     if (!r || typeof r !== 'object') return { error: `references[${i}] must be an object` }
-    const { url, filename, note, added_at } = r as Record<string, unknown>
+    const { url, filename, note, type, added_at } = r as Record<string, unknown>
     if (typeof url !== 'string' || !/^https:\/\//.test(url)) {
       return { error: `references[${i}].url must be an https URL` }
     }
@@ -53,6 +54,9 @@ function parseReferences(raw: unknown): Reference[] | { error: string } {
       url,
       filename: typeof filename === 'string' ? filename.slice(0, 200) : '',
       note: typeof note === 'string' ? note.slice(0, 2000) : '',
+      // Trust the sender's label when it's valid, otherwise read it off
+      // the URL — references predating this field still render right.
+      type: referenceType({ url, type: typeof type === 'string' ? type : undefined }),
       added_at: typeof added_at === 'string' ? added_at : new Date().toISOString(),
     })
   }
