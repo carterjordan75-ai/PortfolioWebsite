@@ -5,23 +5,42 @@ one machine client (the render PC, Bearer-key-gated).
 
 Base URL: `https://xoxo.studio`
 
+Work is organised by **project**, not by date. An unattended overnight run
+produces many entries and several projects can be live at once, so a date
+identifies nothing — it's metadata on each entry.
+
+```
+Project ── references[]   material the reviewer uploads; the PC builds from it
+        ├─ brief          standing direction for the whole project
+        ├─ hero           the image that identifies it in the grid
+        └─ Entry[]        what the PC produced (video + contact sheet + note)
+             └─ Feedback  the reviewer's answer to that entry
+```
+
 | What | Method + path | Auth |
 | --- | --- | --- |
-| Push a daily | `POST /api/dailies` | `Authorization: Bearer <API key>` |
-| Pull feedback | `GET /api/feedback?since=YYYY-MM-DD` | `Authorization: Bearer <API key>` |
-| Get an upload ticket | `POST /api/dailies/upload-url` | Bearer (machine) **or** session cookie (browser) |
-| List dailies | `GET /api/dailies` | session cookie |
-| Submit feedback | `POST /api/feedback` | session cookie |
-| Log in / out | `POST` / `DELETE /api/dailies/login` | password in body |
+| Work list | `GET /api/dailies/projects` | either |
+| Create/update a project | `POST /api/dailies/projects` | either |
+| Delete a project | `DELETE /api/dailies/projects?id=` | session |
+| Push an entry | `POST /api/dailies` | Bearer |
+| List for the page | `GET /api/dailies[?project=]` | session |
+| Delete an entry | `DELETE /api/dailies?id=` | session |
+| Pull feedback | `GET /api/feedback[?since=][&project=]` | Bearer |
+| Submit feedback | `POST /api/feedback` | session |
+| Upload ticket | `POST /api/dailies/upload-url` | either |
+| Log in / out | `POST` / `DELETE /api/dailies/login` | password |
 
-The portal page is `https://xoxo.studio/dailies`. It is not linked from
-anywhere on the site and carries `robots: noindex, nofollow`.
+Pages: `/dailies` is the project grid, `/dailies/<projectId>` is one project.
+Neither is linked from the site and both carry `robots: noindex, nofollow`.
+
+Destructive routes are session-only on purpose — a buggy overnight script
+holding the machine key cannot delete anything.
 
 ---
 
 ## Why uploads are two-phase
 
-Vercel caps a serverless request body at **4.5 MB**. A daily is 10–60 MB, so
+Vercel caps a serverless request body at **4.5 MB**. A render is 10–60 MB, so
 the file can never travel through `POST /api/dailies`. Blob's own multipart
 API doesn't rescue this either — its parts must be **at least 5 MB**, which is
 larger than the body limit, so proxying is impossible in both directions.
@@ -32,46 +51,88 @@ leaves the PC, the token expires in an hour, and it can only write to the one
 path it was issued for.
 
 ```
-1. POST /api/dailies/upload-url   →  ticket (URL + headers, valid 1 h)
-2. PUT  <ticket.put_url>          →  the bytes; response body has .url
-3. POST /api/dailies              →  metadata + those .url values
+1. mint an entry id locally      (so a retry reuses it instead of duplicating)
+2. POST /api/dailies/upload-url  →  ticket (URL + headers, valid 1 h)
+3. PUT  <ticket.put_url>         →  the bytes; response body has .url
+4. POST /api/dailies             →  metadata + those .url values
 ```
+
+### Which credential may upload what
+
+| kind | who | lands at |
+| --- | --- | --- |
+| `video` | machine | `media/dailies/<project>/entries/<entry>/video.mp4` |
+| `contact_sheet` | machine | `media/dailies/<project>/entries/<entry>/contact.png` |
+| `reference` | session | `media/dailies/<project>/refs/<name>-<random>.<ext>` |
+| `hero` | either | `media/dailies/<project>/hero.<ext>` |
+
+The page can't fake a render and the PC can't write references — references
+are input *for* the PC, so it has no business producing them.
 
 ---
 
-## 1. Get an upload ticket
+## 1. Get the work list
+
+```http
+GET /api/dailies/projects
+Authorization: Bearer <API key>
+```
+
+```json
+{ "projects": [ {
+  "id": "kinetic-type",
+  "title": "Kinetic Type",
+  "brief": "Type that moves. Mono palette, hard cuts, no drop shadows.",
+  "hero_url": "https://…/hero.png?v=1785749256330",
+  "references": [
+    { "url": "https://…/refs/board-kduF73Ja.png",
+      "filename": "board.png", "note": "the wipe timing I want",
+      "added_at": "2026-08-03T09:22:13.924Z" }
+  ],
+  "archived": false,
+  "entry_count": 4,
+  "latest_entry_at": "2026-08-03T09:21:27.000Z",
+  "created_at": "…", "updated_at": "…"
+} ] }
+```
+
+`brief` plus `references` is the whole input contract: read the words,
+download the images, build. `hero_url` falls back to the newest contact sheet
+when no hero has been set, so a project always has a face in the grid.
+
+## 2. Get an upload ticket
 
 ```http
 POST /api/dailies/upload-url
 Authorization: Bearer <API key>
 Content-Type: application/json
 
-{ "date": "2026-08-04", "kind": "video", "filename": "loop05.mp4", "content_type": "video/mp4" }
+{ "project_id": "kinetic-type",
+  "entry_id": "kinetic-type-20260804091244-a7f3",
+  "kind": "video", "filename": "loop05.mp4", "content_type": "video/mp4" }
 ```
 
-`kind` is `"video"` or `"contact_sheet"` for the machine. (The browser uses
-`"reference"` with its session cookie; the machine cannot request that kind,
-and the browser cannot request the machine's kinds.)
-
-Response:
+`entry_id` is required for `video` and `contact_sheet`, and is minted by the
+client so an interrupted upload can be retried onto the same entry rather than
+creating a duplicate. Response:
 
 ```json
 {
-  "put_url": "https://blob.vercel-storage.com/?pathname=media%2Fdailies%2F2026-08-04%2Fvideo.mp4",
+  "put_url": "https://blob.vercel-storage.com/?pathname=media%2Fdailies%2F…%2Fvideo.mp4",
   "method": "PUT",
   "headers": {
-    "authorization": "Bearer vercel_blob_client_...",
+    "authorization": "Bearer vercel_blob_client_…",
     "x-api-version": "12",
     "x-content-type": "video/mp4",
     "x-vercel-blob-access": "public"
   },
-  "pathname": "media/dailies/2026-08-04/video.mp4",
+  "pathname": "media/dailies/kinetic-type/entries/…/video.mp4",
   "expires_in_seconds": 3600,
   "read_public_url_from": "PUT response body .url"
 }
 ```
 
-## 2. PUT the bytes
+## 3. PUT the bytes
 
 Send the raw file body to `put_url` with exactly the headers returned. No
 multipart, no form encoding — the body *is* the file.
@@ -85,10 +146,9 @@ curl -X PUT "$PUT_URL" \
   --data-binary @loop05.mp4
 ```
 
-The JSON response contains `url` — the public, permanent URL of the file.
-Keep it for step 3.
+The JSON response contains `url` — the public, permanent URL. Keep it.
 
-## 3. POST the daily
+## 4. POST the entry
 
 ```http
 POST /api/dailies
@@ -96,11 +156,13 @@ Authorization: Bearer <API key>
 Content-Type: application/json
 
 {
+  "project_id": "kinetic-type",
+  "id": "kinetic-type-20260804091244-a7f3",
   "date": "2026-08-04",
-  "title": "Kinetic Type — Loop 05",
+  "title": "Loop 05",
   "note": "Overnight pass. Three colourway alts on the sheet.",
-  "video_url": "https://<store>.public.blob.vercel-storage.com/media/dailies/2026-08-04/video.mp4",
-  "contact_sheet_url": "https://<store>.public.blob.vercel-storage.com/media/dailies/2026-08-04/contact.png",
+  "video_url": "https://…/video.mp4",
+  "contact_sheet_url": "https://…/contact.png",
   "questions": [
     { "id": "direction", "prompt": "Which direction should I push?", "type": "choice",
       "options": ["A — warm", "B — mono", "C — high contrast"] },
@@ -110,72 +172,94 @@ Content-Type: application/json
 }
 ```
 
-`date` is the record's identity — re-POSTing the same date **updates** it.
-Every other field is optional on an update: omit `note` and the stored note
-survives, so the PC can correct one field without re-uploading 60 MB.
+`project_id` must already exist (404 otherwise). `id` is optional — omit it and
+the server mints one; supply it to make the call idempotent. `date` defaults to
+today and is display metadata only. Re-POSTing the same `id` updates that
+entry, and omitted fields keep their stored values, so the PC can correct a
+note without re-uploading 60 MB.
 
 `type` is `choice` | `scale` | `text`. A `choice` question must carry a
 non-empty `options` array (400 otherwise). `scale` is always 1–5.
 
-Response: `{ "success": true, "created": true, "daily": { ... } }`
+Response: `{ "success": true, "created": true, "entry": { … } }`
 
 ---
 
-## 4. Pull feedback
+## 5. Pull feedback
 
 ```http
-GET /api/feedback?since=2026-08-01
+GET /api/feedback?since=2026-08-01&project=kinetic-type
 Authorization: Bearer <API key>
 ```
 
-`since` is inclusive and filters on **submission date**, not the daily's date —
-so re-reviewed older dailies still come back. Returns a bare JSON array:
+Both params optional. `since` is inclusive and filters on **submission** date,
+not the entry's date, so a re-reviewed older entry still comes back. Returns a
+bare JSON array:
 
 ```json
 [
   {
+    "entry_id": "kinetic-type-20260804091244-a7f3",
+    "project_id": "kinetic-type",
+    "entry_title": "Loop 05",
     "date": "2026-08-04",
     "answers": { "direction": "B — mono", "energy": 4, "jarring": "the wipe at 0:03" },
     "brief": "Push the mono further. Kill the drop shadow.",
-    "reference_images": [
-      "https://<store>.public.blob.vercel-storage.com/media/dailies/refs/mood-RpwCpUt791ev.png"
-    ],
+    "reference_images": ["https://…/refs/mood-RpwCpUt791ev.png"],
     "render_master": true,
     "submitted_at": "2026-08-04T09:12:44.108Z"
   }
 ]
 ```
 
-`answers` is keyed by the `id` of each question the PC sent. Scale answers are
-numbers, choice and text answers are strings. Unanswered questions are absent.
-Answers whose key doesn't match a question on that daily are dropped on write.
+`answers` is keyed by the `id` of each question that entry carried. Scale
+answers are numbers; choice and text answers are strings. Unanswered questions
+are absent, and any key that doesn't match a question is dropped on write.
 
 `reference_images` are plain public URLs — `GET` them with no auth. They carry
 a random suffix so they aren't guessable.
 
-`render_master` is the yes/no toggle: `true` means kick off the full-quality
-render.
+`render_master` is the yes/no toggle: `true` means kick off the full render.
 
 ---
 
 ## Client
 
-`scripts/dailies_push.py` does all three upload steps and the feedback pull.
-Standard library only — no pip install.
+`scripts/dailies_push.py` covers every step. Standard library only.
 
 ```bash
 export DAILIES_API_KEY=...
 
-python3 scripts/dailies_push.py push \
-  --date 2026-08-04 \
-  --title "Kinetic Type — Loop 05" \
-  --note "Overnight pass." \
-  --video out/loop05.mp4 \
-  --sheet out/loop05_contact.png \
-  --questions questions.json
-
-python3 scripts/dailies_push.py pull --since 2026-08-01 --download-refs ./refs
+python3 scripts/dailies_push.py projects
+python3 scripts/dailies_push.py refs --project kinetic-type --into ./refs
+python3 scripts/dailies_push.py push --project kinetic-type --title "Loop 05" \
+    --note "Overnight pass." --video out/05.mp4 --sheet out/05.png \
+    --questions questions.json
+python3 scripts/dailies_push.py pull --since 2026-08-01 --download-refs ./feedback-refs
 ```
+
+`refs` writes `BRIEF.txt` and `NOTES.txt` alongside the downloaded images, so
+whatever reads that folder gets the words as well as the pictures.
+
+## Storage consistency
+
+Portal state uses the versioned helpers in `src/lib/blobStore.ts`
+(`writeVersionedJson` / `readVersionedJson` / `listVersionedJson`), not plain
+`writeJsonBlob`.
+
+Overwriting a blob keeps the same URL, and that URL sits behind a CDN that
+serves the previous body for up to a minute — measured directly:
+`x-vercel-cache: HIT`, `age: 93` on a blob written seconds earlier. Appending a
+`?cb=` query string does **not** help; the CDN ignores the query when keying
+its cache. For read-modify-write state that's data loss, not just lag: read
+stale → append a reference → write back → the reference added a moment ago is
+gone.
+
+The versioned helpers never overwrite. Each write lands on a new pathname
+carrying a timestamp, so its URL has nothing cached against it, and readers
+find the newest version through `list()` — an API call against the control
+plane, which *is* immediately consistent. Superseded versions are pruned after
+each write.
 
 ## Rotating credentials
 

@@ -1,16 +1,34 @@
-import { createHash, timingSafeEqual } from 'crypto'
-import { readJsonBlob, writeJsonBlob, listBlobs } from '@/lib/blobStore'
+import { createHash, timingSafeEqual, randomBytes } from 'crypto'
+import {
+  readJsonBlob,
+  readVersionedJson,
+  writeVersionedJson,
+  listVersionedJson,
+  listBlobs,
+  deleteBlob,
+  baseKeyOf,
+} from '@/lib/blobStore'
 
 /**
  * Motion Dailies — private review portal.
  *
+ * The unit of work is a PROJECT, not a date. An overnight run produces
+ * many entries and several projects can be in flight at once, so a date
+ * can't be the key — it's just metadata on each entry.
+ *
+ *   Project ── references[]   material the PC downloads and builds from
+ *           └─ Entry[]        what the PC produced (video + sheet + note)
+ *                └─ Feedback  the reviewer's answer to that entry
+ *
  * Storage layout (Vercel Blob):
- *   state/dailies-auth.json          { apiKeyHash, passwordHash }
- *   state/dailies/<date>.json        one daily per date
- *   state/dailies-feedback/<date>.json   one feedback per date
- *   media/dailies/<date>/video.mp4   uploaded by the render PC
- *   media/dailies/<date>/contact.png
- *   media/dailies/refs/...           reference images (random suffix)
+ *   state/dailies-auth.json                  { apiKeyHash, passwordHash }
+ *   state/dailies-projects/<projectId>.json
+ *   state/dailies-entries/<entryId>.json
+ *   state/dailies-feedback/<entryId>.json
+ *   media/dailies/<projectId>/hero.<ext>
+ *   media/dailies/<projectId>/refs/<name>.<ext>
+ *   media/dailies/<projectId>/entries/<entryId>/video.mp4
+ *   media/dailies/<projectId>/entries/<entryId>/contact.png
  *
  * SECURITY NOTE — why only hashes live in Blob: this store is PUBLIC and
  * its id appears in every media URL on the site, so any state blob is
@@ -20,7 +38,8 @@ import { readJsonBlob, writeJsonBlob, listBlobs } from '@/lib/blobStore'
  * precedence when set — that's the rotation path.
  */
 
-export const DAILY_PREFIX = 'state/dailies/'
+export const PROJECT_PREFIX = 'state/dailies-projects/'
+export const ENTRY_PREFIX = 'state/dailies-entries/'
 export const FEEDBACK_PREFIX = 'state/dailies-feedback/'
 export const AUTH_KEY = 'state/dailies-auth.json'
 export const SESSION_COOKIE = 'dailies_auth'
@@ -34,8 +53,29 @@ export type Question = {
   options?: string[]
 }
 
-export type Daily = {
-  date: string                 // YYYY-MM-DD (the record's identity)
+/** Material the reviewer supplies for the PC to build from. */
+export type Reference = {
+  url: string
+  filename: string
+  note: string
+  added_at: string
+}
+
+export type Project = {
+  id: string
+  title: string
+  brief: string
+  hero_url: string | null
+  references: Reference[]
+  archived: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type Entry = {
+  id: string
+  project_id: string
+  date: string                 // when it was made — metadata, not identity
   title: string
   note: string
   questions: Question[]
@@ -46,7 +86,8 @@ export type Daily = {
 }
 
 export type Feedback = {
-  date: string
+  entry_id: string
+  project_id: string
   answers: Record<string, string | number>
   brief: string
   reference_images: string[]
@@ -70,6 +111,42 @@ export function hashEquals(a: string, b: string): boolean {
 
 export const isValidDate = (v: unknown): v is string =>
   typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+
+/**
+ * Ids become Blob path segments and URL segments, so they're restricted
+ * to lowercase alphanumerics and dashes — nothing that needs escaping and
+ * nothing that could climb out of its prefix.
+ */
+export const isValidId = (v: unknown): v is string =>
+  typeof v === 'string' && /^[a-z0-9][a-z0-9-]{1,63}$/.test(v) && !v.includes('--')
+
+/** Turn a title into a usable id. Falls back to a random one. */
+export function slugify(input: string): string {
+  const slug = input
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')  // strip combining accents
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+    .slice(0, 48)
+    .replace(/-+$/, '')
+  return isValidId(slug) ? slug : `p-${randomBytes(5).toString('hex')}`
+}
+
+/**
+ * Entry ids are minted server-side unless the client supplies one. The
+ * leading timestamp keeps them sortable and readable; the random tail
+ * stops two entries landing on the same id inside one second.
+ */
+export function newEntryId(projectId: string, when = new Date()): string {
+  const stamp = when.toISOString().replace(/[-:T]/g, '').slice(0, 14)
+  const rand = randomBytes(2).toString('hex')
+  // Trim the project half, never the random tail: cutting the tail could
+  // leave a trailing dash (invalid) or collide two entries onto one id.
+  const head = projectId.slice(0, 64 - stamp.length - rand.length - 2).replace(/-+$/, '')
+  return `${head}-${stamp}-${rand}`
+}
 
 async function authRecord(): Promise<AuthRecord | null> {
   const rec = await readJsonBlob<AuthRecord | null>(AUTH_KEY, null)
@@ -120,52 +197,123 @@ export async function verifyPassword(password: string): Promise<boolean> {
 
 // ── records ─────────────────────────────────────────────────────────
 
-export async function getDaily(date: string): Promise<Daily | null> {
-  return readJsonBlob<Daily | null>(`${DAILY_PREFIX}${date}.json`, null)
+export async function getProject(id: string): Promise<Project | null> {
+  return readVersionedJson<Project | null>(`${PROJECT_PREFIX}${id}.json`, null)
 }
 
-export async function saveDaily(daily: Daily): Promise<void> {
-  await writeJsonBlob(`${DAILY_PREFIX}${daily.date}.json`, daily)
+export async function saveProject(project: Project): Promise<void> {
+  await writeVersionedJson(`${PROJECT_PREFIX}${project.id}.json`, project)
 }
 
-export async function getFeedback(date: string): Promise<Feedback | null> {
-  return readJsonBlob<Feedback | null>(`${FEEDBACK_PREFIX}${date}.json`, null)
+export async function getEntry(id: string): Promise<Entry | null> {
+  return readVersionedJson<Entry | null>(`${ENTRY_PREFIX}${id}.json`, null)
+}
+
+export async function saveEntry(entry: Entry): Promise<void> {
+  await writeVersionedJson(`${ENTRY_PREFIX}${entry.id}.json`, entry)
+}
+
+export async function getFeedback(entryId: string): Promise<Feedback | null> {
+  return readVersionedJson<Feedback | null>(`${FEEDBACK_PREFIX}${entryId}.json`, null)
 }
 
 export async function saveFeedback(feedback: Feedback): Promise<void> {
-  await writeJsonBlob(`${FEEDBACK_PREFIX}${feedback.date}.json`, feedback)
+  await writeVersionedJson(`${FEEDBACK_PREFIX}${feedback.entry_id}.json`, feedback)
 }
 
-/** Every stored record under a prefix, fetched in parallel. */
+/**
+ * Every stored record under a prefix, fetched in parallel.
+ *
+ * listVersionedJson resolves each key to its newest version, so a write
+ * that happened a second ago is visible here — the URL it returns is
+ * brand new and therefore has nothing cached against it.
+ */
 async function readAll<T>(prefix: string): Promise<T[]> {
-  const blobs = await listBlobs(prefix)
-  const jsonBlobs = blobs.filter(b => b.pathname.endsWith('.json'))
+  const entries = await listVersionedJson(prefix)
   const results = await Promise.all(
-    jsonBlobs.map(async (b): Promise<T | null> => {
+    entries.map(async ({ url }): Promise<T | null> => {
       try {
-        // Cache-bust: overwritten blobs can serve stale at the edge.
-        const res = await fetch(`${b.url}?cb=${Date.now()}`, { cache: 'no-store' })
+        const res = await fetch(url, { cache: 'no-store' })
         return res.ok ? ((await res.json()) as T) : null
       } catch {
         return null
       }
     }),
   )
-  return results.filter((r): r is Awaited<T> => r !== null) as T[]
+  return results.filter(r => r !== null) as T[]
 }
 
-/** All dailies, newest first. */
-export async function listDailies(): Promise<Daily[]> {
-  const dailies = await readAll<Daily>(DAILY_PREFIX)
-  return dailies
-    .filter(d => isValidDate(d?.date))
-    .sort((a, b) => b.date.localeCompare(a.date))
+/** All projects, most recently touched first. */
+export async function listProjects(): Promise<Project[]> {
+  const projects = await readAll<Project>(PROJECT_PREFIX)
+  return projects
+    .filter(p => isValidId(p?.id))
+    .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
 }
 
-/** All feedback, newest first. */
+/** All entries, newest first. */
+export async function listEntries(): Promise<Entry[]> {
+  const entries = await readAll<Entry>(ENTRY_PREFIX)
+  return entries
+    .filter(e => isValidId(e?.id) && isValidId(e?.project_id))
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+}
+
+/** All feedback, newest submission first. */
 export async function listFeedback(): Promise<Feedback[]> {
   const all = await readAll<Feedback>(FEEDBACK_PREFIX)
   return all
-    .filter(f => isValidDate(f?.date))
-    .sort((a, b) => b.date.localeCompare(a.date))
+    .filter(f => isValidId(f?.entry_id))
+    .sort((a, b) => (b.submitted_at || '').localeCompare(a.submitted_at || ''))
+}
+
+// ── deletion ────────────────────────────────────────────────────────
+// An unattended overnight run can produce dozens of entries, so pruning
+// is a first-class operation, not an afterthought. Deletes take the
+// media with them — an orphaned 60 MB video would otherwise sit in Blob
+// forever, invisible and still billed.
+
+async function deletePrefix(prefix: string): Promise<number> {
+  const blobs = await listBlobs(prefix)
+  await Promise.all(blobs.map(b => deleteBlob(b.url).catch(() => false)))
+  return blobs.length
+}
+
+/**
+ * Delete every version of a versioned key. Matching on the base key
+ * matters: `state/dailies-entries/foo.json` is stored as
+ * `foo@v00001754…-a3f9.json`, so an exact-path delete would miss.
+ */
+async function deleteAllVersions(key: string): Promise<void> {
+  const stem = key.replace(/\.[^.]+$/, '')
+  const blobs = await listBlobs(stem)
+  await Promise.all(
+    blobs
+      .filter(b => baseKeyOf(b.pathname) === key)
+      .map(b => deleteBlob(b.url).catch(() => false)),
+  )
+}
+
+/** Remove one entry: its record, its feedback and its media. */
+export async function deleteEntry(entry: Entry): Promise<void> {
+  await Promise.all([
+    deleteAllVersions(`${ENTRY_PREFIX}${entry.id}.json`),
+    deleteAllVersions(`${FEEDBACK_PREFIX}${entry.id}.json`),
+    deletePrefix(`media/dailies/${entry.project_id}/entries/${entry.id}/`),
+  ])
+}
+
+/** Remove a project, every entry under it, and all of its media. */
+export async function deleteProject(id: string): Promise<number> {
+  const entries = (await listEntries()).filter(e => e.project_id === id)
+  await Promise.all(
+    entries.flatMap(e => [
+      deleteAllVersions(`${ENTRY_PREFIX}${e.id}.json`),
+      deleteAllVersions(`${FEEDBACK_PREFIX}${e.id}.json`),
+    ]),
+  )
+  // One sweep covers hero, references and every entry's media at once.
+  await deletePrefix(`media/dailies/${id}/`)
+  await deleteAllVersions(`${PROJECT_PREFIX}${id}.json`)
+  return entries.length
 }

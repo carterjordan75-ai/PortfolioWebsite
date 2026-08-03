@@ -94,7 +94,110 @@ export async function writeJsonBlob<T>(key: string, value: T): Promise<void> {
     contentType: 'application/json',
     addRandomSuffix: false,
     allowOverwrite: true,
+    // Without this the CDN caches state JSON for a month. The `?cb=`
+    // buster in readJsonBlob does NOT help — Blob's CDN ignores the query
+    // string when keying its cache (measured: `x-vercel-cache: HIT`,
+    // `age: 93` on a freshly overwritten blob). 60s is the documented
+    // floor; it bounds staleness instead of eliminating it. Where
+    // read-after-write actually has to hold, use the versioned helpers
+    // below rather than relying on this.
+    cacheControlMaxAge: 60,
   })
+}
+
+// ── versioned JSON: read-after-write consistency ────────────────────
+//
+// Overwriting a blob keeps the same URL, and that URL sits behind a CDN
+// that can serve the previous body for up to a minute. For read-modify-
+// write state that's data loss, not just lag: read stale -> add an item
+// -> write back -> the item added a moment ago is gone.
+//
+// The fix is to never overwrite. Each write lands on a NEW pathname
+// carrying a timestamp, so its URL has no cache entry and is always
+// fresh. Readers use list() — an API call against the control plane,
+// which IS immediately consistent — to find the newest version. Older
+// versions are pruned after each write.
+
+const VERSION_SEP = '@v'
+
+const versionedName = (key: string, stamp: number, salt: string) => {
+  const dot = key.lastIndexOf('.')
+  const [stem, ext] = dot === -1 ? [key, ''] : [key.slice(0, dot), key.slice(dot)]
+  // Fixed-width so plain lexical ordering matches chronological order.
+  return `${stem}${VERSION_SEP}${String(stamp).padStart(14, '0')}-${salt}${ext}`
+}
+
+/** The original key a versioned pathname belongs to. */
+export function baseKeyOf(pathname: string): string {
+  const at = pathname.indexOf(VERSION_SEP)
+  if (at === -1) return pathname
+  const dot = pathname.lastIndexOf('.')
+  return dot > at ? pathname.slice(0, at) + pathname.slice(dot) : pathname.slice(0, at)
+}
+
+/** Write a new version of `key` and prune the ones it supersedes. */
+export async function writeVersionedJson<T>(key: string, value: T): Promise<void> {
+  if (!HAS_TOKEN) {
+    throw new Error('BLOB_READ_WRITE_TOKEN not configured.')
+  }
+  const salt = Math.random().toString(36).slice(2, 8)
+  const pathname = versionedName(key, Date.now(), salt)
+
+  await put(pathname, JSON.stringify(value, null, 2), {
+    access: 'public',
+    contentType: 'application/json',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    cacheControlMaxAge: 60,
+  })
+
+  // Drop every older version of this key, plus any legacy unversioned
+  // blob sitting at the bare path. Anything NEWER is a concurrent write
+  // and is deliberately left alone.
+  try {
+    const { blobs } = await list({ prefix: `${key.replace(/\.[^.]+$/, '')}`, limit: 1000 })
+    const stale = blobs.filter(
+      b => baseKeyOf(b.pathname) === key && b.pathname !== pathname && b.pathname < pathname,
+    )
+    await Promise.all(stale.map(b => del(b.url).catch(() => undefined)))
+  } catch {
+    /* pruning is housekeeping — a failure here must not fail the write */
+  }
+}
+
+/** Read the newest version of `key`, falling back to `fallbackValue`. */
+export async function readVersionedJson<T>(key: string, fallbackValue: T): Promise<T> {
+  if (!HAS_TOKEN) return fallbackValue
+  try {
+    const { blobs } = await list({ prefix: `${key.replace(/\.[^.]+$/, '')}`, limit: 1000 })
+    const mine = blobs
+      .filter(b => baseKeyOf(b.pathname) === key)
+      .sort((a, b) => b.pathname.localeCompare(a.pathname))
+    if (mine.length === 0) return fallbackValue
+    const res = await fetch(mine[0].url, { cache: 'no-store' })
+    if (res.ok) return (await res.json()) as T
+  } catch {
+    /* fall through */
+  }
+  return fallbackValue
+}
+
+/**
+ * Newest version of every distinct key under `prefix`, as
+ * [baseKey, url] pairs. One list() call for the whole collection.
+ */
+export async function listVersionedJson(prefix: string): Promise<Array<{ key: string; url: string }>> {
+  const blobs = await listBlobs(prefix)
+  const newest = new Map<string, { key: string; url: string; pathname: string }>()
+  for (const b of blobs) {
+    if (!b.pathname.endsWith('.json')) continue
+    const key = baseKeyOf(b.pathname)
+    const current = newest.get(key)
+    if (!current || b.pathname > current.pathname) {
+      newest.set(key, { key, url: b.url, pathname: b.pathname })
+    }
+  }
+  return Array.from(newest.values()).map(({ key, url }) => ({ key, url }))
 }
 
 /**

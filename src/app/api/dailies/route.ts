@@ -2,12 +2,18 @@ import { NextResponse } from 'next/server'
 import {
   checkApiKey,
   checkSession,
-  getDaily,
+  deleteEntry,
+  getEntry,
   getFeedback,
+  getProject,
   isValidDate,
-  listDailies,
-  saveDaily,
-  type Daily,
+  isValidId,
+  listEntries,
+  listProjects,
+  newEntryId,
+  saveEntry,
+  saveProject,
+  type Entry,
   type Question,
   type QuestionType,
 } from '@/lib/dailies'
@@ -17,17 +23,20 @@ export const revalidate = 0
 const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
 
 /**
- * POST — machine (Bearer API key). Creates or updates the daily for a
- *        date. Files are uploaded straight to Blob first (see
+ * Entries — a single thing the PC produced inside a project.
+ *
+ * POST   machine (Bearer). Files go straight to Blob first (see
  *        /api/dailies/upload-url); this call carries the metadata plus
- *        the resulting URLs.
- * GET  — human (session cookie). The review page's list: every daily
- *        newest-first, each with its feedback (or null).
+ *        the resulting URLs. An overnight run POSTs many of these, so
+ *        nothing here is keyed on the date.
+ * GET    human (session). Everything the page needs: projects, their
+ *        entries, and the feedback attached to each.
+ * DELETE human (session). Removes one entry and its media.
  */
 
 const VALID_TYPES: QuestionType[] = ['choice', 'scale', 'text']
 
-/** Validate + normalise the questions array from the contract. */
+/** Validate + normalise the questions array. */
 function parseQuestions(raw: unknown): { questions: Question[] } | { error: string } {
   if (raw === undefined || raw === null) return { questions: [] }
   if (!Array.isArray(raw)) return { error: 'questions must be an array' }
@@ -68,28 +77,49 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  if (!isValidDate(body.date)) {
-    return NextResponse.json({ error: 'date is required, format YYYY-MM-DD' }, { status: 400 })
+  if (!isValidId(body.project_id)) {
+    return NextResponse.json({ error: 'project_id is required' }, { status: 400 })
   }
-  const date = body.date
+  const projectId = body.project_id
+
+  const project = await getProject(projectId)
+  if (!project) {
+    return NextResponse.json(
+      { error: `No project '${projectId}' — create it with POST /api/dailies/projects first` },
+      { status: 404 },
+    )
+  }
+
+  if (body.date !== undefined && !isValidDate(body.date)) {
+    return NextResponse.json({ error: 'date must be YYYY-MM-DD' }, { status: 400 })
+  }
+  if (body.id !== undefined && !isValidId(body.id)) {
+    return NextResponse.json({ error: 'id must be a valid slug' }, { status: 400 })
+  }
 
   const parsed = parseQuestions(body.questions)
   if ('error' in parsed) {
     return NextResponse.json({ error: parsed.error }, { status: 400 })
   }
 
-  const existing = await getDaily(date)
+  // A client-supplied id makes the call idempotent — a retried upload
+  // updates the same entry instead of duplicating it. That matters over
+  // a six-hour unattended run where nobody is watching for doubles.
+  const id = typeof body.id === 'string' ? body.id : newEntryId(projectId)
+  const existing = await getEntry(id)
+  if (existing && existing.project_id !== projectId) {
+    return NextResponse.json({ error: `Entry ${id} belongs to another project` }, { status: 409 })
+  }
   const now = new Date().toISOString()
 
-  // Partial updates are allowed: omitted fields keep their stored value,
-  // so the PC can re-POST just a corrected note without re-uploading.
-  const daily: Daily = {
-    date,
+  const entry: Entry = {
+    id,
+    project_id: projectId,
+    date: isValidDate(body.date) ? body.date : existing?.date ?? now.slice(0, 10),
     title: typeof body.title === 'string' ? body.title : existing?.title ?? '',
     note: typeof body.note === 'string' ? body.note : existing?.note ?? '',
     questions: body.questions !== undefined ? parsed.questions : existing?.questions ?? [],
-    video_url:
-      typeof body.video_url === 'string' ? body.video_url : existing?.video_url ?? null,
+    video_url: typeof body.video_url === 'string' ? body.video_url : existing?.video_url ?? null,
     contact_sheet_url:
       typeof body.contact_sheet_url === 'string'
         ? body.contact_sheet_url
@@ -99,8 +129,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    await saveDaily(daily)
-    return NextResponse.json({ success: true, created: !existing, daily }, NO_CACHE)
+    await saveEntry(entry)
+    // Touch the project so the grid sorts by real activity.
+    await saveProject({ ...project, updated_at: now })
+    return NextResponse.json({ success: true, created: !existing, entry }, NO_CACHE)
   } catch (err) {
     console.error('POST /api/dailies error:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })
@@ -111,14 +143,62 @@ export async function GET(request: Request) {
   if (!(await checkSession(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const projectFilter = new URL(request.url).searchParams.get('project')
+  if (projectFilter !== null && !isValidId(projectFilter)) {
+    return NextResponse.json({ error: 'project must be a valid id' }, { status: 400 })
+  }
+
   try {
-    const dailies = await listDailies()
+    const [projects, allEntries] = await Promise.all([listProjects(), listEntries()])
+    const entries = projectFilter
+      ? allEntries.filter(e => e.project_id === projectFilter)
+      : allEntries
+
     const withFeedback = await Promise.all(
-      dailies.map(async daily => ({ ...daily, feedback: await getFeedback(daily.date) })),
+      entries.map(async entry => ({ ...entry, feedback: await getFeedback(entry.id) })),
     )
-    return NextResponse.json({ dailies: withFeedback }, NO_CACHE)
+
+    const shaped = projects
+      .filter(p => !projectFilter || p.id === projectFilter)
+      .map(p => {
+        const mine = withFeedback.filter(e => e.project_id === p.id)
+        return {
+          ...p,
+          hero_url: p.hero_url || mine.find(e => e.contact_sheet_url)?.contact_sheet_url || null,
+          entry_count: mine.length,
+          awaiting_count: mine.filter(e => !e.feedback).length,
+          latest_entry_at: mine[0]?.created_at ?? null,
+          entries: mine,
+        }
+      })
+
+    return NextResponse.json({ projects: shaped }, NO_CACHE)
   } catch (err) {
     console.error('GET /api/dailies error:', err)
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: Request) {
+  if (!(await checkSession(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const id = new URL(request.url).searchParams.get('id')
+  if (!isValidId(id)) {
+    return NextResponse.json({ error: 'id query parameter is required' }, { status: 400 })
+  }
+  const entry = await getEntry(id)
+  if (!entry) {
+    return NextResponse.json({ error: `No entry ${id}` }, { status: 404 })
+  }
+
+  try {
+    await deleteEntry(entry)
+    return NextResponse.json({ success: true }, NO_CACHE)
+  } catch (err) {
+    console.error('DELETE /api/dailies error:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
 }

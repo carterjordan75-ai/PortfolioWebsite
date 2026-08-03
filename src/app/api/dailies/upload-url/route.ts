@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { generateClientTokenFromReadWriteToken } from '@vercel/blob/client'
-import { checkApiKey, checkSession, isValidDate } from '@/lib/dailies'
+import { checkApiKey, checkSession, isValidId } from '@/lib/dailies'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -10,15 +10,17 @@ export const revalidate = 0
  * the file DIRECTLY to Vercel Blob.
  *
  * Why direct-to-Blob rather than posting the file to this API: Vercel
- * caps serverless request bodies at 4.5 MB, and dailies are 10-60 MB.
+ * caps serverless request bodies at 4.5 MB, and a render is 10-60 MB.
  * Blob's multipart API can't rescue a proxy design either — its parts
  * must be >= 5 MB, which no request can carry. The client token is
  * scoped to one exact pathname + content type and expires in an hour,
  * so handing it out is safe.
  *
- * Used by BOTH clients:
- *   - the render PC (Bearer API key) for video + contact sheet
- *   - the review page (session cookie) for reference images
+ * Which credential may upload what:
+ *   video, contact_sheet   machine only — the page can't fake a render
+ *   reference              session only — material FOR the PC to build
+ *                          from, so the PC has no business writing it
+ *   hero                   either — whoever has a good frame for it
  */
 
 const ONE_HOUR = 60 * 60 * 1000
@@ -32,6 +34,19 @@ const EXT_BY_TYPE: Record<string, string> = {
   'image/heic': 'heic',
 }
 
+type Kind = 'video' | 'contact_sheet' | 'reference' | 'hero'
+const KINDS: Kind[] = ['video', 'contact_sheet', 'reference', 'hero']
+const MACHINE_ONLY: Kind[] = ['video', 'contact_sheet']
+const HUMAN_ONLY: Kind[] = ['reference']
+
+/** Filename → a safe, readable path segment. */
+const safeName = (raw: string | undefined, fallback: string) =>
+  (raw || fallback)
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^a-zA-Z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || fallback
+
 export async function POST(request: Request) {
   const machine = await checkApiKey(request)
   const human = machine ? false : await checkSession(request)
@@ -39,60 +54,78 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: { date?: string; kind?: string; content_type?: string; filename?: string }
+  let body: {
+    project_id?: string
+    entry_id?: string
+    kind?: string
+    content_type?: string
+    filename?: string
+  }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const kind = body.kind
-  if (kind !== 'video' && kind !== 'contact_sheet' && kind !== 'reference') {
+  const kind = body.kind as Kind
+  if (!KINDS.includes(kind)) {
+    return NextResponse.json({ error: `kind must be one of ${KINDS.join(', ')}` }, { status: 400 })
+  }
+  if ((MACHINE_ONLY.includes(kind) && !machine) || (HUMAN_ONLY.includes(kind) && !human)) {
     return NextResponse.json(
-      { error: "kind must be 'video', 'contact_sheet' or 'reference'" },
-      { status: 400 },
+      { error: `kind '${kind}' not allowed for this credential` },
+      { status: 403 },
     )
   }
-  // Reference images come from the page (session); the PC only sends
-  // the daily's own two files.
-  if (kind === 'reference' ? machine : human) {
-    return NextResponse.json({ error: `kind '${kind}' not allowed for this credential` }, { status: 403 })
+  if (!isValidId(body.project_id)) {
+    return NextResponse.json({ error: 'project_id is required' }, { status: 400 })
   }
-  if (!isValidDate(body.date)) {
-    return NextResponse.json({ error: 'date must be YYYY-MM-DD' }, { status: 400 })
-  }
-  const date = body.date
+  const projectId = body.project_id
 
   let pathname: string
   let contentType: string
   let addRandomSuffix = false
 
-  if (kind === 'video') {
-    contentType = body.content_type || 'video/mp4'
-    if (!contentType.startsWith('video/')) {
-      return NextResponse.json({ error: 'content_type must be video/*' }, { status: 400 })
+  if (kind === 'video' || kind === 'contact_sheet') {
+    // Entry media is addressed by the entry id, which the PC mints before
+    // uploading and then reuses when it POSTs the entry itself. That's
+    // what makes an interrupted upload safe to retry.
+    if (!isValidId(body.entry_id)) {
+      return NextResponse.json(
+        { error: `entry_id is required for kind '${kind}'` },
+        { status: 400 },
+      )
     }
-    pathname = `media/dailies/${date}/video.mp4`
-  } else if (kind === 'contact_sheet') {
-    contentType = body.content_type || 'image/png'
-    if (!contentType.startsWith('image/')) {
-      return NextResponse.json({ error: 'content_type must be image/*' }, { status: 400 })
+    const base = `media/dailies/${projectId}/entries/${body.entry_id}`
+    if (kind === 'video') {
+      contentType = body.content_type || 'video/mp4'
+      if (!contentType.startsWith('video/')) {
+        return NextResponse.json({ error: 'content_type must be video/*' }, { status: 400 })
+      }
+      pathname = `${base}/video.mp4`
+    } else {
+      contentType = body.content_type || 'image/png'
+      if (!contentType.startsWith('image/')) {
+        return NextResponse.json({ error: 'content_type must be image/*' }, { status: 400 })
+      }
+      pathname = `${base}/contact.png`
     }
-    pathname = `media/dailies/${date}/contact.png`
   } else {
     contentType = body.content_type || 'image/jpeg'
     if (!contentType.startsWith('image/')) {
       return NextResponse.json({ error: 'content_type must be image/*' }, { status: 400 })
     }
     const ext = EXT_BY_TYPE[contentType.toLowerCase().split(';')[0].trim()] || 'jpg'
-    const safe = (body.filename || 'ref')
-      .replace(/\.[^.]+$/, '')
-      .replace(/[^a-zA-Z0-9-]+/g, '-')
-      .slice(0, 40) || 'ref'
-    // Random suffix keeps reference-image URLs unguessable, so the PC
-    // can fetch them without auth but nobody can enumerate them.
-    pathname = `media/dailies/refs/${date}/${safe}.${ext}`
-    addRandomSuffix = true
+    if (kind === 'hero') {
+      // Fixed path so replacing the hero doesn't strand the old one.
+      pathname = `media/dailies/${projectId}/hero.${ext}`
+    } else {
+      // Random suffix keeps reference URLs unguessable, so the PC can
+      // fetch them without auth but nobody can enumerate them. It also
+      // means two files with the same name both survive.
+      pathname = `media/dailies/${projectId}/refs/${safeName(body.filename, 'ref')}.${ext}`
+      addRandomSuffix = true
+    }
   }
 
   try {
@@ -119,7 +152,7 @@ export async function POST(request: Request) {
       expires_in_seconds: ONE_HOUR / 1000,
       // The PUT responds with JSON containing the final public `url` —
       // read it from there (it's the only source of truth when a random
-      // suffix is applied) and pass it back to POST /api/dailies.
+      // suffix is applied) and pass it back when you save the record.
       read_public_url_from: 'PUT response body .url',
     })
   } catch (err) {
