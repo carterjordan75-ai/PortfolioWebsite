@@ -418,3 +418,36 @@ tombstoned on /misc.
 to say "like this". They upload with `kind: reference` the same way; the
 `type` field records which, falling back to the file extension for references
 saved before that field existed.
+
+### Deleting media
+
+`DELETE /api/dailies?id=<entryId>&url=<fileUrl>` removes one file: the blob
+goes, the entry's field is cleared, and the file is dropped from `/misc` so
+nothing there points at a dead URL. Deleting an entry's last file takes the
+entry with it — a note with no media attached isn't reviewable. Omit `url` to
+delete the whole entry.
+
+`url` is validated against that entry's own files, so the parameter can't be
+pointed at arbitrary blobs. Session only.
+
+### Approval and final deliverables
+
+Marking a project **Done** is approval, and it raises a finishing job once:
+masters in **16:9, 9:16 and 1:1**, each recomposed for its own frame rather
+than centre-cropped from one master, plus a **1:1 contact sheet**. The agent
+prompt spells this out and names the expected files:
+
+```
+out/final_16x9.mp4   out/final_9x16.mp4   out/final_1x1.mp4   out/final_sheet.png
+```
+
+The request fires on the first transition to done and never again — re-saving
+an approved project doesn't re-raise it, and projects approved before this
+existed are not retro-triggered.
+
+An approved project **stays the machine's current job** until all four land,
+so approval doesn't hand the queue on with the finishing work outstanding.
+The watcher runs it whether or not `--idle-run` is set, reports what's still
+owed each cycle, and closes the job with
+`POST /api/dailies/projects {id, delivery_done: true}` only once the full set
+is in. The project page shows the same state.

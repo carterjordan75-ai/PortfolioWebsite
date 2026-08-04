@@ -91,7 +91,7 @@ export const STATUS_OPTIONS: Array<{ value: ProjectStatus; label: string; hint: 
   {
     value: 'done',
     label: 'Done',
-    hint: 'Finished — publishes the entries to Misc as generative, and the PC moves to the next started project',
+    hint: 'Approved — asks the PC for final masters in 16:9, 9:16 and 1:1 plus a square contact sheet, then moves to the next project',
   },
 ]
 
@@ -109,6 +109,7 @@ export type Project = {
   references: Asset[]
   sources: Asset[]
   status: ProjectStatus
+  delivery: { requested_at: string | null; done_at: string | null }
   created_at: string
   updated_at: string
   entry_count: number

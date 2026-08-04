@@ -204,6 +204,34 @@ def build_prompt(project: dict, feedback: list, work: Path) -> str:
     else:
         parts += ["", "No new feedback. Continue from the standing brief."]
 
+    delivery = project.get("delivery") or {}
+    if delivery.get("requested_at") and not delivery.get("done_at"):
+        parts += [
+            "",
+            "=" * 60,
+            "FINAL DELIVERABLES — THE PROJECT HAS BEEN APPROVED.",
+            "",
+            "Stop exploring. Produce the finished masters, in three shapes:",
+            "",
+            "  16:9   landscape",
+            "  9:16   vertical",
+            "  1:1    square",
+            "",
+            "Recompose each one for its own frame. Reframe the subject, move",
+            "and rescale elements, adjust timing if it helps the shape read.",
+            "Do NOT centre-crop or letterbox a single master into the other",
+            "two — each should look like it was made for that ratio.",
+            "",
+            "Also produce ONE 1:1 still contact sheet of the piece.",
+            "",
+            "Name them exactly:",
+            "  out/final_16x9.mp4",
+            "  out/final_9x16.mp4",
+            "  out/final_1x1.mp4",
+            "  out/final_sheet.png",
+            "=" * 60,
+        ]
+
     parts += [
         "",
         "WHEN YOU HAVE SOMETHING TO SHOW:",
@@ -376,8 +404,15 @@ def cycle(args, root: Path, log_state: dict) -> None:
     sync_project(project, work)
     feedback = fetch_feedback(project_id, state.get("last_feedback_at"))
 
+    delivery = project.get("delivery") or {}
+    owed = bool(delivery.get("requested_at")) and not delivery.get("done_at")
+
     if feedback:
         log(f"  {project_id}: {len(feedback)} new piece(s) of feedback")
+    elif owed:
+        # Approval is a standing instruction until the masters land, so
+        # this runs whether or not --idle-run was passed.
+        log(f"  {project_id}: approved — final deliverables outstanding")
     elif not args.idle_run:
         log(f"  {project_id}: nothing new (pass --idle-run to work anyway)")
         return
@@ -393,13 +428,29 @@ def cycle(args, root: Path, log_state: dict) -> None:
     if feedback:
         state["last_feedback_at"] = feedback[-1]["submitted_at"]
 
+    pushed_names = []
     for path, key in collect_outputs(out_dir, state):
         try:
             entry_id = push_output(project_id, path, out_dir, output, questions)
             state.setdefault("pushed", []).append(key)
+            pushed_names.append(path.name)
             log(f"  pushed {path.name} -> {entry_id}")
         except SystemExit as err:
             log(f"  failed to push {path.name}: {err}")
+
+    # Close the finishing job once all four masters are in, so the queue
+    # can move on. Anything short of the full set leaves it open.
+    delivery = project.get("delivery") or {}
+    if delivery.get("requested_at") and not delivery.get("done_at"):
+        want = {"final_16x9", "final_9x16", "final_1x1", "final_sheet"}
+        have = {Path(k.split(":")[0]).stem for k in state.get("pushed", [])}
+        if want <= have:
+            _api("/api/dailies/projects", method="POST",
+                 payload={"id": project_id, "delivery_done": True})
+            log(f"  {project_id}: final deliverables complete")
+        else:
+            missing = sorted(want - have)
+            log(f"  {project_id}: still owed {', '.join(missing)}")
 
     save_state(work, state)
 

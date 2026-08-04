@@ -282,6 +282,7 @@ function AssetOverlay({
           </div>
 
           <MiscButton entry={entry} url={url} onSaved={onSaved} />
+          <DeleteAsset asset={asset} onClose={onClose} onSaved={onSaved} />
 
           {entry.note && (
             <div>
@@ -293,6 +294,54 @@ function AssetOverlay({
           <FeedbackForm entry={entry} projectId={project.id} onSaved={onSaved} />
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Removing a file is deliberate: it's behind a confirm, it names what
+ * goes, and it lives at the bottom rather than beside the buttons you
+ * press every day. Deleting the entry's last file takes the entry too.
+ */
+function DeleteAsset({
+  asset, onClose, onSaved,
+}: { asset: EntryAsset; onClose: () => void; onSaved: () => void }) {
+  const { entry, url, kind } = asset
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const last = entryAssets(entry).length === 1
+
+  const remove = async () => {
+    const what = kind === 'video' ? 'video' : 'still'
+    const extra = last ? ' This is the only file on it, so the entry goes too.' : ''
+    if (!confirm(`Delete the ${what} from “${entry.title || 'Untitled'}”?${extra}\n\nThe file is removed for good, and taken off Misc if it's there.`)) return
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await fetch(
+        `/api/dailies?id=${encodeURIComponent(entry.id)}&url=${encodeURIComponent(url)}`,
+        { method: 'DELETE' },
+      )
+      if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`)
+      onClose()
+      onSaved()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <button
+        type="button"
+        onClick={remove}
+        disabled={busy}
+        style={{ ...ghostBtn, color: 'rgba(248,113,113,0.6)', borderColor: 'rgba(248,113,113,0.22)', opacity: busy ? 0.5 : 1 }}
+      >
+        {busy ? 'Deleting…' : `Delete this ${kind === 'video' ? 'video' : 'still'}`}
+      </button>
+      {error && <span style={{ fontSize: 10, color: '#f87171' }}>{error}</span>}
     </div>
   )
 }
@@ -547,6 +596,17 @@ function Status({ project, onSaved }: { project: Project; onSaved: () => void })
       {queued && (
         <p style={{ fontSize: 11, marginTop: 10, lineHeight: 1.5, color: 'rgb(252,211,77)' }}>
           {saving ? 'Saving…' : 'Queued behind an earlier project — the PC starts this once that one is marked Done.'}
+        </p>
+      )}
+      {project.delivery?.requested_at && !project.delivery?.done_at && (
+        <p style={{ fontSize: 11, marginTop: 10, lineHeight: 1.5, color: 'rgb(252,211,77)' }}>
+          Final masters requested — 16:9, 9:16 and 1:1, each recomposed to fit,
+          plus a 1:1 contact sheet. The PC stays on this until they land.
+        </p>
+      )}
+      {project.delivery?.done_at && (
+        <p style={{ fontSize: 11, marginTop: 10, lineHeight: 1.5, color: 'rgb(74,222,128)' }}>
+          Final masters delivered.
         </p>
       )}
 

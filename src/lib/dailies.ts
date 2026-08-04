@@ -91,6 +91,23 @@ export const referenceType = (r: { url: string; type?: string }): 'image' | 'vid
 export type ProjectStatus = 'draft' | 'active' | 'done'
 export const PROJECT_STATUSES: ProjectStatus[] = ['draft', 'active', 'done']
 
+/**
+ * The finishing job, raised once when a project is approved.
+ *
+ * Approving asks for masters in three shapes rather than one — each
+ * recomposed for its frame, not a centre-crop of the same master — plus
+ * a square contact sheet. It fires on the first transition to done and
+ * never again, and the project stays the machine's current job until the
+ * masters land, so approval doesn't hand the queue on with the finishing
+ * work still outstanding.
+ */
+export type Delivery = {
+  requested_at: string | null
+  done_at: string | null
+}
+
+export const DELIVERY_FORMATS = ['16:9', '9:16', '1:1'] as const
+
 export type Project = {
   id: string
   title: string
@@ -99,9 +116,13 @@ export type Project = {
   references: Asset[]
   sources: Asset[]
   status: ProjectStatus
+  delivery: Delivery
   created_at: string
   updated_at: string
 }
+
+export const deliveryPending = (p: Project): boolean =>
+  !!p.delivery?.requested_at && !p.delivery?.done_at
 
 /**
  * The one project the machine should be working on: the oldest that's
@@ -109,10 +130,12 @@ export type Project = {
  * you mark the current one done.
  */
 export function currentProjectId(projects: Project[]): string | null {
-  const active = projects
-    .filter(p => p.status === 'active')
+  const open = projects
+    // An approved project still owes its masters, so it keeps the
+    // machine until those are delivered.
+    .filter(p => p.status === 'active' || (p.status === 'done' && deliveryPending(p)))
     .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
-  return active[0]?.id ?? null
+  return open[0]?.id ?? null
 }
 
 export type Entry = {
@@ -426,6 +449,37 @@ async function deleteAllVersions(key: string): Promise<void> {
       .filter(b => baseKeyOf(b.pathname) === key)
       .map(b => deleteBlob(b.url).catch(() => false)),
   )
+}
+
+/**
+ * Remove ONE file from an entry, blob and all.
+ *
+ * If it was the entry's last file the entry goes with it — an entry with
+ * no media is just a stranded note. Also drops the file from /misc,
+ * since leaving it there would publish a dead URL.
+ */
+export async function deleteAsset(entry: Entry, url: string, seed: unknown): Promise<'entry' | 'asset'> {
+  const remaining = entryAssets(entry).filter(a => a.url !== url)
+  await deleteBlob(url)
+
+  const current = await readVersionedJson<MiscData>(MISC_KEY, seed as MiscData)
+  const items = (current.items || []).filter(i => i.src !== url)
+  if (items.length !== (current.items || []).length) {
+    await writeVersionedJson(MISC_KEY, { items, tombstones: current.tombstones || [] })
+  }
+
+  if (remaining.length === 0) {
+    await deleteEntry(entry)
+    return 'entry'
+  }
+
+  await saveEntry({
+    ...entry,
+    video_url: entry.video_url === url ? null : entry.video_url,
+    contact_sheet_url: entry.contact_sheet_url === url ? null : entry.contact_sheet_url,
+    updated_at: new Date().toISOString(),
+  })
+  return 'asset'
 }
 
 /** Remove one entry: its record, its feedback and its media. */

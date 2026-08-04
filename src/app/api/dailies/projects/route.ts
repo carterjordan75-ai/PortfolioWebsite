@@ -150,6 +150,7 @@ export async function POST(request: Request) {
 
   const existing = await getProject(id)
   const now = new Date().toISOString()
+  const wantsDone = (body.status as ProjectStatus | undefined) === 'done'
 
   // Partial updates: an omitted field keeps its stored value, so the PC
   // can append a reference without resending the brief.
@@ -163,6 +164,18 @@ export async function POST(request: Request) {
     // New projects start as drafts: nothing enters the queue until you
     // say so, which is what buys the time to write a brief.
     status: (body.status as ProjectStatus) ?? existing?.status ?? 'draft',
+    // Approving raises the finishing job once and only once — a later
+    // save of an already-approved project must not re-request it.
+    delivery: {
+      requested_at:
+        wantsDone && !existing?.delivery?.requested_at
+          ? now
+          : existing?.delivery?.requested_at ?? null,
+      done_at:
+        body.delivery_done === true
+          ? existing?.delivery?.done_at ?? now
+          : existing?.delivery?.done_at ?? null,
+    },
     created_at: existing?.created_at ?? now,
     updated_at: now,
   }

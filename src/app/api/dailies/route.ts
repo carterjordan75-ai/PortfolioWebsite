@@ -4,6 +4,7 @@ import {
   checkApiKey,
   checkSession,
   currentProjectId,
+  deleteAsset,
   deleteEntry,
   entryAssets,
   miscSources,
@@ -200,12 +201,21 @@ export async function GET(request: Request) {
   }
 }
 
+/**
+ * Remove media. `?url=` deletes one file; without it the whole entry
+ * goes. Deleting a file that was the entry's last also takes the entry,
+ * since a note with nothing attached isn't reviewable.
+ *
+ * Session only — the render machine can post work, never destroy it.
+ */
 export async function DELETE(request: Request) {
   if (!(await checkSession(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const id = new URL(request.url).searchParams.get('id')
+  const params = new URL(request.url).searchParams
+  const id = params.get('id')
+  const url = params.get('url')
   if (!isValidId(id)) {
     return NextResponse.json({ error: 'id query parameter is required' }, { status: 400 })
   }
@@ -214,9 +224,19 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: `No entry ${id}` }, { status: 404 })
   }
 
+  // Only this entry's own files — the parameter can't be pointed at
+  // arbitrary blobs.
+  if (url && !entryAssets(entry).some(a => a.url === url)) {
+    return NextResponse.json({ error: 'url is not one of this entry\'s files' }, { status: 400 })
+  }
+
   try {
+    if (url) {
+      const what = await deleteAsset(entry, url, seedMisc)
+      return NextResponse.json({ success: true, deleted: what }, NO_CACHE)
+    }
     await deleteEntry(entry)
-    return NextResponse.json({ success: true }, NO_CACHE)
+    return NextResponse.json({ success: true, deleted: 'entry' }, NO_CACHE)
   } catch (err) {
     console.error('DELETE /api/dailies error:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })
