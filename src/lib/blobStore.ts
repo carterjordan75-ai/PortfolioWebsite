@@ -165,21 +165,36 @@ export async function writeVersionedJson<T>(key: string, value: T): Promise<void
   }
 }
 
-/** Read the newest version of `key`, falling back to `fallbackValue`. */
-export async function readVersionedJson<T>(key: string, fallbackValue: T): Promise<T> {
-  if (!HAS_TOKEN) return fallbackValue
+/**
+ * Read the newest version of `key`, reporting whether it actually came
+ * from storage.
+ *
+ * Callers that DELETE based on what they read must check `found` — a
+ * silent fall back to seed data looks like "almost nothing is
+ * referenced", which is indistinguishable from "everything is orphaned".
+ */
+export async function readVersionedJsonMeta<T>(
+  key: string,
+  fallbackValue: T,
+): Promise<{ value: T; found: boolean }> {
+  if (!HAS_TOKEN) return { value: fallbackValue, found: false }
   try {
     const { blobs } = await list({ prefix: `${key.replace(/\.[^.]+$/, '')}`, limit: 1000 })
     const mine = blobs
       .filter(b => baseKeyOf(b.pathname) === key)
       .sort((a, b) => b.pathname.localeCompare(a.pathname))
-    if (mine.length === 0) return fallbackValue
+    if (mine.length === 0) return { value: fallbackValue, found: false }
     const res = await fetch(mine[0].url, { cache: 'no-store' })
-    if (res.ok) return (await res.json()) as T
+    if (res.ok) return { value: (await res.json()) as T, found: true }
   } catch {
     /* fall through */
   }
-  return fallbackValue
+  return { value: fallbackValue, found: false }
+}
+
+/** Read the newest version of `key`, falling back to `fallbackValue`. */
+export async function readVersionedJson<T>(key: string, fallbackValue: T): Promise<T> {
+  return (await readVersionedJsonMeta(key, fallbackValue)).value
 }
 
 /**

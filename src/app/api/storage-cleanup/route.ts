@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { list } from '@vercel/blob'
-import { readJsonBlob, listBlobs, deleteBlob } from '@/lib/blobStore'
+import { readJsonBlob, readVersionedJsonMeta, listBlobs, deleteBlob } from '@/lib/blobStore'
 import seedAdminProjects from '../../../../public/assets/_data/admin-projects.json'
 import seedPages from '../../../../data/pages.json'
 import seedMisc from '../../../../data/misc.json'
@@ -51,15 +51,32 @@ function collectUrls(node: unknown, out: Set<string>): void {
 export async function POST() {
   try {
     // 1. Gather every URL referenced by admin state.
-    const [pages, misc, adminProjects, lookOrder] = await Promise.all([
+    const [pages, miscRead, adminProjects, lookOrder] = await Promise.all([
       readJsonBlob<Record<string, unknown>>('state/pages.json', seedPages as Record<string, unknown>),
-      readJsonBlob<{ items: unknown[] }>('state/misc.json', seedMisc as { items: unknown[] }),
+      // Versioned — /api/misc writes it that way, and reading the bare
+      // path here silently returned the 9-item seed instead of the live
+      // store, which made every real Misc file look like an orphan.
+      readVersionedJsonMeta<{ items: unknown[] }>('state/misc.json', seedMisc as { items: unknown[] }),
       readJsonBlob<Record<string, unknown>>(
         'state/admin-projects.json',
         seedAdminProjects as Record<string, unknown>,
       ),
       readJsonBlob<string[] | null>('state/look-order.json', null),
     ])
+    const misc = miscRead.value
+
+    // A sweep that can't see the state it's checking against cannot tell
+    // "orphaned" from "unreadable", and the failure mode is deleting live
+    // media. If the store exists but didn't load, do nothing.
+    if (!miscRead.found && (await listBlobs('state/misc')).length > 0) {
+      return NextResponse.json(
+        {
+          error: 'Refusing to sweep: the misc store exists but could not be read.',
+          deleted: 0, kept: 0, freedBytes: 0, totalBytes: 0, deletedPaths: [],
+        },
+        { status: 503, ...NO_CACHE },
+      )
+    }
     const lookMetas = await listBlobs('meta/look/')
     const lookItems = await Promise.all(
       lookMetas
