@@ -38,6 +38,9 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
   const [loading, setLoading] = useState(true)
   const [missing, setMissing] = useState(false)
   const [openUrl, setOpenUrl] = useState<string | null>(null)
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!projectId) return
@@ -57,6 +60,53 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
   }, [projectId])
 
   useEffect(() => { load() }, [load])
+
+  const toggle = (url: string) =>
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(url)) next.delete(url)
+      else next.add(url)
+      return next
+    })
+
+  const endSelecting = () => { setSelecting(false); setSelected(new Set()) }
+
+  /**
+   * Delete the ticked files.
+   *
+   * One at a time on purpose: two files of the same entry would otherwise
+   * race on the same record, and the second delete is the one that
+   * removes the entry itself.
+   */
+  const deleteSelected = async (assets: EntryAsset[]) => {
+    const chosen = assets.filter(a => selected.has(a.url))
+    if (chosen.length === 0) return
+    const entriesLost = new Set(
+      chosen
+        .filter(a => entryAssets(a.entry).every(x => selected.has(x.url)))
+        .map(a => a.entry.id),
+    ).size
+    const tail = entriesLost > 0
+      ? `\n\n${entriesLost} ${entriesLost === 1 ? 'entry loses' : 'entries lose'} every file, so ${entriesLost === 1 ? 'it goes' : 'they go'} too.`
+      : ''
+    if (!confirm(`Delete ${chosen.length} file${chosen.length === 1 ? '' : 's'}?${tail}\n\nThey're removed for good, and taken off Misc if they're there.`)) return
+
+    for (let i = 0; i < chosen.length; i++) {
+      const a = chosen[i]
+      setDeleting(`${i + 1} of ${chosen.length}`)
+      try {
+        await fetch(
+          `/api/dailies?id=${encodeURIComponent(a.entry.id)}&url=${encodeURIComponent(a.url)}`,
+          { method: 'DELETE' },
+        )
+      } catch {
+        /* keep going — one failure shouldn't strand the rest */
+      }
+    }
+    setDeleting(null)
+    endSelecting()
+    await load()
+  }
 
   const removeProject = async () => {
     if (!project) return
@@ -121,9 +171,40 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
         />
 
         <div>
-          <span style={{ ...label, marginBottom: 12 }}>
-            Media {assets.length > 0 && `(${assets.length})`}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+            <span style={{ ...label, marginBottom: 0 }}>
+              Media {assets.length > 0 && `(${assets.length})`}
+            </span>
+            {assets.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                {selecting ? (
+                  <>
+                    <button onClick={() => setSelected(new Set(assets.map(a => a.url)))} style={{ ...ghostBtn, padding: '5px 11px' }}>
+                      All
+                    </button>
+                    <button
+                      onClick={() => deleteSelected(assets)}
+                      disabled={selected.size === 0 || !!deleting}
+                      style={{
+                        ...ghostBtn, padding: '5px 11px',
+                        color: 'rgba(248,113,113,0.85)', borderColor: 'rgba(248,113,113,0.35)',
+                        opacity: selected.size === 0 || deleting ? 0.4 : 1,
+                      }}
+                    >
+                      {deleting ? `Deleting ${deleting}…` : `Delete ${selected.size || ''}`.trim()}
+                    </button>
+                    <button onClick={endSelecting} disabled={!!deleting} style={{ ...ghostBtn, padding: '5px 11px' }}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => setSelecting(true)} style={{ ...ghostBtn, padding: '5px 11px' }}>
+                    Select
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           {project.entries.length === 0 ? (
             <p style={{ ...card, padding: 24, textAlign: 'center', fontSize: 11, opacity: 0.4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
               Nothing yet — the PC hasn&apos;t posted to this project.
@@ -134,7 +215,13 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
             // aspect ratios. Columns let each piece keep its own.
             <div style={{ columnWidth: 250, columnGap: 12 }}>
               {assets.map(asset => (
-                <Tile key={asset.url} asset={asset} onOpen={() => setOpenUrl(asset.url)} />
+                <Tile
+                  key={asset.url}
+                  asset={asset}
+                  selecting={selecting}
+                  selected={selected.has(asset.url)}
+                  onOpen={() => (selecting ? toggle(asset.url) : setOpenUrl(asset.url))}
+                />
               ))}
             </div>
           )}
@@ -157,7 +244,9 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
 
 // ── grid tile ───────────────────────────────────────────────────────
 
-function Tile({ asset, onOpen }: { asset: EntryAsset; onOpen: () => void }) {
+function Tile({
+  asset, selecting, selected, onOpen,
+}: { asset: EntryAsset; selecting: boolean; selected: boolean; onOpen: () => void }) {
   const { entry, url, kind } = asset
   const onMisc = entry.in_misc_urls.includes(url)
 
@@ -168,6 +257,10 @@ function Tile({ asset, onOpen }: { asset: EntryAsset; onOpen: () => void }) {
         style={{
           ...card, padding: 0, width: '100%', textAlign: 'left', cursor: 'pointer',
           display: 'block', color: 'inherit', font: 'inherit',
+          borderColor: selected ? '#fff' : 'rgba(255,255,255,0.1)',
+          // Selection has to read at a glance down a long column, so the
+          // whole tile dims rather than relying on a small tick alone.
+          opacity: selecting && !selected ? 0.45 : 1,
         }}
       >
         {/* height:auto throughout — the media sets the tile, not the reverse */}
@@ -195,11 +288,24 @@ function Tile({ asset, onOpen }: { asset: EntryAsset; onOpen: () => void }) {
               ▶
             </span>
           )}
-          {!entry.feedback && (
+          {!entry.feedback && !selecting && (
             <span style={{
               position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 999,
               background: 'rgb(252,211,77)', boxShadow: '0 0 0 3px rgba(10,10,10,0.5)',
             }} />
+          )}
+          {selecting && (
+            <span style={{
+              position: 'absolute', top: 7, right: 7, width: 22, height: 22, borderRadius: 999,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 800, lineHeight: 1,
+              background: selected ? '#fff' : 'rgba(0,0,0,0.5)',
+              color: selected ? '#000' : 'transparent',
+              border: `2px solid ${selected ? '#fff' : 'rgba(255,255,255,0.6)'}`,
+              backdropFilter: 'blur(4px)',
+            }}>
+              ✓
+            </span>
           )}
         </div>
 

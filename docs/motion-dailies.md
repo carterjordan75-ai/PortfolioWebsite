@@ -430,6 +430,13 @@ delete the whole entry.
 `url` is validated against that entry's own files, so the parameter can't be
 pointed at arbitrary blobs. Session only.
 
+**Select** above the media grid switches to multi-select — tick any number of
+files, `All` takes the lot, `Delete` removes them. Unticked tiles dim so the
+selection reads down a long column. The confirm names how many files go and
+warns when an entry loses every file and goes with them. Deletes run one at a
+time rather than in parallel, since two files of the same entry would
+otherwise race on the same record.
+
 ### Approval and final deliverables
 
 Marking a project **Done** is approval, and it raises a finishing job once:
