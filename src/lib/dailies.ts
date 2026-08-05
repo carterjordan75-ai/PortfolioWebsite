@@ -225,10 +225,21 @@ export function currentProjectId(projects: Project[]): string | null {
   return open[0]?.id ?? null
 }
 
+/**
+ * Which folder an entry lives in.
+ *
+ * `wip` is the nightly back-and-forth — dozens of them. `final` is the
+ * delivered masters. Keeping them apart matters most at the end, when
+ * you want the four finished files and not the forty that got you there.
+ */
+export type EntryStage = 'wip' | 'final'
+export const ENTRY_STAGES: EntryStage[] = ['wip', 'final']
+
 export type Entry = {
   id: string
   project_id: string
   date: string                 // when it was made — metadata, not identity
+  stage: EntryStage
   title: string
   note: string
   questions: Question[]

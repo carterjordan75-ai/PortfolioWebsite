@@ -41,6 +41,21 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [folder, setFolder] = useState<'wip' | 'final'>('wip')
+  const [medium, setMedium] = useState<'all' | 'video' | 'still'>('all')
+  const [ratio, setRatio] = useState<string>('all')
+  /**
+   * url → width/height, filled in as each tile's media loads.
+   *
+   * Aspect isn't stored anywhere — the machine never sends dimensions —
+   * so it's measured off the real pixels. Filtering can only act on what
+   * has loaded, which is fine: rendering is what measures it.
+   */
+  const [dims, setDims] = useState<Record<string, number>>({})
+  const measure = useCallback((url: string, w: number, h: number) => {
+    if (!w || !h) return
+    setDims(prev => (prev[url] ? prev : { ...prev, [url]: w / h }))
+  }, [])
 
   const load = useCallback(async () => {
     if (!projectId) return
@@ -141,8 +156,21 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
 
   // Every media file, flattened: a 9:16 clip and its 1:1 sheet sit side
   // by side in the lineup rather than being folded into one tile.
-  const assets = project.entries.flatMap(entryAssets)
-  const open = assets.find(a => a.url === openUrl) || null
+  const allAssets = project.entries.flatMap(entryAssets)
+  const open = allAssets.find(a => a.url === openUrl) || null
+
+  const wip = allAssets.filter(a => (a.entry.stage || 'wip') !== 'final')
+  const finals = allAssets.filter(a => (a.entry.stage || 'wip') === 'final')
+
+  // Filters only apply to FINAL — WIP is a running log, not a library.
+  const inFolder = folder === 'final' ? finals : wip
+  const assets = folder === 'final'
+    ? inFolder.filter(a => {
+        if (medium !== 'all' && (medium === 'video') !== (a.kind === 'video')) return false
+        if (ratio !== 'all' && ratioBucket(dims[a.url]) !== ratio) return false
+        return true
+      })
+    : inFolder
 
   return (
     <Page>
@@ -173,7 +201,7 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
             <span style={{ ...label, marginBottom: 0 }}>
-              Media {assets.length > 0 && `(${assets.length})`}
+              {folder === 'final' ? 'Final' : 'WIP'} {assets.length > 0 && `(${assets.length})`}
             </span>
             {assets.length > 0 && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -205,9 +233,29 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
               </div>
             )}
           </div>
+          <Folders
+            folder={folder}
+            onFolder={f => { setFolder(f); endSelecting() }}
+            wipCount={wip.length}
+            finalCount={finals.length}
+            medium={medium}
+            onMedium={setMedium}
+            ratio={ratio}
+            onRatio={setRatio}
+            ratios={Array.from(new Set(finals.map(a => ratioBucket(dims[a.url])))).filter(Boolean) as string[]}
+          />
+
           {project.entries.length === 0 ? (
             <p style={{ ...card, padding: 24, textAlign: 'center', fontSize: 11, opacity: 0.4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
               Nothing yet — the PC hasn&apos;t posted to this project.
+            </p>
+          ) : assets.length === 0 ? (
+            <p style={{ ...card, padding: 24, textAlign: 'center', fontSize: 11, opacity: 0.4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              {folder === 'final'
+                ? finals.length === 0
+                  ? 'No finals yet — approve the project to ask for the masters.'
+                  : 'Nothing matches those filters.'
+                : 'Nothing in WIP.'}
             </p>
           ) : (
             // Multi-column, not grid: grid rows stretch to the tallest
@@ -220,6 +268,8 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
                   asset={asset}
                   selecting={selecting}
                   selected={selected.has(asset.url)}
+                  ratio={dims[asset.url]}
+                  onMeasure={measure}
                   onOpen={() => (selecting ? toggle(asset.url) : setOpenUrl(asset.url))}
                 />
               ))}
@@ -242,13 +292,114 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
   )
 }
 
+// ── folders + filters ───────────────────────────────────────────────
+
+/**
+ * Aspect buckets, named after the delivery formats.
+ *
+ * Generous tolerances: a master trimmed to 1918x1080 is still 16:9, and
+ * calling it "Other" would be pedantic and useless.
+ */
+function ratioBucket(r: number | undefined): string | null {
+  if (!r || !isFinite(r)) return null
+  if (r > 1.6 && r < 2.0) return '16:9'
+  if (r > 0.5 && r < 0.65) return '9:16'
+  if (r > 0.9 && r < 1.11) return '1:1'
+  return r >= 1 ? 'Other landscape' : 'Other portrait'
+}
+
+function Folders({
+  folder, onFolder, wipCount, finalCount, medium, onMedium, ratio, onRatio, ratios,
+}: {
+  folder: 'wip' | 'final'
+  onFolder: (f: 'wip' | 'final') => void
+  wipCount: number
+  finalCount: number
+  medium: 'all' | 'video' | 'still'
+  onMedium: (m: 'all' | 'video' | 'still') => void
+  ratio: string
+  onRatio: (r: string) => void
+  ratios: string[]
+}) {
+  const tab = (id: 'wip' | 'final', text: string, count: number) => {
+    const on = folder === id
+    return (
+      <button
+        key={id}
+        onClick={() => onFolder(id)}
+        style={{
+          fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase',
+          padding: '8px 15px', borderRadius: 999, cursor: 'pointer',
+          background: on ? '#fff' : 'transparent',
+          color: on ? '#000' : 'rgba(255,255,255,0.6)',
+          border: `1px solid ${on ? '#fff' : 'rgba(255,255,255,0.18)'}`,
+        }}
+      >
+        {text} <span style={{ opacity: 0.5 }}>{count}</span>
+      </button>
+    )
+  }
+
+  const pill = (on: boolean, text: string, onClick: () => void) => (
+    <button
+      key={text}
+      onClick={onClick}
+      style={{
+        fontSize: 10, padding: '6px 11px', borderRadius: 999, cursor: 'pointer',
+        background: on ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.05)',
+        color: on ? '#000' : 'rgba(255,255,255,0.7)',
+        border: `1px solid ${on ? '#fff' : 'rgba(255,255,255,0.14)'}`,
+        fontWeight: on ? 700 : 400,
+      }}
+    >
+      {text}
+    </button>
+  )
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        {tab('wip', 'WIP', wipCount)}
+        {tab('final', 'Final', finalCount)}
+      </div>
+
+      {/* Filters belong to Final only — WIP is a running log, not a library. */}
+      {folder === 'final' && finalCount > 0 && (
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ ...label, marginBottom: 0, opacity: 0.35 }}>Medium</span>
+            {pill(medium === 'all', 'All', () => onMedium('all'))}
+            {pill(medium === 'video', 'Video', () => onMedium('video'))}
+            {pill(medium === 'still', 'Still', () => onMedium('still'))}
+          </div>
+          {ratios.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ ...label, marginBottom: 0, opacity: 0.35 }}>Ratio</span>
+              {pill(ratio === 'all', 'All', () => onRatio('all'))}
+              {ratios.map(r => pill(ratio === r, r, () => onRatio(r)))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── grid tile ───────────────────────────────────────────────────────
 
 function Tile({
-  asset, selecting, selected, onOpen,
-}: { asset: EntryAsset; selecting: boolean; selected: boolean; onOpen: () => void }) {
+  asset, selecting, selected, ratio, onMeasure, onOpen,
+}: {
+  asset: EntryAsset
+  selecting: boolean
+  selected: boolean
+  ratio?: number
+  onMeasure: (url: string, w: number, h: number) => void
+  onOpen: () => void
+}) {
   const { entry, url, kind } = asset
   const onMisc = entry.in_misc_urls.includes(url)
+  const bucket = ratioBucket(ratio)
 
   return (
     <div style={{ breakInside: 'avoid', marginBottom: 12 }}>
@@ -271,11 +422,17 @@ function Tile({
               muted
               playsInline
               preload="metadata"
+              onLoadedMetadata={e => onMeasure(url, e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
               style={{ width: '100%', height: 'auto', display: 'block' }}
             />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt="" style={{ width: '100%', height: 'auto', display: 'block' }} />
+            <img
+              src={url}
+              alt=""
+              onLoad={e => onMeasure(url, e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
+              style={{ width: '100%', height: 'auto', display: 'block' }}
+            />
           )}
 
           {kind === 'video' && (
@@ -312,7 +469,8 @@ function Tile({
         <div style={{ padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.3 }}>{entry.title || 'Untitled'}</span>
           <span style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.35 }}>
-            {kind === 'video' ? 'Video' : 'Still'} · {entry.date}
+            {kind === 'video' ? 'Video' : 'Still'}
+            {bucket && ` · ${bucket}`} · {entry.date}
             {onMisc && ' · on misc'}
           </span>
         </div>

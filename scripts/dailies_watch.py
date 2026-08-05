@@ -363,7 +363,11 @@ def collect_outputs(out: Path, state: dict) -> list:
     return found
 
 
-def push_output(project_id: str, path: Path, work: Path, agent_output: str, questions) -> str:
+FINAL_STEMS = {"final_16x9", "final_9x16", "final_1x1", "final_sheet"}
+
+
+def push_output(project_id: str, path: Path, work: Path, agent_output: str, questions,
+                stage: str = "wip") -> str:
     out = path.parent
     entry_id = new_entry_id(project_id)
     is_video = path.suffix.lower() in VIDEO_EXT
@@ -380,6 +384,7 @@ def push_output(project_id: str, path: Path, work: Path, agent_output: str, ques
     payload = {
         "project_id": project_id,
         "id": entry_id,
+        "stage": stage,
         "title": path.stem.replace("_", " ").replace("-", " ").strip() or path.name,
         "note": note,
     }
@@ -445,7 +450,10 @@ def cycle(args, root: Path, log_state: dict) -> None:
         log_state.pop("empty_notice", None)
         for path, key in found:
             try:
-                entry_id = push_output(project_id, path, out_dir, "", questions)
+                entry_id = push_output(
+                    project_id, path, out_dir, "", questions,
+                    stage="final" if path.stem in FINAL_STEMS else "wip",
+                )
                 state.setdefault("pushed", []).append(key)
                 log(f"  pushed {path.name} -> {entry_id}")
             except SystemExit as err:
@@ -483,7 +491,11 @@ def cycle(args, root: Path, log_state: dict) -> None:
     pushed_names = []
     for path, key in collect_outputs(out_dir, state):
         try:
-            entry_id = push_output(project_id, path, out_dir, output, questions)
+            # The named masters go in FINAL; everything else is WIP.
+            entry_id = push_output(
+                project_id, path, out_dir, output, questions,
+                stage="final" if path.stem in FINAL_STEMS else "wip",
+            )
             state.setdefault("pushed", []).append(key)
             pushed_names.append(path.name)
             log(f"  pushed {path.name} -> {entry_id}")
@@ -494,7 +506,7 @@ def cycle(args, root: Path, log_state: dict) -> None:
     # can move on. Anything short of the full set leaves it open.
     delivery = project.get("delivery") or {}
     if delivery.get("requested_at") and not delivery.get("done_at"):
-        want = {"final_16x9", "final_9x16", "final_1x1", "final_sheet"}
+        want = set(FINAL_STEMS)
         have = {Path(k.split(":")[0]).stem for k in state.get("pushed", [])}
         if want <= have:
             _api("/api/dailies/projects", method="POST",

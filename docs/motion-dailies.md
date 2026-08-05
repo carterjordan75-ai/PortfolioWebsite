@@ -511,3 +511,24 @@ one that parses.
 
 On the machine, a link's resolved images download alongside the uploaded ones,
 and the links themselves are written to `LINKS.txt` in the same folder.
+
+### WIP and FINAL
+
+Every entry carries a `stage` — `wip` or `final` — and the project page shows
+them as two folders. `wip` is the nightly back-and-forth, dozens of it;
+`final` is the delivered masters. Existing entries read as `wip`, so nothing
+needed migrating.
+
+The machine sets it: the watcher pushes anything named `final_16x9`,
+`final_9x16`, `final_1x1` or `final_sheet` as `final`, everything else as
+`wip`. `POST /api/dailies` also takes `stage` directly.
+
+**Final has filters** — medium (video / still) and aspect ratio (16:9, 9:16,
+1:1, other landscape, other portrait). WIP doesn't: it's a running log, not a
+library.
+
+Aspect is **measured, not stored**. The machine never sends dimensions, so
+each tile reports its real `naturalWidth`/`videoWidth` as it loads and the
+buckets are computed from that. Rendering is what measures it, so the filter
+list fills in as the folder loads. Tolerances are deliberately generous — a
+master trimmed to 1918×1080 is still 16:9.

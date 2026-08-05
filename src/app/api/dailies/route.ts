@@ -4,6 +4,7 @@ import {
   checkApiKey,
   checkSession,
   currentProjectId,
+  ENTRY_STAGES,
   deleteAsset,
   deleteEntry,
   entryAssets,
@@ -19,6 +20,7 @@ import {
   saveEntry,
   saveProject,
   type Entry,
+  type EntryStage,
   type Question,
   type QuestionType,
 } from '@/lib/dailies'
@@ -117,10 +119,18 @@ export async function POST(request: Request) {
   }
   const now = new Date().toISOString()
 
+  if (body.stage !== undefined && !ENTRY_STAGES.includes(body.stage as EntryStage)) {
+    return NextResponse.json(
+      { error: `stage must be one of ${ENTRY_STAGES.join(' | ')}` },
+      { status: 400 },
+    )
+  }
+
   const entry: Entry = {
     id,
     project_id: projectId,
     date: isValidDate(body.date) ? body.date : existing?.date ?? now.slice(0, 10),
+    stage: (body.stage as EntryStage) ?? existing?.stage ?? 'wip',
     title: typeof body.title === 'string' ? body.title : existing?.title ?? '',
     note: typeof body.note === 'string' ? body.note : existing?.note ?? '',
     questions: body.questions !== undefined ? parsed.questions : existing?.questions ?? [],

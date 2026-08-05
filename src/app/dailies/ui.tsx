@@ -28,10 +28,13 @@ export type Feedback = {
   submitted_at: string
 }
 
+export type EntryStage = 'wip' | 'final'
+
 export type Entry = {
   id: string
   project_id: string
   date: string
+  stage: EntryStage
   title: string
   note: string
   questions: Question[]
