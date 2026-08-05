@@ -115,6 +115,7 @@ export type Project = {
   references: Asset[]
   sources: Asset[]
   styles: string[]
+  learnings: string
   status: ProjectStatus
   delivery: { requested_at: string | null; done_at: string | null }
   created_at: string

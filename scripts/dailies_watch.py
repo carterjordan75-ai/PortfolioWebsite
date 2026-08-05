@@ -97,27 +97,22 @@ def save_state(work: Path, state: dict):
 # ── inputs ──────────────────────────────────────────────────────────
 
 
-def pick_project(pinned: str | None) -> dict | None:
+def past_learnings(projects: list, current_id: str, limit_chars: int = 24_000) -> list:
     """
-    Which project to work on now.
+    Learnings from every other project, newest first.
 
-    Unpinned, this follows the queue: the site marks exactly one project
-    as current — the oldest one set to "In progress" — and the machine
-    works on that and nothing else. Marking it Done on the phone is what
-    releases the machine to the next one, which is also what stops it
-    picking up a project whose brief isn't written yet.
+    Capped as a whole: a prompt that carries a year of notes crowds out
+    the brief it's supposed to serve.
     """
-    data = _api("/api/dailies/projects")
-    projects = data.get("projects", [])
-
-    if pinned:
-        project = next((p for p in projects if p["id"] == pinned), None)
-        if project is None:
-            raise SystemExit(f"No project '{pinned}'. Create it at {BASE_URL}/dailies")
-        return project
-
-    current = data.get("current_project_id")
-    return next((p for p in projects if p["id"] == current), None) if current else None
+    out, used = [], 0
+    others = [p for p in projects if p["id"] != current_id and (p.get("learnings") or "").strip()]
+    for p in sorted(others, key=lambda p: p.get("updated_at") or "", reverse=True):
+        text = p["learnings"].strip()
+        if used + len(text) > limit_chars:
+            break
+        out.append((p.get("title") or p["id"], text))
+        used += len(text)
+    return out
 
 
 def _sync_collection(project: dict, key: str, out: Path, kindLabel: str):
@@ -207,7 +202,7 @@ def download_feedback_refs(feedback: dict, work: Path) -> Path | None:
     return out
 
 
-def build_prompt(project: dict, feedback: list, work: Path) -> str:
+def build_prompt(project: dict, feedback: list, work: Path, past: list = None) -> str:
     parts = [
         f"You are working on the project \"{project['title']}\".",
         "",
@@ -256,6 +251,14 @@ def build_prompt(project: dict, feedback: list, work: Path) -> str:
     else:
         parts += ["", "No new feedback. Continue from the standing brief."]
 
+    # Everything earlier projects worked out, so this one doesn't start
+    # from nothing and rediscover the same dead ends.
+    if past:
+        parts += ["", "=" * 60, "WHAT YOU LEARNED ON EARLIER PROJECTS"]
+        for title, text in past:
+            parts += ["", f"--- {title} ---", text.strip()]
+        parts += ["=" * 60]
+
     delivery = project.get("delivery") or {}
     if delivery.get("requested_at") and not delivery.get("done_at"):
         parts += [
@@ -276,11 +279,19 @@ def build_prompt(project: dict, feedback: list, work: Path) -> str:
             "",
             "Also produce ONE 1:1 still contact sheet of the piece.",
             "",
+            "AND write out/final_learnings.md — what you take away from this",
+            "project. Not a summary of what you made; what you now KNOW.",
+            "Techniques that worked and why, dead ends and what went wrong,",
+            "settings and numbers worth reusing, things you'd do differently.",
+            "Write it for yourself starting the next project cold. Be specific:",
+            "\"displacement above 0.4 tore the mesh\" beats \"tune displacement\".",
+            "",
             "Name them exactly:",
             "  out/final_16x9.mp4",
             "  out/final_9x16.mp4",
             "  out/final_1x1.mp4",
             "  out/final_sheet.png",
+            "  out/final_learnings.md",
             "=" * 60,
         ]
 
@@ -410,7 +421,21 @@ def push_output(project_id: str, path: Path, work: Path, agent_output: str, ques
 
 
 def cycle(args, root: Path, log_state: dict) -> None:
-    project = pick_project(args.project)
+    """
+    One pass.
+
+    Unpinned, this follows the queue: the site marks exactly one project
+    as current — the oldest still open — and the machine works on that
+    and nothing else. Marking it Done on the phone is what releases it to
+    the next, which is also what stops it picking up a project whose
+    brief isn't written yet.
+    """
+    data = _api("/api/dailies/projects")
+    projects = data.get("projects", [])
+    target = args.project or data.get("current_project_id")
+    project = next((p for p in projects if p["id"] == target), None) if target else None
+    if args.project and project is None:
+        raise SystemExit(f"No project '{args.project}'. Create it at {BASE_URL}/dailies")
     if project is None:
         # Said once, not every cycle — this is the normal state while
         # you're writing the brief for whatever comes next.
@@ -479,7 +504,7 @@ def cycle(args, root: Path, log_state: dict) -> None:
     else:
         log(f"  {project_id}: working from the brief")
 
-    prompt = build_prompt(project, feedback, work)
+    prompt = build_prompt(project, feedback, work, past_learnings(projects, project_id))
     (work / ".dailies-last-prompt.txt").write_text(prompt, encoding="utf-8")
     output = run_agent(args.agent_cmd, prompt, work, args.timeout)
 
@@ -487,6 +512,16 @@ def cycle(args, root: Path, log_state: dict) -> None:
     # so a crash mid-cycle replays it instead of dropping it.
     if feedback:
         state["last_feedback_at"] = feedback[-1]["submitted_at"]
+
+    # final_learnings.md is a document, not a piece: it belongs on the
+    # project so later runs can read it, not in the media grid.
+    learnings_file = out_dir / "final_learnings.md"
+    if learnings_file.exists():
+        text = learnings_file.read_text(encoding="utf-8", errors="replace").strip()
+        if text and text != (project.get("learnings") or "").strip():
+            _api("/api/dailies/projects", method="POST",
+                 payload={"id": project_id, "learnings": text})
+            log(f"  {project_id}: learnings saved ({len(text)} chars)")
 
     pushed_names = []
     for path, key in collect_outputs(out_dir, state):
@@ -508,12 +543,17 @@ def cycle(args, root: Path, log_state: dict) -> None:
     if delivery.get("requested_at") and not delivery.get("done_at"):
         want = set(FINAL_STEMS)
         have = {Path(k.split(":")[0]).stem for k in state.get("pushed", [])}
-        if want <= have:
+        # The write-up counts as a deliverable; without it the next
+        # project starts blind.
+        learnings_in = bool((project.get("learnings") or "").strip()) or learnings_file.exists()
+        if want <= have and learnings_in:
             _api("/api/dailies/projects", method="POST",
                  payload={"id": project_id, "delivery_done": True})
             log(f"  {project_id}: final deliverables complete")
         else:
             missing = sorted(want - have)
+            if not learnings_in:
+                missing.append("final_learnings.md")
             log(f"  {project_id}: still owed {', '.join(missing)}")
 
     save_state(work, state)

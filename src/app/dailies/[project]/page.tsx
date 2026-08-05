@@ -123,6 +123,37 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
     await load()
   }
 
+  /**
+   * Empty a whole folder.
+   *
+   * The point is clearing WIP once the finals are in — forty passes you
+   * no longer need, at the size renders come in. Whole entries go, not
+   * individual files, because half an entry isn't a thing you'd want.
+   */
+  const deleteFolder = async (which: 'wip' | 'final') => {
+    if (!project) return
+    const entries = project.entries.filter(e => (e.stage || 'wip') === which)
+    if (entries.length === 0) return
+    const files = entries.flatMap(entryAssets).length
+    const label = which === 'wip' ? 'WIP' : 'Final'
+    if (!confirm(
+      `Delete everything in ${label}?\n\n${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}, ${files} ${files === 1 ? 'file' : 'files'}.\n\n` +
+      `Removed for good, and taken off Misc if they're there.${which === 'final' ? '' : ' Final is untouched.'}`
+    )) return
+
+    for (let i = 0; i < entries.length; i++) {
+      setDeleting(`${i + 1} of ${entries.length}`)
+      try {
+        await fetch(`/api/dailies?id=${encodeURIComponent(entries[i].id)}`, { method: 'DELETE' })
+      } catch {
+        /* keep going — one failure shouldn't strand the rest */
+      }
+    }
+    setDeleting(null)
+    endSelecting()
+    await load()
+  }
+
   const removeProject = async () => {
     if (!project) return
     if (!confirm(`Delete "${project.title}" and all ${project.entry_count} of its entries? This can't be undone.`)) return
@@ -243,6 +274,8 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
             ratio={ratio}
             onRatio={setRatio}
             ratios={Array.from(new Set(finals.map(a => ratioBucket(dims[a.url])))).filter(Boolean) as string[]}
+            onDeleteFolder={() => deleteFolder(folder)}
+            deleting={deleting}
           />
 
           {project.entries.length === 0 ? (
@@ -258,17 +291,18 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
                 : 'Nothing in WIP.'}
             </p>
           ) : (
-            // Multi-column, not grid: grid rows stretch to the tallest
-            // cell, which is exactly what letterboxes a mixed set of
-            // aspect ratios. Columns let each piece keep its own.
-            <div style={{ columnWidth: 250, columnGap: 12 }}>
-              {assets.map(asset => (
-                <Tile
+            <div style={{ ...card, overflow: 'hidden' }}>
+              {assets.map((asset, i) => (
+                <Row
                   key={asset.url}
                   asset={asset}
+                  first={i === 0}
                   selecting={selecting}
                   selected={selected.has(asset.url)}
                   ratio={dims[asset.url]}
+                  // Only FINAL is filterable, so only FINAL needs measuring —
+                  // no reason to pull forty WIP files just to learn their shape.
+                  measurable={folder === 'final'}
                   onMeasure={measure}
                   onOpen={() => (selecting ? toggle(asset.url) : setOpenUrl(asset.url))}
                 />
@@ -310,6 +344,7 @@ function ratioBucket(r: number | undefined): string | null {
 
 function Folders({
   folder, onFolder, wipCount, finalCount, medium, onMedium, ratio, onRatio, ratios,
+  onDeleteFolder, deleting,
 }: {
   folder: 'wip' | 'final'
   onFolder: (f: 'wip' | 'final') => void
@@ -320,6 +355,8 @@ function Folders({
   ratio: string
   onRatio: (r: string) => void
   ratios: string[]
+  onDeleteFolder: () => void
+  deleting: string | null
 }) {
   const tab = (id: 'wip' | 'final', text: string, count: number) => {
     const on = folder === id
@@ -358,9 +395,22 @@ function Folders({
 
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         {tab('wip', 'WIP', wipCount)}
         {tab('final', 'Final', finalCount)}
+        {(folder === 'wip' ? wipCount : finalCount) > 0 && (
+          <button
+            onClick={onDeleteFolder}
+            disabled={!!deleting}
+            style={{
+              ...ghostBtn, marginLeft: 'auto', padding: '6px 11px',
+              color: 'rgba(248,113,113,0.6)', borderColor: 'rgba(248,113,113,0.22)',
+              opacity: deleting ? 0.5 : 1,
+            }}
+          >
+            {deleting ? `Deleting ${deleting}…` : `Empty ${folder === 'wip' ? 'WIP' : 'Final'}`}
+          </button>
+        )}
       </div>
 
       {/* Filters belong to Final only — WIP is a running log, not a library. */}
@@ -385,96 +435,113 @@ function Folders({
   )
 }
 
-// ── grid tile ───────────────────────────────────────────────────────
+// ── list row ────────────────────────────────────────────────────────
 
-function Tile({
-  asset, selecting, selected, ratio, onMeasure, onOpen,
+/**
+ * What to call the file in the list.
+ *
+ * The stored blob is always video.mp4 or contact.png — the path carries
+ * the identity, not the filename — so those are useless as names. The
+ * entry's title is the real one; the extension keeps it obvious what
+ * kind of file it is.
+ */
+const displayName = (entry: Entry, url: string, kind: 'video' | 'still') => {
+  const ext = (url.split('?')[0].split('.').pop() || '').toLowerCase()
+  const base = (entry.title || '').trim()
+  if (!base) return url.split('?')[0].split('/').pop() || 'file'
+  const suffix = kind === 'video' ? 'mp4' : ext || 'png'
+  return `${base.replace(/\s+/g, '_')}.${suffix}`
+}
+
+/**
+ * One file, one line: name, what it is, when it arrived.
+ *
+ * A list beats a grid once a project holds forty passes — you scan names,
+ * not thumbnails. Nothing here loads the media, so a long WIP folder
+ * costs nothing to open; FINAL renders an offscreen probe because its
+ * ratio filter has to measure real pixels.
+ */
+function Row({
+  asset, first, selecting, selected, ratio, measurable, onMeasure, onOpen,
 }: {
   asset: EntryAsset
+  first: boolean
   selecting: boolean
   selected: boolean
   ratio?: number
+  measurable: boolean
   onMeasure: (url: string, w: number, h: number) => void
   onOpen: () => void
 }) {
   const { entry, url, kind } = asset
   const onMisc = entry.in_misc_urls.includes(url)
   const bucket = ratioBucket(ratio)
+  const when = new Date(entry.created_at)
 
   return (
-    <div style={{ breakInside: 'avoid', marginBottom: 12 }}>
-      <button
-        onClick={onOpen}
-        style={{
-          ...card, padding: 0, width: '100%', textAlign: 'left', cursor: 'pointer',
-          display: 'block', color: 'inherit', font: 'inherit',
-          borderColor: selected ? '#fff' : 'rgba(255,255,255,0.1)',
-          // Selection has to read at a glance down a long column, so the
-          // whole tile dims rather than relying on a small tick alone.
-          opacity: selecting && !selected ? 0.45 : 1,
-        }}
-      >
-        {/* height:auto throughout — the media sets the tile, not the reverse */}
-        <div style={{ position: 'relative', background: 'rgba(255,255,255,0.04)' }}>
+    <div
+      onClick={onOpen}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 11, cursor: 'pointer',
+        padding: '11px 13px',
+        borderTop: first ? 'none' : '1px solid rgba(255,255,255,0.07)',
+        background: selected ? 'rgba(255,255,255,0.07)' : 'transparent',
+      }}
+    >
+      {selecting && (
+        <span style={{
+          flexShrink: 0, width: 17, height: 17, borderRadius: 5,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 11, fontWeight: 800, lineHeight: 1,
+          background: selected ? '#fff' : 'transparent',
+          color: selected ? '#000' : 'transparent',
+          border: `1.5px solid ${selected ? '#fff' : 'rgba(255,255,255,0.35)'}`,
+        }}>
+          ✓
+        </span>
+      )}
+
+      <span style={{ flexShrink: 0, width: 13, textAlign: 'center', fontSize: 10, opacity: 0.45 }}>
+        {kind === 'video' ? '▶' : '▣'}
+      </span>
+
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{
+          fontSize: 13, fontWeight: 600, lineHeight: 1.35,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {displayName(entry, url, kind)}
+        </div>
+        <div style={{ fontSize: 9, letterSpacing: '0.09em', textTransform: 'uppercase', opacity: 0.35, marginTop: 2 }}>
+          {kind === 'video' ? 'Video' : 'Still'}
+          {bucket && ` · ${bucket}`}
+          {onMisc && ' · on misc'}
+          {!entry.feedback && ' · awaiting'}
+        </div>
+      </div>
+
+      <span style={{ flexShrink: 0, fontSize: 10, opacity: 0.4, textAlign: 'right', lineHeight: 1.3 }}>
+        {when.toLocaleDateString([], { day: '2-digit', month: 'short' })}
+        <br />
+        <span style={{ opacity: 0.7 }}>{when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+      </span>
+
+      {/* Offscreen, and only where the ratio filter needs it. */}
+      {measurable && !ratio && (
+        <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}>
           {kind === 'video' ? (
             <video
               src={`${url}#t=0.1`}
               muted
-              playsInline
               preload="metadata"
               onLoadedMetadata={e => onMeasure(url, e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
-              style={{ width: '100%', height: 'auto', display: 'block' }}
             />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={url}
-              alt=""
-              onLoad={e => onMeasure(url, e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
-              style={{ width: '100%', height: 'auto', display: 'block' }}
-            />
+            <img src={url} alt="" onLoad={e => onMeasure(url, e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)} />
           )}
-
-          {kind === 'video' && (
-            <span style={{
-              position: 'absolute', left: 8, bottom: 8, width: 22, height: 22, borderRadius: 999,
-              background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 9, color: '#fff', paddingLeft: 2,
-            }}>
-              ▶
-            </span>
-          )}
-          {!entry.feedback && !selecting && (
-            <span style={{
-              position: 'absolute', top: 8, right: 8, width: 8, height: 8, borderRadius: 999,
-              background: 'rgb(252,211,77)', boxShadow: '0 0 0 3px rgba(10,10,10,0.5)',
-            }} />
-          )}
-          {selecting && (
-            <span style={{
-              position: 'absolute', top: 7, right: 7, width: 22, height: 22, borderRadius: 999,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 800, lineHeight: 1,
-              background: selected ? '#fff' : 'rgba(0,0,0,0.5)',
-              color: selected ? '#000' : 'transparent',
-              border: `2px solid ${selected ? '#fff' : 'rgba(255,255,255,0.6)'}`,
-              backdropFilter: 'blur(4px)',
-            }}>
-              ✓
-            </span>
-          )}
-        </div>
-
-        <div style={{ padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.3 }}>{entry.title || 'Untitled'}</span>
-          <span style={{ fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.35 }}>
-            {kind === 'video' ? 'Video' : 'Still'}
-            {bucket && ` · ${bucket}`} · {entry.date}
-            {onMisc && ' · on misc'}
-          </span>
-        </div>
-      </button>
+        </span>
+      )}
     </div>
   )
 }

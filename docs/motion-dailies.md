@@ -532,3 +532,37 @@ each tile reports its real `naturalWidth`/`videoWidth` as it loads and the
 buckets are computed from that. Rendering is what measures it, so the filter
 list fills in as the folder loads. Tolerances are deliberately generous — a
 master trimmed to 1918×1080 is still 16:9.
+
+### Learnings — the part that compounds
+
+Delivery asks for a fifth file: `out/final_learnings.md`. Not a summary of what
+was made — what the machine now *knows*. Techniques that worked and why, dead
+ends, settings worth reusing, what it would do differently. The prompt asks for
+specifics: *"displacement above 0.4 tore the mesh"* beats *"tune displacement"*.
+
+It's stored on the project (`learnings`), not as an entry — it's a document,
+not a piece — and the delivery job stays open until it arrives, alongside the
+four masters.
+
+Every later prompt then opens with **what earlier projects learned**, newest
+first, capped at ~24k characters so a year of notes can't crowd out the brief
+it's meant to serve. Each project starts knowing what the ones before it
+found out.
+
+### The media list
+
+Files are a list, not a grid: name, what it is, when it arrived. Once a
+project holds forty passes you scan names, not thumbnails. Clicking a row opens
+the piece.
+
+The name shown is the entry's title with the right extension — the stored blob
+is always `video.mp4` or `contact.png`, since the path carries identity rather
+than the filename, so those would be useless as names.
+
+Nothing in the list loads media, so a long WIP folder opens instantly. FINAL
+renders an offscreen probe per row because its ratio filter has to measure real
+pixels; WIP has no filter and so no probe.
+
+**Empty WIP / Empty Final** clears a whole folder — whole entries, one at a
+time so entries of the same project can't race. The confirm names the count and
+says which folder survives. Clearing WIP once the finals are in is the point.

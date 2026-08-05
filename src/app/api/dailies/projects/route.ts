@@ -198,6 +198,10 @@ export async function POST(request: Request) {
     references: references ?? existing?.references ?? [],
     sources: sources ?? existing?.sources ?? [],
     styles: styles ?? existing?.styles ?? [],
+    learnings:
+      typeof body.learnings === 'string'
+        ? body.learnings.slice(0, 20_000)
+        : existing?.learnings ?? '',
     // New projects start as drafts: nothing enters the queue until you
     // say so, which is what buys the time to write a brief.
     status: (body.status as ProjectStatus) ?? existing?.status ?? 'draft',

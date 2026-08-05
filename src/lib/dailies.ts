@@ -202,6 +202,13 @@ export type Project = {
   sources: Asset[]
   /** What kind of thing this is — see STYLE_GROUPS. */
   styles: string[]
+  /**
+   * What the machine took away from making this: techniques that
+   * worked, dead ends, gotchas. Written on delivery and read back at the
+   * start of every later project, so each one begins knowing what the
+   * ones before it found out.
+   */
+  learnings: string
   status: ProjectStatus
   delivery: Delivery
   created_at: string
