@@ -931,8 +931,9 @@ function Status({ project, onSaved }: { project: Project; onSaved: () => void })
       )}
       {project.delivery?.requested_at && !project.delivery?.done_at && (
         <p style={{ fontSize: 11, marginTop: 10, lineHeight: 1.5, color: 'rgb(252,211,77)' }}>
-          Final masters requested — 16:9, 9:16 and 1:1, each recomposed to fit,
-          plus a 1:1 contact sheet. The PC stays on this until they land.
+          Final masters requested — 16:9, 9:16 and 1:1, each recomposed to fit
+          and each with its own contact sheet, plus a write-up of what it
+          learned. The PC stays on this until they land.
         </p>
       )}
       {project.delivery?.done_at && (

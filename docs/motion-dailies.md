@@ -441,12 +441,28 @@ otherwise race on the same record.
 
 Marking a project **Done** is approval, and it raises a finishing job once:
 masters in **16:9, 9:16 and 1:1**, each recomposed for its own frame rather
-than centre-cropped from one master, plus a **1:1 contact sheet**. The agent
-prompt spells this out and names the expected files:
+than centre-cropped from one master, and **each with its own contact sheet in
+that same ratio** — a 9:16 cut gets a 9:16 sheet. Six media files, plus the
+write-up. The agent prompt spells this out and names them:
 
 ```
-out/final_16x9.mp4   out/final_9x16.mp4   out/final_1x1.mp4   out/final_sheet.png
+out/final_16x9.mp4    out/final_16x9.png
+out/final_9x16.mp4    out/final_9x16.png
+out/final_1x1.mp4     out/final_1x1.png
+out/final_learnings.md
 ```
+
+The `.png` beside each `.mp4` shares its stem, so the ordinary pairing rule
+files them as one entry carrying both.
+
+Completion is checked against the **files on disk**, not what happened to get
+pushed: a video whose sheet never arrived would otherwise look complete, since
+the pair collapses into one entry either way.
+
+A sheet that lands on a later cycle than its video is picked up and attached to
+that entry. Without this it would be skipped forever — the pairing rule ignores
+an image whose video partner already exists, which is right when they arrive
+together and silently wrong when they don't.
 
 The request fires on the first transition to done and never again — re-saving
 an approved project doesn't re-raise it, and projects approved before this

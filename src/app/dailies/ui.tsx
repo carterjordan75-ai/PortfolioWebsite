@@ -97,7 +97,7 @@ export const STATUS_OPTIONS: Array<{ value: ProjectStatus; label: string; hint: 
   {
     value: 'done',
     label: 'Done',
-    hint: 'Approved — asks the PC for final masters in 16:9, 9:16 and 1:1 plus a square contact sheet, then moves to the next project',
+    hint: 'Approved — asks the PC for final masters in 16:9, 9:16 and 1:1, each with its own contact sheet, then moves to the next project',
   },
 ]
 

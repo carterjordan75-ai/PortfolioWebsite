@@ -277,7 +277,9 @@ def build_prompt(project: dict, feedback: list, work: Path, past: list = None) -
             "Do NOT centre-crop or letterbox a single master into the other",
             "two — each should look like it was made for that ratio.",
             "",
-            "Also produce ONE 1:1 still contact sheet of the piece.",
+            "Each ratio needs BOTH a video and its own still contact sheet,",
+            "the sheet in that same ratio — a 9:16 cut gets a 9:16 sheet, not a",
+            "square one. Six media files in total.",
             "",
             "AND write out/final_learnings.md — what you take away from this",
             "project. Not a summary of what you made; what you now KNOW.",
@@ -286,11 +288,11 @@ def build_prompt(project: dict, feedback: list, work: Path, past: list = None) -
             "Write it for yourself starting the next project cold. Be specific:",
             "\"displacement above 0.4 tore the mesh\" beats \"tune displacement\".",
             "",
-            "Name them exactly:",
-            "  out/final_16x9.mp4",
-            "  out/final_9x16.mp4",
-            "  out/final_1x1.mp4",
-            "  out/final_sheet.png",
+            "Name them exactly — the .png beside each .mp4 is picked up as",
+            "that cut's contact sheet, so the names must match:",
+            "  out/final_16x9.mp4    out/final_16x9.png",
+            "  out/final_9x16.mp4    out/final_9x16.png",
+            "  out/final_1x1.mp4     out/final_1x1.png",
             "  out/final_learnings.md",
             "=" * 60,
         ]
@@ -374,11 +376,15 @@ def collect_outputs(out: Path, state: dict) -> list:
     return found
 
 
-FINAL_STEMS = {"final_16x9", "final_9x16", "final_1x1", "final_sheet"}
+# One stem per delivered ratio. The .mp4 and the .png share it, so the
+# existing pairing rule files them as one entry carrying both.
+FINAL_STEMS = {"final_16x9", "final_9x16", "final_1x1"}
 
 
 def push_output(project_id: str, path: Path, work: Path, agent_output: str, questions,
-                stage: str = "wip") -> str:
+                stage: str = "wip"):
+    """Returns (entry_id, sheet_attached) — the caller needs to know when a
+    video went up without its contact sheet, so a later one can catch up."""
     out = path.parent
     entry_id = new_entry_id(project_id)
     is_video = path.suffix.lower() in VIDEO_EXT
@@ -414,7 +420,32 @@ def push_output(project_id: str, path: Path, work: Path, agent_output: str, ques
         )
 
     _api("/api/dailies", method="POST", payload=payload)
-    return entry_id
+    return entry_id, bool(sheet) or not is_video
+
+
+def attach_late_sheets(project_id: str, out_dir: Path, state: dict) -> None:
+    """
+    Attach contact sheets that showed up after their video.
+
+    collect_outputs skips an image whose video partner exists, on the
+    assumption they arrive together. Over a delivery that isn't true —
+    the cuts can land one cycle and the sheets the next — and without
+    this the sheet is skipped forever and never reaches the site.
+    """
+    pending = state.get("pending_sheets") or {}
+    for stem, entry_id in list(pending.items()):
+        sheet = next((out_dir / (stem + e) for e in IMAGE_EXT if (out_dir / (stem + e)).exists()), None)
+        if not sheet:
+            continue
+        try:
+            url = upload(sheet, project=project_id, kind="contact_sheet", entry_id=entry_id)
+            _api("/api/dailies", method="POST",
+                 payload={"project_id": project_id, "id": entry_id, "contact_sheet_url": url})
+            log(f"  attached late sheet: {sheet.name} -> {entry_id}")
+            pending.pop(stem, None)
+        except SystemExit as err:
+            log(f"  could not attach {sheet.name}: {err}")
+    state["pending_sheets"] = pending
 
 
 # ── the loop ────────────────────────────────────────────────────────
@@ -466,8 +497,11 @@ def cycle(args, root: Path, log_state: dict) -> None:
     # run an agent, don't pull references down, just publish what turns
     # up in the watched folder.
     if args.upload_only:
+        # Sheets that arrived after their video, before anything new.
+        attach_late_sheets(project_id, out_dir, state)
         found = collect_outputs(out_dir, state)
         if not found:
+            save_state(work, state)
             if log_state.get("empty_notice") != project_id:
                 log(f"  {project_id}: watching {out_dir} — nothing new yet")
                 log_state["empty_notice"] = project_id
@@ -475,10 +509,12 @@ def cycle(args, root: Path, log_state: dict) -> None:
         log_state.pop("empty_notice", None)
         for path, key in found:
             try:
-                entry_id = push_output(
+                entry_id, had_sheet = push_output(
                     project_id, path, out_dir, "", questions,
                     stage="final" if path.stem in FINAL_STEMS else "wip",
                 )
+                if not had_sheet:
+                    state.setdefault("pending_sheets", {})[path.stem] = entry_id
                 state.setdefault("pushed", []).append(key)
                 log(f"  pushed {path.name} -> {entry_id}")
             except SystemExit as err:
@@ -523,14 +559,18 @@ def cycle(args, root: Path, log_state: dict) -> None:
                  payload={"id": project_id, "learnings": text})
             log(f"  {project_id}: learnings saved ({len(text)} chars)")
 
+    attach_late_sheets(project_id, out_dir, state)
+
     pushed_names = []
     for path, key in collect_outputs(out_dir, state):
         try:
             # The named masters go in FINAL; everything else is WIP.
-            entry_id = push_output(
+            entry_id, had_sheet = push_output(
                 project_id, path, out_dir, output, questions,
                 stage="final" if path.stem in FINAL_STEMS else "wip",
             )
+            if not had_sheet:
+                state.setdefault("pending_sheets", {})[path.stem] = entry_id
             state.setdefault("pushed", []).append(key)
             pushed_names.append(path.name)
             log(f"  pushed {path.name} -> {entry_id}")
@@ -541,17 +581,19 @@ def cycle(args, root: Path, log_state: dict) -> None:
     # can move on. Anything short of the full set leaves it open.
     delivery = project.get("delivery") or {}
     if delivery.get("requested_at") and not delivery.get("done_at"):
-        want = set(FINAL_STEMS)
-        have = {Path(k.split(":")[0]).stem for k in state.get("pushed", [])}
+        # Checked against the files on disk rather than what got pushed:
+        # a video whose sheet never arrived would otherwise look complete,
+        # since the pair collapses into one entry either way.
+        required = [f"{stem}{ext}" for stem in sorted(FINAL_STEMS) for ext in (".mp4", ".png")]
+        missing = [name for name in required if not (out_dir / name).exists()]
         # The write-up counts as a deliverable; without it the next
         # project starts blind.
         learnings_in = bool((project.get("learnings") or "").strip()) or learnings_file.exists()
-        if want <= have and learnings_in:
+        if not missing and learnings_in:
             _api("/api/dailies/projects", method="POST",
                  payload={"id": project_id, "delivery_done": True})
             log(f"  {project_id}: final deliverables complete")
         else:
-            missing = sorted(want - have)
             if not learnings_in:
                 missing.append("final_learnings.md")
             log(f"  {project_id}: still owed {', '.join(missing)}")

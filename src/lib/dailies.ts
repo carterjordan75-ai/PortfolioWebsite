@@ -109,8 +109,9 @@ export const PROJECT_STATUSES: ProjectStatus[] = ['draft', 'active', 'done']
  * The finishing job, raised once when a project is approved.
  *
  * Approving asks for masters in three shapes rather than one — each
- * recomposed for its frame, not a centre-crop of the same master — plus
- * a square contact sheet. It fires on the first transition to done and
+ * recomposed for its frame, not a centre-crop of the same master, and
+ * each with its own contact sheet in that same ratio. It fires on the
+ * first transition to done and
  * never again, and the project stays the machine's current job until the
  * masters land, so approval doesn't hand the queue on with the finishing
  * work still outstanding.
