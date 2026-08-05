@@ -123,6 +123,7 @@ export type Project = {
   hero_url: string | null
   references: Asset[]
   sources: Asset[]
+  brief_answers: Record<string, string>
   styles: string[]
   learnings: string
   pitches: Pitch[]
@@ -139,6 +140,20 @@ export type Project = {
   is_current: boolean
   entries: Entry[]
 }
+
+/** Mirrors BRIEF_QUESTIONS in src/lib/dailies.ts. */
+export const BRIEF_QUESTIONS: Array<{ id: string; question: string; placeholder: string; rows: number }> = [
+  { id: 'what', question: 'In one line, what is it?',
+    placeholder: 'A logo that assembles itself out of falling type.', rows: 2 },
+  { id: 'where', question: 'Where does it end up?',
+    placeholder: 'Instagram, muted, autoplay. 6 seconds, seamless loop.', rows: 2 },
+  { id: 'feel', question: 'How should it move?',
+    placeholder: 'Heavy and unhurried. Nothing bounces, nothing eases out.', rows: 2 },
+  { id: 'must', question: 'Non-negotiables — what must be true?',
+    placeholder: 'Logo legible for the last 2s. Two colours only. No shadows.', rows: 2 },
+  { id: 'avoid', question: 'What would make this generic?',
+    placeholder: 'Particles drifting upward. Purple-to-teal gradients. Slow zoom on everything.', rows: 2 },
+]
 
 /** Mirrors STYLE_GROUPS in src/lib/dailies.ts — the dropdown's contents. */
 export const STYLE_GROUPS: Array<{ group: string; styles: string[] }> = [

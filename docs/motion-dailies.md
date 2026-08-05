@@ -624,3 +624,30 @@ The questions are deliberately pointed: *is this interesting or just competent?
 Did the constraint quietly slip? What's the weakest second? Have I made the
 obvious version of this brief?* A round trip to the reviewer costs a day; a
 round trip to itself costs minutes.
+
+
+### The brief is questions, not a box
+
+A blank textarea is a bad prompt for the person filling it in, and a vague
+brief is exactly what produces competent, uninteresting work — the machine
+fills the gaps with defaults. So the brief is five short questions, stored as
+`brief_answers` keyed by question id, plus a free-text `brief` for anything
+they didn't cover.
+
+| id | Question |
+| --- | --- |
+| `what` | In one line, what is it? |
+| `where` | Where does it end up? |
+| `feel` | How should it move? |
+| `must` | Non-negotiables — what must be true? |
+| `avoid` | What would make this generic? |
+
+All optional; the card shows an answered count. `where` earns its place because
+context changes every decision — muted autoplay on a phone is a different brief
+from a title sequence. `avoid` is usually the sharpest of the five: naming what
+would make it generic is easier and more specific than naming what you want.
+
+Answers save on blur, sending the whole merged set. Unknown keys are dropped
+server-side rather than stored and never read. Both the pitch prompt and every
+production prompt render them as labelled lines, and `BRIEF.txt` on the machine
+gets the same.

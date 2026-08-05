@@ -216,6 +216,56 @@ export const STYLE_GROUPS: Array<{ group: string; styles: string[] }> = [
 
 export const ALL_STYLES: string[] = STYLE_GROUPS.flatMap(g => g.styles)
 
+/**
+ * The brief, as questions rather than a blank box.
+ *
+ * A vague brief is what produces competent, uninteresting work — the
+ * machine fills the gaps with defaults. These are chosen to force
+ * specifics: where it lives changes every decision, and naming what
+ * would make it generic is usually sharper than naming what you want.
+ *
+ * All optional. Answer two and it's still better than a blank page.
+ */
+export const BRIEF_QUESTIONS: Array<{
+  id: string
+  question: string
+  placeholder: string
+  rows: number
+}> = [
+  {
+    id: 'what',
+    question: 'In one line, what is it?',
+    placeholder: 'A logo that assembles itself out of falling type.',
+    rows: 2,
+  },
+  {
+    id: 'where',
+    question: 'Where does it end up?',
+    placeholder: 'Instagram, muted, autoplay. 6 seconds, seamless loop.',
+    rows: 2,
+  },
+  {
+    id: 'feel',
+    question: 'How should it move?',
+    placeholder: 'Heavy and unhurried. Nothing bounces, nothing eases out.',
+    rows: 2,
+  },
+  {
+    id: 'must',
+    question: 'Non-negotiables — what must be true?',
+    placeholder: 'Logo legible for the last 2s. Two colours only. No shadows.',
+    rows: 2,
+  },
+  {
+    id: 'avoid',
+    question: 'What would make this generic?',
+    placeholder: 'Particles drifting upward. Purple-to-teal gradients. Slow zoom on everything.',
+    rows: 2,
+  },
+]
+
+export const BRIEF_QUESTION_IDS = BRIEF_QUESTIONS.map(q => q.id)
+
 export type Project = {
   id: string
   title: string
@@ -223,6 +273,8 @@ export type Project = {
   hero_url: string | null
   references: Asset[]
   sources: Asset[]
+  /** Answers to BRIEF_QUESTIONS, keyed by question id. */
+  brief_answers: Record<string, string>
   /** What kind of thing this is — see STYLE_GROUPS. */
   styles: string[]
   /** Concepts on the table. Empty until the machine has pitched. */

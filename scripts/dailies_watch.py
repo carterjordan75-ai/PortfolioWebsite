@@ -167,7 +167,7 @@ def _sync_collection(project: dict, key: str, out: Path, kindLabel: str):
 
 def sync_project(project: dict, work: Path) -> dict:
     """Brief, references and source material onto disk. Returns the project."""
-    brief = project.get("brief") or ""
+    brief = brief_text(project)
     if project.get("styles"):
         brief = f"STYLE: {', '.join(project['styles'])}\n\n{brief}"
     (work / "BRIEF.txt").write_text(brief, encoding="utf-8")
@@ -204,6 +204,32 @@ def download_feedback_refs(feedback: dict, work: Path) -> Path | None:
 
 PITCH_COUNT = 4
 
+# Mirrors BRIEF_QUESTIONS in src/lib/dailies.ts — the labels the answers
+# are rendered under, in the order they're asked.
+BRIEF_LABELS = [
+    ("what", "What it is"),
+    ("where", "Where it ends up"),
+    ("feel", "How it should move"),
+    ("must", "Non-negotiables"),
+    ("avoid", "What would make it generic"),
+]
+
+
+def brief_text(project: dict) -> str:
+    """The answered questions, then anything extra, as one block."""
+    answers = project.get("brief_answers") or {}
+    lines = []
+    for key, heading in BRIEF_LABELS:
+        val = (answers.get(key) or "").strip()
+        if val:
+            lines.append(f"{heading}: {val}")
+    extra = (project.get("brief") or "").strip()
+    if extra:
+        if lines:
+            lines.append("")
+        lines.append(extra)
+    return "\n".join(lines) or "(none set)"
+
 
 def build_pitch_prompt(project: dict, past: list = None) -> str:
     """
@@ -218,7 +244,7 @@ def build_pitch_prompt(project: dict, past: list = None) -> str:
         f"Project: \"{project['title']}\".",
         "",
         "BRIEF:",
-        project.get("brief") or "(none set)",
+        brief_text(project),
     ]
     if project.get("styles"):
         parts += ["", "STYLE: " + ", ".join(project["styles"])]
@@ -276,7 +302,7 @@ def build_prompt(project: dict, feedback: list, work: Path, past: list = None) -
         f"You are working on the project \"{project['title']}\".",
         "",
         "STANDING BRIEF:",
-        project.get("brief") or "(none set)",
+        brief_text(project),
     ]
 
     chosen = next(

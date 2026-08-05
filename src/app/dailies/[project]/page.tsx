@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 import {
-  Chip, Gate, Header, Page, SCALE, STATUS_OPTIONS, STYLE_GROUPS, card, downloadAsset,
+  BRIEF_QUESTIONS, Chip, Gate, Header, Page, SCALE, STATUS_OPTIONS, STYLE_GROUPS, card, downloadAsset,
   entryAssets, field, ghostBtn, isVideoRef, label, solidBtn, uploadViaTicket,
   type Asset, type Entry, type EntryAsset, type Project, type ProjectStatus,
 } from '../ui'
@@ -1191,53 +1191,97 @@ function PublishPicker({
 // ── brief ───────────────────────────────────────────────────────────
 
 function Brief({ project, onSaved }: { project: Project; onSaved: () => void }) {
-  const [editing, setEditing] = useState(false)
-  const [brief, setBrief] = useState(project.brief)
-  const [saving, setSaving] = useState(false)
+  const answers = project.brief_answers || {}
+  const [extra, setExtra] = useState(project.brief)
+  const [editingExtra, setEditingExtra] = useState(false)
+  const [saving, setSaving] = useState<string | null>(null)
 
-  useEffect(() => { setBrief(project.brief) }, [project.brief])
+  useEffect(() => { setExtra(project.brief) }, [project.brief])
 
-  const save = async () => {
-    setSaving(true)
+  const save = async (body: Record<string, unknown>, marker: string) => {
+    setSaving(marker)
     try {
       await fetch('/api/dailies/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: project.id, brief }),
+        body: JSON.stringify({ id: project.id, ...body }),
       })
-      setEditing(false)
       onSaved()
     } finally {
-      setSaving(false)
+      setSaving(null)
     }
   }
+
+  const answered = BRIEF_QUESTIONS.filter(q => (answers[q.id] || '').trim()).length
 
   return (
     <section style={{ ...card, padding: 15 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
         <span style={label}>Brief — what the PC is building</span>
-        <button onClick={() => setEditing(e => !e)} style={{ ...ghostBtn, padding: '4px 10px' }}>
-          {editing ? 'Cancel' : project.brief ? 'Edit' : 'Add'}
-        </button>
+        <span style={{ fontSize: 9, opacity: 0.3, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+          {answered}/{BRIEF_QUESTIONS.length}
+        </span>
       </div>
-      {editing ? (
-        <>
-          <textarea
-            rows={5}
-            value={brief}
-            onChange={e => setBrief(e.target.value)}
-            placeholder="Standing direction — what this project is, the look, the constraints…"
-            style={{ ...field, resize: 'vertical', marginBottom: 10 }}
-          />
-          <button onClick={save} disabled={saving} style={{ ...solidBtn, opacity: saving ? 0.5 : 1 }}>
-            {saving ? 'Saving…' : 'Save brief'}
+      <p style={{ fontSize: 11, opacity: 0.35, lineHeight: 1.55, marginBottom: 14 }}>
+        All optional — but a vague brief is what gets you competent and boring.
+        Answer two and it&apos;s already better than a blank page.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+        {BRIEF_QUESTIONS.map(q => (
+          <div key={q.id}>
+            <span style={{ ...label, opacity: 0.6, marginBottom: 5 }}>{q.question}</span>
+            <textarea
+              rows={q.rows}
+              defaultValue={answers[q.id] || ''}
+              placeholder={q.placeholder}
+              // Saved on blur rather than per keystroke: each save is a
+              // whole-project write, and one per character would be absurd.
+              onBlur={e => {
+                const v = e.target.value
+                if (v === (answers[q.id] || '')) return
+                save({ brief_answers: { ...answers, [q.id]: v } }, q.id)
+              }}
+              style={{ ...field, resize: 'vertical', fontSize: 12.5, lineHeight: 1.5 }}
+            />
+            {saving === q.id && (
+              <span style={{ fontSize: 9, opacity: 0.4, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Saving…</span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 14, borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+          <span style={{ ...label, opacity: 0.45 }}>Anything else</span>
+          <button onClick={() => setEditingExtra(e => !e)} style={{ ...ghostBtn, padding: '4px 10px' }}>
+            {editingExtra ? 'Cancel' : project.brief ? 'Edit' : 'Add'}
           </button>
-        </>
-      ) : (
-        <p style={{ fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap', opacity: project.brief ? 0.85 : 0.35 }}>
-          {project.brief || 'No brief yet.'}
-        </p>
-      )}
+        </div>
+        {editingExtra ? (
+          <>
+            <textarea
+              rows={4}
+              value={extra}
+              onChange={e => setExtra(e.target.value)}
+              placeholder="Anything the questions above didn't cover…"
+              style={{ ...field, resize: 'vertical', marginBottom: 10 }}
+            />
+            <button
+              onClick={async () => { await save({ brief: extra }, 'extra'); setEditingExtra(false) }}
+              disabled={saving === 'extra'}
+              style={{ ...solidBtn, opacity: saving === 'extra' ? 0.5 : 1 }}
+            >
+              {saving === 'extra' ? 'Saving…' : 'Save'}
+            </button>
+          </>
+        ) : (
+          <p style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', opacity: project.brief ? 0.8 : 0.3 }}>
+            {project.brief || '—'}
+          </p>
+        )}
+      </div>
+
       <Styles project={project} onSaved={onSaved} />
     </section>
   )

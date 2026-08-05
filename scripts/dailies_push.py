@@ -125,9 +125,9 @@ def cmd_projects(args):
               f"{len(p.get('sources', []))} source files")
         if p.get("styles"):
             print(f"    style: {', '.join(p['styles'])}")
-        if p.get("brief"):
-            first = p["brief"].strip().splitlines()[0]
-            print(f"    brief: {first[:100]}")
+        summary = (p.get("brief_answers") or {}).get("what") or p.get("brief") or ""
+        if summary.strip():
+            print(f"    brief: {summary.strip().splitlines()[0][:100]}")
 
 
 def download_collection(project, key, out: Path) -> int:
@@ -182,7 +182,16 @@ def cmd_refs(args):
 
     # The brief is the standing instruction — write it next to the files
     # so whatever reads this folder gets the words as well as the media.
-    brief = project.get("brief") or ""
+    answers = project.get("brief_answers") or {}
+    labels = [("what", "What it is"), ("where", "Where it ends up"),
+              ("feel", "How it should move"), ("must", "Non-negotiables"),
+              ("avoid", "What would make it generic")]
+    lines = [f"{h}: {answers[k].strip()}" for k, h in labels if (answers.get(k) or "").strip()]
+    if (project.get("brief") or "").strip():
+        if lines:
+            lines.append("")
+        lines.append(project["brief"].strip())
+    brief = "\n".join(lines)
     if project.get("styles"):
         brief = f"STYLE: {', '.join(project['styles'])}\n\n{brief}"
     (out / "BRIEF.txt").write_text(brief, encoding="utf-8")

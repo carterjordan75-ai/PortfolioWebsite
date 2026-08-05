@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import {
   ALL_STYLES,
+  BRIEF_QUESTION_IDS,
   PROJECT_STATUSES,
   referenceType,
   checkApiKey,
@@ -171,6 +172,21 @@ export async function POST(request: Request) {
     })
   }
 
+  let briefAnswers: Record<string, string> | undefined
+  if (body.brief_answers !== undefined) {
+    const raw = body.brief_answers
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return NextResponse.json({ error: 'brief_answers must be an object' }, { status: 400 })
+    }
+    // Known question ids only — an unrecognised key would be written and
+    // then never read by anything.
+    briefAnswers = {}
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (!BRIEF_QUESTION_IDS.includes(k)) continue
+      if (typeof v === 'string' && v.trim()) briefAnswers[k] = v.slice(0, 4000)
+    }
+  }
+
   let styles: string[] | undefined
   if (body.styles !== undefined) {
     if (!Array.isArray(body.styles)) {
@@ -222,6 +238,7 @@ export async function POST(request: Request) {
     hero_url: typeof body.hero_url === 'string' ? body.hero_url : existing?.hero_url ?? null,
     references: references ?? existing?.references ?? [],
     sources: sources ?? existing?.sources ?? [],
+    brief_answers: briefAnswers ?? existing?.brief_answers ?? {},
     styles: styles ?? existing?.styles ?? [],
     pitches:
       body.reject_pitches === true ? [] : pitches ?? existing?.pitches ?? [],
