@@ -211,8 +211,14 @@ PITCH_COUNT = 4
 BRIEF_LABELS = [
     ("what", "What it is"),
     ("where", "Where it ends up"),
-    ("feel", "How it should move"),
-    ("must", "Non-negotiables"),
+    ("duration", "Duration"),
+    ("loop", "Loop"),
+    ("sound", "Sound"),
+    ("pace", "How it moves"),
+    ("palette", "Colour"),
+    ("camera", "Camera"),
+    ("type", "Type"),
+    ("must", "Must be true"),
     ("avoid", "What would make it generic"),
 ]
 

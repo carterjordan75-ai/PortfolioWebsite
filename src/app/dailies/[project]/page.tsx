@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEscapeToClose } from '@/hooks/useEscapeToClose'
@@ -1190,16 +1190,36 @@ function PublishPicker({
 
 // ── brief ───────────────────────────────────────────────────────────
 
+/**
+ * The brief, as an interview.
+ *
+ * One question at a time, most of them answerable with a tap. A page of
+ * labelled boxes is still a form, and forms get skimmed and half-filled;
+ * being asked one thing gets answered. It also suits the phone, which is
+ * where this actually gets used.
+ */
 function Brief({ project, onSaved }: { project: Project; onSaved: () => void }) {
-  const answers = project.brief_answers || {}
+  // Memoised: a fresh {} each render would make the draft-reset effect
+  // fire on every render and wipe what you're typing.
+  const answers = useMemo(() => project.brief_answers || {}, [project.brief_answers])
+  const answeredCount = BRIEF_QUESTIONS.filter(q => (answers[q.id] || '').trim()).length
+  const firstUnanswered = BRIEF_QUESTIONS.findIndex(q => !(answers[q.id] || '').trim())
+
+  // Land in review once it's been filled in; otherwise pick up where you left off.
+  const [reviewing, setReviewing] = useState(firstUnanswered === -1)
+  const [idx, setIdx] = useState(firstUnanswered === -1 ? 0 : firstUnanswered)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [extraOpen, setExtraOpen] = useState(false)
   const [extra, setExtra] = useState(project.brief)
-  const [editingExtra, setEditingExtra] = useState(false)
-  const [saving, setSaving] = useState<string | null>(null)
 
   useEffect(() => { setExtra(project.brief) }, [project.brief])
 
-  const save = async (body: Record<string, unknown>, marker: string) => {
-    setSaving(marker)
+  const q = BRIEF_QUESTIONS[idx]
+  useEffect(() => { setDraft(answers[q?.id] || '') }, [idx, q?.id, answers])
+
+  const save = async (body: Record<string, unknown>) => {
+    setSaving(true)
     try {
       await fetch('/api/dailies/projects', {
         method: 'POST',
@@ -1208,81 +1228,192 @@ function Brief({ project, onSaved }: { project: Project; onSaved: () => void }) 
       })
       onSaved()
     } finally {
-      setSaving(null)
+      setSaving(false)
     }
   }
 
-  const answered = BRIEF_QUESTIONS.filter(q => (answers[q.id] || '').trim()).length
+  const answer = async (value: string) => {
+    // Just this answer — the server merges. Sending the whole set from
+    // local state races itself when questions are answered quickly.
+    await save({ brief_answers: { [q.id]: value } })
+    if (idx < BRIEF_QUESTIONS.length - 1) setIdx(idx + 1)
+    else setReviewing(true)
+  }
 
-  return (
-    <section style={{ ...card, padding: 15 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-        <span style={label}>Brief — what the PC is building</span>
-        <span style={{ fontSize: 9, opacity: 0.3, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-          {answered}/{BRIEF_QUESTIONS.length}
-        </span>
-      </div>
-      <p style={{ fontSize: 11, opacity: 0.35, lineHeight: 1.55, marginBottom: 14 }}>
-        All optional — but a vague brief is what gets you competent and boring.
-        Answer two and it&apos;s already better than a blank page.
-      </p>
+  const skip = () => {
+    if (idx < BRIEF_QUESTIONS.length - 1) setIdx(idx + 1)
+    else setReviewing(true)
+  }
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-        {BRIEF_QUESTIONS.map(q => (
-          <div key={q.id}>
-            <span style={{ ...label, opacity: 0.6, marginBottom: 5 }}>{q.question}</span>
-            <textarea
-              rows={q.rows}
-              defaultValue={answers[q.id] || ''}
-              placeholder={q.placeholder}
-              // Saved on blur rather than per keystroke: each save is a
-              // whole-project write, and one per character would be absurd.
-              onBlur={e => {
-                const v = e.target.value
-                if (v === (answers[q.id] || '')) return
-                save({ brief_answers: { ...answers, [q.id]: v } }, q.id)
-              }}
-              style={{ ...field, resize: 'vertical', fontSize: 12.5, lineHeight: 1.5 }}
-            />
-            {saving === q.id && (
-              <span style={{ fontSize: 9, opacity: 0.4, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Saving…</span>
-            )}
+  // ── review ────────────────────────────────────────────────────
+  if (reviewing) {
+    return (
+      <section style={{ ...card, padding: 15 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <span style={label}>Brief — what the PC is building</span>
+          <button
+            onClick={() => { setReviewing(false); setIdx(Math.max(0, firstUnanswered)) }}
+            style={{ ...ghostBtn, padding: '4px 10px' }}
+          >
+            {answeredCount === 0 ? 'Answer the questions' : answeredCount < BRIEF_QUESTIONS.length ? `Finish (${answeredCount}/${BRIEF_QUESTIONS.length})` : 'Go through again'}
+          </button>
+        </div>
+
+        {answeredCount === 0 ? (
+          <p style={{ fontSize: 12, opacity: 0.4, lineHeight: 1.6, marginTop: 4 }}>
+            Eleven quick questions, mostly one tap. A vague brief is what gets
+            you competent and boring.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 4 }}>
+            {BRIEF_QUESTIONS.map((bq, i) => {
+              const a = (answers[bq.id] || '').trim()
+              return (
+                <button
+                  key={bq.id}
+                  onClick={() => { setReviewing(false); setIdx(i) }}
+                  style={{
+                    textAlign: 'left', background: 'transparent', border: 'none', padding: 0,
+                    cursor: 'pointer', color: 'inherit', font: 'inherit', display: 'block',
+                  }}
+                >
+                  <span style={{ ...label, marginBottom: 2, opacity: 0.35 }}>{bq.question}</span>
+                  <span style={{ fontSize: 13, lineHeight: 1.5, opacity: a ? 0.9 : 0.25 }}>
+                    {a || 'Not answered'}
+                  </span>
+                </button>
+              )
+            })}
           </div>
+        )}
+
+        <div style={{ marginTop: 14, borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+            <span style={{ ...label, opacity: 0.4 }}>Anything else</span>
+            <button onClick={() => setExtraOpen(o => !o)} style={{ ...ghostBtn, padding: '4px 10px' }}>
+              {extraOpen ? 'Cancel' : project.brief ? 'Edit' : 'Add'}
+            </button>
+          </div>
+          {extraOpen ? (
+            <>
+              <textarea
+                rows={4}
+                value={extra}
+                onChange={e => setExtra(e.target.value)}
+                placeholder="Anything the questions didn't cover…"
+                style={{ ...field, resize: 'vertical', marginBottom: 10 }}
+              />
+              <button
+                onClick={async () => { await save({ brief: extra }); setExtraOpen(false) }}
+                disabled={saving}
+                style={{ ...solidBtn, opacity: saving ? 0.5 : 1 }}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </>
+          ) : (
+            <p style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', opacity: project.brief ? 0.8 : 0.25 }}>
+              {project.brief || '—'}
+            </p>
+          )}
+        </div>
+
+        <Styles project={project} onSaved={onSaved} />
+      </section>
+    )
+  }
+
+  // ── one question ──────────────────────────────────────────────
+  return (
+    <section style={{ ...card, padding: '18px 15px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+        <span style={{ ...label, marginBottom: 0, opacity: 0.35 }}>
+          Brief · {idx + 1} of {BRIEF_QUESTIONS.length}
+        </span>
+        <button onClick={() => setReviewing(true)} style={{ ...ghostBtn, padding: '4px 10px' }}>
+          Done for now
+        </button>
+      </div>
+
+      {/* progress */}
+      <div style={{ display: 'flex', gap: 3, marginBottom: 16 }}>
+        {BRIEF_QUESTIONS.map((bq, i) => (
+          <span
+            key={bq.id}
+            style={{
+              flex: 1, height: 2, borderRadius: 2,
+              background: (answers[bq.id] || '').trim()
+                ? 'rgba(255,255,255,0.75)'
+                : i === idx ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.1)',
+            }}
+          />
         ))}
       </div>
 
-      <div style={{ marginTop: 14, borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-          <span style={{ ...label, opacity: 0.45 }}>Anything else</span>
-          <button onClick={() => setEditingExtra(e => !e)} style={{ ...ghostBtn, padding: '4px 10px' }}>
-            {editingExtra ? 'Cancel' : project.brief ? 'Edit' : 'Add'}
-          </button>
-        </div>
-        {editingExtra ? (
-          <>
-            <textarea
-              rows={4}
-              value={extra}
-              onChange={e => setExtra(e.target.value)}
-              placeholder="Anything the questions above didn't cover…"
-              style={{ ...field, resize: 'vertical', marginBottom: 10 }}
-            />
-            <button
-              onClick={async () => { await save({ brief: extra }, 'extra'); setEditingExtra(false) }}
-              disabled={saving === 'extra'}
-              style={{ ...solidBtn, opacity: saving === 'extra' ? 0.5 : 1 }}
-            >
-              {saving === 'extra' ? 'Saving…' : 'Save'}
-            </button>
-          </>
-        ) : (
-          <p style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', opacity: project.brief ? 0.8 : 0.3 }}>
-            {project.brief || '—'}
-          </p>
-        )}
-      </div>
+      <h3 style={{ fontSize: 19, fontWeight: 700, lineHeight: 1.3, marginBottom: q.hint ? 5 : 14 }}>
+        {q.question}
+      </h3>
+      {q.hint && (
+        <p style={{ fontSize: 12, opacity: 0.4, lineHeight: 1.5, marginBottom: 14 }}>{q.hint}</p>
+      )}
 
-      <Styles project={project} onSaved={onSaved} />
+      {q.type === 'choice' ? (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 12 }}>
+            {(q.options || []).map(opt => {
+              const on = (answers[q.id] || '') === opt
+              return (
+                <button
+                  key={opt}
+                  onClick={() => answer(opt)}
+                  disabled={saving}
+                  style={{
+                    fontSize: 13, padding: '10px 15px', borderRadius: 999, cursor: 'pointer',
+                    background: on ? '#fff' : 'rgba(255,255,255,0.05)',
+                    color: on ? '#000' : 'rgba(255,255,255,0.85)',
+                    border: `1px solid ${on ? '#fff' : 'rgba(255,255,255,0.16)'}`,
+                    fontWeight: on ? 700 : 400,
+                  }}
+                >
+                  {opt}
+                </button>
+              )
+            })}
+          </div>
+          {/* An option list shouldn't become a cage — you can always say
+              something it didn't think of. */}
+          <input
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && draft.trim()) { e.preventDefault(); answer(draft.trim()) } }}
+            placeholder="…or say it in your own words"
+            style={{ ...field, fontSize: 12.5 }}
+          />
+        </>
+      ) : (
+        <textarea
+          rows={3}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          placeholder={q.placeholder}
+          autoFocus
+          style={{ ...field, resize: 'vertical', fontSize: 14, lineHeight: 1.5 }}
+        />
+      )}
+
+      <div style={{ display: 'flex', gap: 9, marginTop: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        {idx > 0 && (
+          <button onClick={() => setIdx(idx - 1)} style={ghostBtn}>Back</button>
+        )}
+        <button onClick={skip} style={ghostBtn}>Skip</button>
+        <button
+          onClick={() => answer(draft.trim())}
+          disabled={saving || !draft.trim()}
+          style={{ ...solidBtn, marginLeft: 'auto', opacity: saving || !draft.trim() ? 0.35 : 1 }}
+        >
+          {saving ? 'Saving…' : idx === BRIEF_QUESTIONS.length - 1 ? 'Finish' : 'Next'}
+        </button>
+      </div>
     </section>
   )
 }

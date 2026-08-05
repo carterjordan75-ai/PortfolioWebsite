@@ -217,50 +217,107 @@ export const STYLE_GROUPS: Array<{ group: string; styles: string[] }> = [
 export const ALL_STYLES: string[] = STYLE_GROUPS.flatMap(g => g.styles)
 
 /**
- * The brief, as questions rather than a blank box.
+ * The brief, asked one question at a time.
  *
  * A vague brief is what produces competent, uninteresting work — the
- * machine fills the gaps with defaults. These are chosen to force
- * specifics: where it lives changes every decision, and naming what
- * would make it generic is usually sharper than naming what you want.
+ * machine fills whatever is unsaid with defaults. A blank box invites
+ * vagueness; a specific question with options to tap doesn't, and most
+ * of these can be answered without typing at all.
  *
- * All optional. Answer two and it's still better than a blank page.
+ * Order matters: the open question comes first while you still have the
+ * idea in your head, the quick taps sit in the middle, and the two
+ * hardest questions come last when you're warmed up.
  */
-export const BRIEF_QUESTIONS: Array<{
+export type BriefQuestion = {
   id: string
   question: string
-  placeholder: string
-  rows: number
-}> = [
+  /** Shown under the question — why it's being asked. */
+  hint?: string
+  type: 'text' | 'choice'
+  /** For `choice`. Answering with something else is always allowed. */
+  options?: string[]
+  placeholder?: string
+}
+
+export const BRIEF_QUESTIONS: BriefQuestion[] = [
   {
     id: 'what',
     question: 'In one line, what is it?',
+    hint: 'The thing itself, not the mood.',
+    type: 'text',
     placeholder: 'A logo that assembles itself out of falling type.',
-    rows: 2,
   },
   {
     id: 'where',
     question: 'Where does it end up?',
-    placeholder: 'Instagram, muted, autoplay. 6 seconds, seamless loop.',
-    rows: 2,
+    hint: 'Changes almost every other decision.',
+    type: 'choice',
+    options: [
+      'Instagram / TikTok',
+      'Title sequence',
+      'Website hero',
+      'Screen loop / installation',
+      'Broadcast ident',
+      'Pitch or deck',
+      'Just exploring',
+    ],
   },
   {
-    id: 'feel',
-    question: 'How should it move?',
-    placeholder: 'Heavy and unhurried. Nothing bounces, nothing eases out.',
-    rows: 2,
+    id: 'duration',
+    question: 'How long?',
+    type: 'choice',
+    options: ['3 seconds', '6 seconds', '10 seconds', '15 seconds', '30 seconds +', 'Not fixed'],
+  },
+  {
+    id: 'loop',
+    question: 'Does it loop?',
+    type: 'choice',
+    options: ['Seamless loop', 'Plays once', 'Either'],
+  },
+  {
+    id: 'sound',
+    question: 'What about sound?',
+    hint: 'Most feeds autoplay muted.',
+    type: 'choice',
+    options: ['Must work silent', 'Sound-led', 'No sound at all'],
+  },
+  {
+    id: 'pace',
+    question: 'How does it move?',
+    type: 'choice',
+    options: ['Slow and heavy', 'Steady', 'Snappy', 'Frantic', 'Still, then sudden'],
+  },
+  {
+    id: 'palette',
+    question: 'Colour?',
+    type: 'choice',
+    options: ['Monochrome', 'Two colours', 'Limited palette', 'Full colour', 'Brand colours'],
+  },
+  {
+    id: 'camera',
+    question: 'Camera?',
+    type: 'choice',
+    options: ['Locked off', 'Slow drift', 'Active move', 'No camera — flat 2D'],
+  },
+  {
+    id: 'type',
+    question: 'Is there type?',
+    type: 'choice',
+    options: ['No type', 'Type is the subject', 'Type supports it'],
   },
   {
     id: 'must',
-    question: 'Non-negotiables — what must be true?',
-    placeholder: 'Logo legible for the last 2s. Two colours only. No shadows.',
-    rows: 2,
+    question: 'Anything that must be true?',
+    hint: 'Hard rules. The things you\u2019d reject it for missing.',
+    type: 'text',
+    placeholder: 'Logo legible for the last 2 seconds. No drop shadows.',
   },
   {
     id: 'avoid',
     question: 'What would make this generic?',
+    hint: 'Usually the most useful answer here \u2014 easier to name than what you want.',
+    type: 'text',
     placeholder: 'Particles drifting upward. Purple-to-teal gradients. Slow zoom on everything.',
-    rows: 2,
   },
 ]
 

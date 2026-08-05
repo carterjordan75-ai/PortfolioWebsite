@@ -184,7 +184,10 @@ def cmd_refs(args):
     # so whatever reads this folder gets the words as well as the media.
     answers = project.get("brief_answers") or {}
     labels = [("what", "What it is"), ("where", "Where it ends up"),
-              ("feel", "How it should move"), ("must", "Non-negotiables"),
+              ("duration", "Duration"), ("loop", "Loop"), ("sound", "Sound"),
+              ("pace", "How it moves"), ("palette", "Colour"),
+              ("camera", "Camera"), ("type", "Type"),
+              ("must", "Must be true"),
               ("avoid", "What would make it generic")]
     lines = [f"{h}: {answers[k].strip()}" for k, h in labels if (answers.get(k) or "").strip()]
     if (project.get("brief") or "").strip():

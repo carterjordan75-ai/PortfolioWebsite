@@ -142,17 +142,41 @@ export type Project = {
 }
 
 /** Mirrors BRIEF_QUESTIONS in src/lib/dailies.ts. */
-export const BRIEF_QUESTIONS: Array<{ id: string; question: string; placeholder: string; rows: number }> = [
-  { id: 'what', question: 'In one line, what is it?',
-    placeholder: 'A logo that assembles itself out of falling type.', rows: 2 },
-  { id: 'where', question: 'Where does it end up?',
-    placeholder: 'Instagram, muted, autoplay. 6 seconds, seamless loop.', rows: 2 },
-  { id: 'feel', question: 'How should it move?',
-    placeholder: 'Heavy and unhurried. Nothing bounces, nothing eases out.', rows: 2 },
-  { id: 'must', question: 'Non-negotiables — what must be true?',
-    placeholder: 'Logo legible for the last 2s. Two colours only. No shadows.', rows: 2 },
+export type BriefQuestion = {
+  id: string
+  question: string
+  hint?: string
+  type: 'text' | 'choice'
+  options?: string[]
+  placeholder?: string
+}
+
+export const BRIEF_QUESTIONS: BriefQuestion[] = [
+  { id: 'what', question: 'In one line, what is it?', hint: 'The thing itself, not the mood.',
+    type: 'text', placeholder: 'A logo that assembles itself out of falling type.' },
+  { id: 'where', question: 'Where does it end up?', hint: 'Changes almost every other decision.',
+    type: 'choice', options: ['Instagram / TikTok', 'Title sequence', 'Website hero',
+      'Screen loop / installation', 'Broadcast ident', 'Pitch or deck', 'Just exploring'] },
+  { id: 'duration', question: 'How long?', type: 'choice',
+    options: ['3 seconds', '6 seconds', '10 seconds', '15 seconds', '30 seconds +', 'Not fixed'] },
+  { id: 'loop', question: 'Does it loop?', type: 'choice',
+    options: ['Seamless loop', 'Plays once', 'Either'] },
+  { id: 'sound', question: 'What about sound?', hint: 'Most feeds autoplay muted.',
+    type: 'choice', options: ['Must work silent', 'Sound-led', 'No sound at all'] },
+  { id: 'pace', question: 'How does it move?', type: 'choice',
+    options: ['Slow and heavy', 'Steady', 'Snappy', 'Frantic', 'Still, then sudden'] },
+  { id: 'palette', question: 'Colour?', type: 'choice',
+    options: ['Monochrome', 'Two colours', 'Limited palette', 'Full colour', 'Brand colours'] },
+  { id: 'camera', question: 'Camera?', type: 'choice',
+    options: ['Locked off', 'Slow drift', 'Active move', 'No camera — flat 2D'] },
+  { id: 'type', question: 'Is there type?', type: 'choice',
+    options: ['No type', 'Type is the subject', 'Type supports it'] },
+  { id: 'must', question: 'Anything that must be true?',
+    hint: 'Hard rules. The things you’d reject it for missing.',
+    type: 'text', placeholder: 'Logo legible for the last 2 seconds. No drop shadows.' },
   { id: 'avoid', question: 'What would make this generic?',
-    placeholder: 'Particles drifting upward. Purple-to-teal gradients. Slow zoom on everything.', rows: 2 },
+    hint: 'Usually the most useful answer here — easier to name than what you want.',
+    type: 'text', placeholder: 'Particles drifting upward. Purple-to-teal gradients.' },
 ]
 
 /** Mirrors STYLE_GROUPS in src/lib/dailies.ts — the dropdown's contents. */

@@ -139,6 +139,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'id or title is required' }, { status: 400 })
   }
 
+  // Read once, up front: the brief-answer merge needs what's stored.
+  const existingForBrief = await getProject(id)
+
   let references: Asset[] | undefined
   if (body.references !== undefined) {
     const parsed = parseAssets(body.references, 'references')
@@ -172,18 +175,29 @@ export async function POST(request: Request) {
     })
   }
 
+  /**
+   * Brief answers MERGE rather than replace.
+   *
+   * They're answered one at a time, and a client sending the whole set
+   * each time races itself: two quick taps and the second post carries a
+   * stale copy that wipes the first. Sending just the changed answer and
+   * merging here removes the race entirely. An empty value clears that
+   * one answer.
+   */
   let briefAnswers: Record<string, string> | undefined
   if (body.brief_answers !== undefined) {
     const raw = body.brief_answers
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       return NextResponse.json({ error: 'brief_answers must be an object' }, { status: 400 })
     }
-    // Known question ids only — an unrecognised key would be written and
-    // then never read by anything.
-    briefAnswers = {}
+    briefAnswers = { ...(existingForBrief?.brief_answers ?? {}) }
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      // Known question ids only — an unrecognised key would be written
+      // and then never read by anything.
       if (!BRIEF_QUESTION_IDS.includes(k)) continue
-      if (typeof v === 'string' && v.trim()) briefAnswers[k] = v.slice(0, 4000)
+      if (typeof v !== 'string') continue
+      if (v.trim()) briefAnswers[k] = v.slice(0, 4000)
+      else delete briefAnswers[k]
     }
   }
 
@@ -225,7 +239,7 @@ export async function POST(request: Request) {
     )
   }
 
-  const existing = await getProject(id)
+  const existing = existingForBrief
   const now = new Date().toISOString()
   const wantsDone = (body.status as ProjectStatus | undefined) === 'done'
 

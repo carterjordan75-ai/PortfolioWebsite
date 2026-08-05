@@ -626,28 +626,42 @@ obvious version of this brief?* A round trip to the reviewer costs a day; a
 round trip to itself costs minutes.
 
 
-### The brief is questions, not a box
+### The brief is an interview
 
-A blank textarea is a bad prompt for the person filling it in, and a vague
-brief is exactly what produces competent, uninteresting work — the machine
-fills the gaps with defaults. So the brief is five short questions, stored as
-`brief_answers` keyed by question id, plus a free-text `brief` for anything
-they didn't cover.
+Eleven questions, asked one at a time, most answerable with a tap:
 
-| id | Question |
-| --- | --- |
-| `what` | In one line, what is it? |
-| `where` | Where does it end up? |
-| `feel` | How should it move? |
-| `must` | Non-negotiables — what must be true? |
-| `avoid` | What would make this generic? |
+| id | Question | |
+| --- | --- | --- |
+| `what` | In one line, what is it? | text |
+| `where` | Where does it end up? | choice |
+| `duration` | How long? | choice |
+| `loop` | Does it loop? | choice |
+| `sound` | What about sound? | choice |
+| `pace` | How does it move? | choice |
+| `palette` | Colour? | choice |
+| `camera` | Camera? | choice |
+| `type` | Is there type? | choice |
+| `must` | Anything that must be true? | text |
+| `avoid` | What would make this generic? | text |
 
-All optional; the card shows an answered count. `where` earns its place because
-context changes every decision — muted autoplay on a phone is a different brief
-from a title sequence. `avoid` is usually the sharpest of the five: naming what
-would make it generic is easier and more specific than naming what you want.
+A page of labelled boxes is still a form, and forms get skimmed and
+half-filled; being asked one thing gets answered. Every choice question also
+takes free text, so the options never become a cage. Skip and Back are always
+available, and "Done for now" drops to a review list where any answer can be
+tapped to change it.
 
-Answers save on blur, sending the whole merged set. Unknown keys are dropped
-server-side rather than stored and never read. Both the pitch prompt and every
-production prompt render them as labelled lines, and `BRIEF.txt` on the machine
-gets the same.
+`where` earns its place because context changes every other decision — muted
+autoplay on a phone is a different brief from a title sequence. `avoid` is
+usually the most useful of the eleven: naming what would make it generic is
+easier, and more specific, than naming what you want.
+
+**Answers merge server-side.** They're posted one at a time, and a client that
+sent the whole set each time raced itself — two quick taps and the second post
+carried a stale copy that wiped the first. Measured: six answers in, four lost.
+Sending only the changed answer and merging against stored state removes it. An
+empty value clears that one answer. Truly concurrent writes to one project
+still last-write-wins, but the UI disables its controls while saving, so they
+go one at a time.
+
+The pitch prompt, every production prompt and `BRIEF.txt` render the answers as
+labelled lines.
