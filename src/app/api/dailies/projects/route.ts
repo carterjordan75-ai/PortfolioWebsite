@@ -42,18 +42,34 @@ function parseAssets(raw: unknown, field: string): Asset[] | { error: string } {
   for (let i = 0; i < raw.length; i++) {
     const r = raw[i]
     if (!r || typeof r !== 'object') return { error: `${field}[${i}] must be an object` }
-    const { url, filename, note, type, added_at } = r as Record<string, unknown>
-    if (typeof url !== 'string' || !/^https:\/\//.test(url)) {
-      return { error: `${field}[${i}].url must be an https URL` }
+    const { url, filename, note, type, added_at, title, preview_url, images } =
+      r as Record<string, unknown>
+    // Links may be http; uploaded files are always https Blob URLs.
+    if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
+      return { error: `${field}[${i}].url must be an http(s) URL` }
     }
+    const isLink = type === 'link'
     out.push({
       url,
       filename: typeof filename === 'string' ? filename.slice(0, 200) : '',
       note: typeof note === 'string' ? note.slice(0, 2000) : '',
       // Trust the sender's label when it's valid, otherwise read it off
       // the URL — references predating this field still render right.
-      type: referenceType({ url, type: typeof type === 'string' ? type : undefined }),
+      type: isLink
+        ? 'link'
+        : referenceType({ url, type: typeof type === 'string' ? type : undefined }),
       added_at: typeof added_at === 'string' ? added_at : new Date().toISOString(),
+      ...(isLink
+        ? {
+            title: typeof title === 'string' ? title.slice(0, 300) : '',
+            preview_url: typeof preview_url === 'string' ? preview_url : undefined,
+            images: Array.isArray(images)
+              ? (images as unknown[])
+                  .filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u))
+                  .slice(0, 60)
+              : [],
+          }
+        : {}),
     })
   }
   return out.slice(0, 200)

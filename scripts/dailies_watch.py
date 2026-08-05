@@ -121,18 +121,48 @@ def pick_project(pinned: str | None) -> dict | None:
 
 
 def _sync_collection(project: dict, key: str, out: Path, kindLabel: str):
+    """
+    Pull one collection down.
+
+    A link is not a file, so it can't be downloaded as one. Its resolved
+    images are — a Pinterest board arrives as its pins. The link itself is
+    written to LINKS.txt so an agent with web access can go and look
+    properly rather than working only from what we could scrape.
+    """
     items = project.get(key) or []
     out.mkdir(parents=True, exist_ok=True)
-    notes = []
+    notes, links, n = [], [], 0
+
     for i, item in enumerate(items, 1):
+        if item.get("type") == "link":
+            label = item.get("title") or item["url"]
+            links.append(f"{label}\n  {item['url']}" + (f"\n  note: {item['note']}" if item.get("note") else ""))
+            for j, img in enumerate(item.get("images") or [], 1):
+                name = img.rsplit("/", 1)[-1].split("?")[0] or f"img{j}"
+                dest = out / f"{i:02d}_{j:02d}_{name}"
+                if not dest.exists():
+                    try:
+                        _download(img, dest)
+                        n += 1
+                        log(f"  new {kindLabel} (from link): {dest.name}")
+                    except Exception:
+                        continue
+                if item.get("note"):
+                    notes.append(f"{dest.name}: {item['note']} [from {label}]")
+            continue
+
         name = item["url"].rsplit("/", 1)[-1].split("?")[0]
         dest = out / f"{i:02d}_{name}"
         if not dest.exists():
             _download(item["url"], dest)
+            n += 1
             log(f"  new {kindLabel}: {dest.name}")
         if item.get("note"):
             notes.append(f"{dest.name}: {item['note']}")
+
     (out / "NOTES.txt").write_text("\n".join(notes) + ("\n" if notes else ""), encoding="utf-8")
+    if links:
+        (out / "LINKS.txt").write_text("\n\n".join(links) + "\n", encoding="utf-8")
     return len(items)
 
 
@@ -180,6 +210,8 @@ def build_prompt(project: dict, feedback: list, work: Path) -> str:
         "REFERENCES — ./references/",
         "Direction only: match the feel, the pacing, the palette. Do NOT reuse",
         "these files in the piece itself. NOTES.txt says what each one is for.",
+        "LINKS.txt, if present, lists boards and pages the reviewer pointed at —",
+        "open them if you can browse; the images already pulled from them are here.",
         "",
         "SOURCE MATERIAL — ./source/",
         "The actual footage and plates to build the piece FROM. These are the",

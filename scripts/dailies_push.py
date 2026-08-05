@@ -134,8 +134,23 @@ def download_collection(project, key, out: Path) -> int:
     if not items:
         return 0
     out.mkdir(parents=True, exist_ok=True)
-    notes = []
+    notes, links = [], []
     for i, item in enumerate(items, 1):
+        # A link isn't a file. Its resolved images are; the URL goes to
+        # LINKS.txt so it can be visited properly.
+        if item.get("type") == "link":
+            label = item.get("title") or item["url"]
+            links.append(f"{label}\n  {item['url']}")
+            for j, img in enumerate(item.get("images") or [], 1):
+                name = img.rsplit("/", 1)[-1].split("?")[0] or f"img{j}"
+                dest = out / f"{i:02d}_{j:02d}_{name}"
+                if not dest.exists():
+                    try:
+                        _download(img, dest)
+                        print(f"  saved {dest}")
+                    except Exception:
+                        continue
+            continue
         name = item["url"].rsplit("/", 1)[-1].split("?")[0]
         dest = out / f"{i:02d}_{name}"
         if not dest.exists():
@@ -145,6 +160,8 @@ def download_collection(project, key, out: Path) -> int:
             notes.append(f"{dest.name}: {item['note']}")
     if notes:
         (out / "NOTES.txt").write_text("\n".join(notes) + "\n", encoding="utf-8")
+    if links:
+        (out / "LINKS.txt").write_text("\n\n".join(links) + "\n", encoding="utf-8")
     return len(items)
 
 

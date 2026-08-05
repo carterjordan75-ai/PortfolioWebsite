@@ -458,3 +458,31 @@ The watcher runs it whether or not `--idle-run` is set, reports what's still
 owed each cycle, and closes the job with
 `POST /api/dailies/projects {id, delivery_done: true}` only once the full set
 is in. The project page shows the same state.
+
+### Link references
+
+References and sources take a pasted URL as well as an uploaded file.
+`POST /api/dailies/link` (session) resolves it and returns an asset to save:
+
+| Link | What you get |
+| --- | --- |
+| Pinterest board | its pins as individual reference images, up to 60 |
+| Any other page | OpenGraph title + cover image |
+
+A Pinterest board is the case that pays — one paste becomes forty references.
+Everything else keeps its title and cover, and the URL is always stored, so an
+agent with web access can go and look properly.
+
+Pin URLs are **verified before being stored**. The widget API only offers
+thumbnails; Pinterest usually also serves an `/originals/` copy but not for
+every pin, so each is HEAD-checked and falls back to the largest thumbnail.
+A constructed URL that 404s is a silently missing reference on the machine.
+
+The server fetches a URL a browser handed it, so: session-gated, `http(s)`
+only, and private/loopback/link-local hosts refused. A scheme-less paste
+(`cosmos.so/…`) gets `https://` prepended — but only when there is no scheme
+at all, since prefixing `file:` or `javascript:` turns a rejectable input into
+one that parses.
+
+On the machine, a link's resolved images download alongside the uploaded ones,
+and the links themselves are written to `LINKS.txt` in the same folder.

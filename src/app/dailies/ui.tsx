@@ -69,8 +69,11 @@ export type Asset = {
   url: string
   filename: string
   note: string
-  type: 'image' | 'video'
+  type: 'image' | 'video' | 'link'
   added_at: string
+  title?: string
+  preview_url?: string
+  images?: string[]
 }
 
 /** Kept as an alias: `references` was the original name for this shape. */

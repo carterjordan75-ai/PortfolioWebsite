@@ -918,6 +918,8 @@ function AssetGrid({
   const items = project[collection] || []
   const [uploading, setUploading] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  const [linkUrl, setLinkUrl] = useState('')
+  const [resolving, setResolving] = useState(false)
 
   const persist = async (next: Asset[]) => {
     await fetch('/api/dailies/projects', {
@@ -956,6 +958,55 @@ function AssetGrid({
     }
   }
 
+  /**
+   * Paste a board or a page instead of uploading files.
+   *
+   * The server resolves it: a Pinterest board expands into its pins, so
+   * one paste becomes many references; anything else keeps its title and
+   * cover. The link is always stored, so an agent with web access can go
+   * and look properly.
+   */
+  const addLink = async () => {
+    const raw = linkUrl.trim()
+    if (!raw) return
+    setResolving(true)
+    setStatus(null)
+    try {
+      const res = await fetch('/api/dailies/link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: raw }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      const link = data.link
+      await persist([
+        ...items,
+        {
+          url: link.url,
+          filename: link.title || link.url,
+          note: '',
+          type: 'link' as const,
+          title: link.title,
+          preview_url: link.preview_url || undefined,
+          images: link.images || [],
+          added_at: new Date().toISOString(),
+        },
+      ])
+      setLinkUrl('')
+      setStatus(
+        link.images?.length
+          ? `✓ added — ${link.images.length} images pulled in`
+          : '✓ link added',
+      )
+    } catch (err) {
+      setStatus(`✗ ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setResolving(false)
+      setTimeout(() => setStatus(null), 6000)
+    }
+  }
+
   const remove = (url: string) => persist(items.filter(r => r.url !== url))
 
   const setNote = (url: string, note: string) =>
@@ -974,7 +1025,42 @@ function AssetGrid({
         }}>
           {items.map(ref => (
             <figure key={ref.url} style={{ position: 'relative', margin: 0 }}>
-              {isVideoRef(ref) ? (
+              {ref.type === 'link' ? (
+                <a
+                  href={ref.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+                >
+                  <div style={{
+                    width: '100%', aspectRatio: '1 / 1', borderRadius: 8, overflow: 'hidden',
+                    border: '1px solid rgba(255,255,255,0.14)', background: 'rgba(255,255,255,0.04)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative',
+                  }}>
+                    {ref.preview_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={ref.preview_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <span style={{ fontSize: 18, opacity: 0.4 }}>↗</span>
+                    )}
+                    {!!ref.images?.length && (
+                      <span style={{
+                        position: 'absolute', left: 6, bottom: 6, fontSize: 8, fontWeight: 800,
+                        letterSpacing: '0.1em', textTransform: 'uppercase', padding: '3px 7px',
+                        borderRadius: 999, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+                      }}>
+                        {ref.images.length} images
+                      </span>
+                    )}
+                  </div>
+                  <span style={{
+                    display: 'block', fontSize: 10, lineHeight: 1.4, marginTop: 5, opacity: 0.7,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    ↗ {ref.title || ref.url}
+                  </span>
+                </a>
+              ) : isVideoRef(ref) ? (
                 <video
                   src={ref.url}
                   controls
@@ -1017,13 +1103,15 @@ function AssetGrid({
                 placeholder="Note…"
                 style={{ ...field, padding: '5px 8px', fontSize: 10, marginTop: 5, borderRadius: 6 }}
               />
-              <button
-                type="button"
-                onClick={() => downloadAsset(ref.url, ref.filename)}
-                style={{ ...ghostBtn, width: '100%', marginTop: 4, padding: '4px 8px', fontSize: 8 }}
-              >
-                Download
-              </button>
+              {ref.type !== 'link' && (
+                <button
+                  type="button"
+                  onClick={() => downloadAsset(ref.url, ref.filename)}
+                  style={{ ...ghostBtn, width: '100%', marginTop: 4, padding: '4px 8px', fontSize: 8 }}
+                >
+                  Download
+                </button>
+              )}
             </figure>
           ))}
         </div>
@@ -1045,6 +1133,25 @@ function AssetGrid({
           </span>
         )}
       </div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+        <input
+          value={linkUrl}
+          onChange={e => setLinkUrl(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLink() } }}
+          placeholder="…or paste a link — Pinterest board, Cosmos, any page"
+          style={{ ...field, flex: '1 1 220px', width: 'auto', fontSize: 12 }}
+        />
+        <button
+          type="button"
+          onClick={addLink}
+          disabled={resolving || !linkUrl.trim()}
+          style={{ ...ghostBtn, opacity: resolving || !linkUrl.trim() ? 0.4 : 1 }}
+        >
+          {resolving ? 'Reading…' : 'Add link'}
+        </button>
+      </div>
+
       <p style={{ fontSize: 10, opacity: 0.3, marginTop: 8, lineHeight: 1.5 }}>{blurb}</p>
     </section>
   )

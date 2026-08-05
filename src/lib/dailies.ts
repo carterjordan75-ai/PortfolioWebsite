@@ -64,12 +64,26 @@ export type Question = {
  * or a plate being copied as a style cue.
  */
 export type Asset = {
+  /** The file itself, or — for a link — the page it points at. */
   url: string
   filename: string
   note: string
   /** Motion is often the clearest way to say "like this". */
-  type: 'image' | 'video'
+  type: 'image' | 'video' | 'link'
   added_at: string
+
+  // ── links only ────────────────────────────────────────────────
+  /** Resolved page title, so the card reads as something. */
+  title?: string
+  /** Cover image for the card. Not itself a reference. */
+  preview_url?: string
+  /**
+   * Individual images behind the link, where they could be resolved —
+   * a Pinterest board expands to its pins. These ARE references: the
+   * machine downloads them. A link that resolves to nothing still has
+   * value, since an agent with web access can visit it.
+   */
+  images?: string[]
 }
 
 /** Kept as an alias: `references` was the original name for this shape. */
