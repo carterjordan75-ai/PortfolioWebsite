@@ -122,6 +122,77 @@ export type Delivery = {
 
 export const DELIVERY_FORMATS = ['16:9', '9:16', '1:1'] as const
 
+/**
+ * Styles a project can be tagged with, grouped as the dropdown shows
+ * them. Free text in a brief is easy to be vague in; picking "Character
+ * Animation" and "Houdini" tells the machine what KIND of thing this is
+ * before it reads a word.
+ *
+ * A project can carry several — most real work is a discipline plus a
+ * tool plus a look.
+ */
+export const STYLE_GROUPS: Array<{ group: string; styles: string[] }> = [
+  {
+    group: 'Discipline',
+    styles: [
+      'Logo Animation',
+      'Text / Kinetic Typography',
+      'Character Animation',
+      'Title Sequence',
+      'UI / Product Animation',
+      'Explainer / Motion Graphics',
+      'Data Visualisation',
+      'Broadcast / Ident',
+      'Music Video',
+    ],
+  },
+  {
+    group: 'Tool / technique',
+    styles: [
+      'TouchDesigner',
+      'Houdini',
+      'Cinema 4D',
+      'Blender',
+      'After Effects',
+      'Unreal Engine',
+      'Shader / GLSL',
+      'AI / Diffusion',
+      'Photogrammetry / Scan',
+    ],
+  },
+  {
+    group: 'Simulation',
+    styles: [
+      'Particles',
+      'Fluid / Liquid',
+      'Cloth / Soft Body',
+      'Rigid Body / Destruction',
+      'Crowd / Flocking',
+      'Growth / Organic',
+    ],
+  },
+  {
+    group: 'Look',
+    styles: [
+      'Abstract / Generative',
+      'Photoreal / CGI',
+      'Glitch / Datamosh',
+      'Collage / Cutout',
+      'Isometric',
+      'Cel / 2D Frame-by-frame',
+      'Stop Motion',
+      'Rotoscope',
+      'Morphing',
+      'Seamless Loop',
+      'Analogue / Film Grain',
+      'Minimal / Swiss',
+      'Maximal / Y2K',
+    ],
+  },
+]
+
+export const ALL_STYLES: string[] = STYLE_GROUPS.flatMap(g => g.styles)
+
 export type Project = {
   id: string
   title: string
@@ -129,6 +200,8 @@ export type Project = {
   hero_url: string | null
   references: Asset[]
   sources: Asset[]
+  /** What kind of thing this is — see STYLE_GROUPS. */
+  styles: string[]
   status: ProjectStatus
   delivery: Delivery
   created_at: string

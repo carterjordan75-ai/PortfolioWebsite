@@ -111,6 +111,7 @@ export type Project = {
   hero_url: string | null
   references: Asset[]
   sources: Asset[]
+  styles: string[]
   status: ProjectStatus
   delivery: { requested_at: string | null; done_at: string | null }
   created_at: string
@@ -121,6 +122,28 @@ export type Project = {
   is_current: boolean
   entries: Entry[]
 }
+
+/** Mirrors STYLE_GROUPS in src/lib/dailies.ts — the dropdown's contents. */
+export const STYLE_GROUPS: Array<{ group: string; styles: string[] }> = [
+  { group: 'Discipline', styles: [
+    'Logo Animation', 'Text / Kinetic Typography', 'Character Animation', 'Title Sequence',
+    'UI / Product Animation', 'Explainer / Motion Graphics', 'Data Visualisation',
+    'Broadcast / Ident', 'Music Video',
+  ] },
+  { group: 'Tool / technique', styles: [
+    'TouchDesigner', 'Houdini', 'Cinema 4D', 'Blender', 'After Effects', 'Unreal Engine',
+    'Shader / GLSL', 'AI / Diffusion', 'Photogrammetry / Scan',
+  ] },
+  { group: 'Simulation', styles: [
+    'Particles', 'Fluid / Liquid', 'Cloth / Soft Body', 'Rigid Body / Destruction',
+    'Crowd / Flocking', 'Growth / Organic',
+  ] },
+  { group: 'Look', styles: [
+    'Abstract / Generative', 'Photoreal / CGI', 'Glitch / Datamosh', 'Collage / Cutout',
+    'Isometric', 'Cel / 2D Frame-by-frame', 'Stop Motion', 'Rotoscope', 'Morphing',
+    'Seamless Loop', 'Analogue / Film Grain', 'Minimal / Swiss', 'Maximal / Y2K',
+  ] },
+]
 
 export const SCALE = [1, 2, 3, 4, 5]
 

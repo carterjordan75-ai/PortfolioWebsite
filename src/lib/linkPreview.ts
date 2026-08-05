@@ -191,6 +191,59 @@ async function resolvePinterest(url: string): Promise<ResolvedLink | null> {
   }
 }
 
+/** Junk that appears on every page and is never a reference. */
+const NOT_A_REFERENCE =
+  /(favicon|sprite|logo|icon|avatar|placeholder|pixel|spacer|badge|1x1|blank)/i
+
+/**
+ * Every image the page actually shows.
+ *
+ * Best-effort by design. It reads the HTML the server returns, so a
+ * gallery rendered entirely in JavaScript will yield little — that's a
+ * real limit, not a bug to chase. `srcset` is mined for the largest
+ * candidate, since that's where the usable resolution lives.
+ */
+function scrapeImages(html: string, base: string): string[] {
+  const found = new Set<string>()
+
+  const add = (raw: string | undefined) => {
+    if (!raw) return
+    let u = raw.trim()
+    if (!u || u.startsWith('data:')) return
+    try { u = new URL(u, base).toString() } catch { return }
+    if (!/^https?:/i.test(u)) return
+    const path = u.split('?')[0]
+    if (/\.svg$/i.test(path)) return
+    if (NOT_A_REFERENCE.test(path)) return
+    found.add(u)
+  }
+
+  /** srcset → the highest-width candidate. */
+  const fromSrcset = (set: string) => {
+    let best = '', bestW = -1
+    for (const part of set.split(',')) {
+      const [u, d] = part.trim().split(/\s+/)
+      const w = d && d.endsWith('w') ? parseInt(d) : d && d.endsWith('x') ? parseFloat(d) * 1000 : 0
+      if (u && w >= bestW) { best = u; bestW = w }
+    }
+    add(best)
+  }
+
+  for (const m of Array.from(html.matchAll(/<img[^>]+>/gi))) {
+    const tag = m[0]
+    const srcset = tag.match(/srcset=["']([^"']+)["']/i)?.[1]
+    if (srcset) fromSrcset(decode(srcset))
+    else add(decode(tag.match(/\bsrc=["']([^"']+)["']/i)?.[1] || ''))
+  }
+  for (const m of Array.from(html.matchAll(/<source[^>]+srcset=["']([^"']+)["'][^>]*>/gi))) {
+    fromSrcset(decode(m[1]))
+  }
+  for (const m of Array.from(html.matchAll(/<video[^>]+poster=["']([^"']+)["']/gi))) add(decode(m[1]))
+  for (const m of Array.from(html.matchAll(/background-image\s*:\s*url\((["']?)([^"')]+)\1\)/gi))) add(decode(m[2]))
+
+  return Array.from(found).slice(0, MAX_EXPANDED)
+}
+
 async function resolvePage(url: string): Promise<ResolvedLink> {
   const host = (() => { try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url } })()
   const html = await fetchText(url)
@@ -202,18 +255,21 @@ async function resolvePage(url: string): Promise<ResolvedLink> {
     decode(html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || '') ||
     host
 
-  let image = meta(html, 'og:image') || meta(html, 'twitter:image') || null
-  if (image && !/^https?:\/\//i.test(image)) {
-    try { image = new URL(image, url).toString() } catch { image = null }
+  let cover = meta(html, 'og:image') || meta(html, 'twitter:image') || null
+  if (cover && !/^https?:\/\//i.test(cover)) {
+    try { cover = new URL(cover, url).toString() } catch { cover = null }
   }
+
+  const scraped = scrapeImages(html, url)
+  // The cover leads, then whatever the page shows — capped as one list,
+  // so the cover can't push the total over the limit.
+  const images = Array.from(new Set([...(cover ? [cover] : []), ...scraped])).slice(0, MAX_EXPANDED)
 
   return {
     url,
     title: title.slice(0, 200),
-    preview_url: image,
-    // A single page's cover is a preview, not a set of references — it's
-    // deliberately not added as its own downloadable image.
-    images: [],
+    preview_url: cover || images[0] || null,
+    images,
     source: 'page',
   }
 }

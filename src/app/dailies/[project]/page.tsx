@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 import {
-  Chip, Gate, Header, Page, SCALE, STATUS_OPTIONS, card, downloadAsset, entryAssets, field,
-  ghostBtn, isVideoRef, label, solidBtn, uploadViaTicket,
+  Chip, Gate, Header, Page, SCALE, STATUS_OPTIONS, STYLE_GROUPS, card, downloadAsset,
+  entryAssets, field, ghostBtn, isVideoRef, label, solidBtn, uploadViaTicket,
   type Asset, type Entry, type EntryAsset, type Project, type ProjectStatus,
 } from '../ui'
 
@@ -900,7 +900,83 @@ function Brief({ project, onSaved }: { project: Project; onSaved: () => void }) 
           {project.brief || 'No brief yet.'}
         </p>
       )}
+      <Styles project={project} onSaved={onSaved} />
     </section>
+  )
+}
+
+/**
+ * What KIND of thing this is.
+ *
+ * Prose is easy to be vague in. "Character Animation" + "Houdini" tells
+ * the machine the shape of the job before it reads a word of the brief,
+ * and most real work is a discipline plus a tool plus a look — so it's
+ * a picker that accumulates, not a single choice.
+ */
+function Styles({ project, onSaved }: { project: Project; onSaved: () => void }) {
+  const chosen = project.styles || []
+  const [saving, setSaving] = useState(false)
+
+  const save = async (styles: string[]) => {
+    setSaving(true)
+    try {
+      await fetch('/api/dailies/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: project.id, styles }),
+      })
+      onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 14, borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 12 }}>
+      <span style={label}>Style {chosen.length > 0 && `(${chosen.length})`}</span>
+
+      {chosen.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {chosen.map(st => (
+            <button
+              key={st}
+              type="button"
+              onClick={() => save(chosen.filter(x => x !== st))}
+              title="Remove"
+              style={{
+                fontSize: 10, padding: '5px 10px', borderRadius: 999, cursor: 'pointer',
+                background: 'rgba(255,255,255,0.9)', color: '#000', border: 'none', fontWeight: 600,
+              }}
+            >
+              {st} <span style={{ opacity: 0.45 }}>×</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <select
+        value=""
+        disabled={saving}
+        onChange={e => {
+          const v = e.target.value
+          if (v && !chosen.includes(v)) save([...chosen, v])
+          e.target.value = ''
+        }}
+        style={{
+          ...field, width: 'auto', maxWidth: '100%', padding: '8px 11px', fontSize: 12,
+          cursor: 'pointer', colorScheme: 'dark',
+        }}
+      >
+        <option value="">{saving ? 'Saving…' : '+ Add a style'}</option>
+        {STYLE_GROUPS.map(g => (
+          <optgroup key={g.group} label={g.group}>
+            {g.styles.filter(st => !chosen.includes(st)).map(st => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </div>
   )
 }
 

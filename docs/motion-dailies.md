@@ -459,6 +459,19 @@ owed each cycle, and closes the job with
 `POST /api/dailies/projects {id, delivery_done: true}` only once the full set
 is in. The project page shows the same state.
 
+### Styles
+
+A project carries `styles[]` — picked from a fixed vocabulary grouped as
+Discipline, Tool / technique, Simulation and Look (see `STYLE_GROUPS` in
+`src/lib/dailies.ts`). Several at once: most real work is a discipline plus a
+tool plus a look.
+
+Only known labels are accepted; an unrecognised one is a 400 rather than a
+typo nobody notices. They reach the machine at the top of `BRIEF.txt` and as
+their own block in the agent prompt, stated as constraints rather than
+suggestions — prose is easy to be vague in, and "Character Animation" +
+"Houdini" fixes the shape of the job before a word of the brief is read.
+
 ### Link references
 
 References and sources take a pasted URL as well as an uploaded file.
@@ -467,7 +480,19 @@ References and sources take a pasted URL as well as an uploaded file.
 | Link | What you get |
 | --- | --- |
 | Pinterest board | its pins as individual reference images, up to 60 |
-| Any other page | OpenGraph title + cover image |
+| Any other page | its title, cover, and the imagery on the page — up to 60 |
+
+Generic pages are scraped, not just read for OpenGraph: `<img>` (taking the
+largest `srcset` candidate), `<source>`, video posters and CSS
+`background-image`. Favicons, sprites, logos, avatars, tracking pixels and SVG
+are dropped. It reads the HTML the server returns, so a gallery rendered
+entirely in JavaScript yields little — a real limit, not a bug. Measured on
+real sites: 18, 14 and 60 images.
+
+Scraped URLs are the page's own, so most work; some are hotlink-protected and
+fail on download. The client says which were skipped rather than swallowing
+it, because a reference that silently isn't there is worse than one you know
+is missing.
 
 A Pinterest board is the case that pays — one paste becomes forty references.
 Everything else keeps its title and cover, and the URL is always stored, so an

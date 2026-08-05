@@ -123,6 +123,8 @@ def cmd_projects(args):
         print(f"    {p['entry_count']} entries, "
               f"{len(p.get('references', []))} references, "
               f"{len(p.get('sources', []))} source files")
+        if p.get("styles"):
+            print(f"    style: {', '.join(p['styles'])}")
         if p.get("brief"):
             first = p["brief"].strip().splitlines()[0]
             print(f"    brief: {first[:100]}")
@@ -148,7 +150,11 @@ def download_collection(project, key, out: Path) -> int:
                     try:
                         _download(img, dest)
                         print(f"  saved {dest}")
-                    except Exception:
+                    except Exception as err:
+                        # Scraped pages often hotlink-protect their images.
+                        # Say so — a reference that silently isn't there is
+                        # worse than one you know is missing.
+                        print(f"  skipped (unreachable): {name} — {err}")
                         continue
             continue
         name = item["url"].rsplit("/", 1)[-1].split("?")[0]
@@ -176,7 +182,10 @@ def cmd_refs(args):
 
     # The brief is the standing instruction — write it next to the files
     # so whatever reads this folder gets the words as well as the media.
-    (out / "BRIEF.txt").write_text(project.get("brief") or "", encoding="utf-8")
+    brief = project.get("brief") or ""
+    if project.get("styles"):
+        brief = f"STYLE: {', '.join(project['styles'])}\n\n{brief}"
+    (out / "BRIEF.txt").write_text(brief, encoding="utf-8")
 
     # Kept apart on disk as well as in the data: references are direction,
     # sources are the material the piece is built from. Mixing them is how

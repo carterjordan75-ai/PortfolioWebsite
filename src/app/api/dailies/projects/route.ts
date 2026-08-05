@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import {
+  ALL_STYLES,
   PROJECT_STATUSES,
   referenceType,
   checkApiKey,
@@ -145,6 +146,25 @@ export async function POST(request: Request) {
     references = parsed
   }
 
+  let styles: string[] | undefined
+  if (body.styles !== undefined) {
+    if (!Array.isArray(body.styles)) {
+      return NextResponse.json({ error: 'styles must be an array' }, { status: 400 })
+    }
+    // Only from the known vocabulary — an unrecognised label tells the
+    // machine nothing and would quietly become a typo nobody notices.
+    const unknown = (body.styles as unknown[]).filter(
+      s => typeof s !== 'string' || !ALL_STYLES.includes(s),
+    )
+    if (unknown.length > 0) {
+      return NextResponse.json(
+        { error: `unknown style: ${String(unknown[0])}` },
+        { status: 400 },
+      )
+    }
+    styles = Array.from(new Set(body.styles as string[]))
+  }
+
   let sources: Asset[] | undefined
   if (body.sources !== undefined) {
     const parsed = parseAssets(body.sources, 'sources')
@@ -177,6 +197,7 @@ export async function POST(request: Request) {
     hero_url: typeof body.hero_url === 'string' ? body.hero_url : existing?.hero_url ?? null,
     references: references ?? existing?.references ?? [],
     sources: sources ?? existing?.sources ?? [],
+    styles: styles ?? existing?.styles ?? [],
     // New projects start as drafts: nothing enters the queue until you
     // say so, which is what buys the time to write a brief.
     status: (body.status as ProjectStatus) ?? existing?.status ?? 'draft',

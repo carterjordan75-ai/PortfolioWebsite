@@ -145,7 +145,11 @@ def _sync_collection(project: dict, key: str, out: Path, kindLabel: str):
                         _download(img, dest)
                         n += 1
                         log(f"  new {kindLabel} (from link): {dest.name}")
-                    except Exception:
+                    except Exception as err:
+                        # Scraped pages often hotlink-protect their images.
+                        # Say so — a reference that silently isn't there is
+                        # worse than one you know is missing.
+                        log(f"  skipped (unreachable): {name} — {err}")
                         continue
                 if item.get("note"):
                     notes.append(f"{dest.name}: {item['note']} [from {label}]")
@@ -168,7 +172,10 @@ def _sync_collection(project: dict, key: str, out: Path, kindLabel: str):
 
 def sync_project(project: dict, work: Path) -> dict:
     """Brief, references and source material onto disk. Returns the project."""
-    (work / "BRIEF.txt").write_text(project.get("brief") or "", encoding="utf-8")
+    brief = project.get("brief") or ""
+    if project.get("styles"):
+        brief = f"STYLE: {', '.join(project['styles'])}\n\n{brief}"
+    (work / "BRIEF.txt").write_text(brief, encoding="utf-8")
     # Separate folders because they mean different things — see the prompt.
     _sync_collection(project, "references", work / "references", "reference")
     _sync_collection(project, "sources", work / "source", "source file")
@@ -206,6 +213,19 @@ def build_prompt(project: dict, feedback: list, work: Path) -> str:
         "",
         "STANDING BRIEF:",
         project.get("brief") or "(none set)",
+    ]
+
+    styles = project.get("styles") or []
+    if styles:
+        parts += [
+            "",
+            "STYLE — what kind of thing this is:",
+            "  " + ", ".join(styles),
+            "These are the discipline, tools and look the reviewer picked. Treat",
+            "them as constraints, not suggestions.",
+        ]
+
+    parts += [
         "",
         "REFERENCES — ./references/",
         "Direction only: match the feel, the pacing, the palette. Do NOT reuse",
