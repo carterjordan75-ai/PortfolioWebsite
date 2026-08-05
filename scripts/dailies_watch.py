@@ -31,7 +31,9 @@ The machine only ever makes OUTBOUND calls — nothing needs to reach it.
   --once          one cycle, then exit (use this to try it out)
   --idle-run      agent loop: keep working from the brief even when
                   there's no feedback; this is the overnight mode
-  --interval N    seconds between cycles (default 300)
+  --interval N    seconds between cycles (default 900 — 15 min)
+  --settle N      after publishing, pause new work for N seconds while
+                  still watching for feedback (default 3600; 0 disables)
   --project ID    ignore the queue and pin to one project
   --agent-cmd     override how the agent is invoked
 
@@ -705,6 +707,20 @@ def cycle(args, root: Path, log_state: dict) -> None:
     delivery = project.get("delivery") or {}
     owed = bool(delivery.get("requested_at")) and not delivery.get("done_at")
 
+    # After publishing, hold off starting the next long run for a while.
+    # Feedback is still checked every cycle and acted on the moment it
+    # lands — the point is not to be an hour into new work when it does.
+    if not feedback and not owed and args.settle > 0:
+        since = time.time() - (state.get("last_push_at") or 0)
+        if since < args.settle:
+            mins = int((args.settle - since) // 60) + 1
+            if log_state.get("settle_notice") != project_id:
+                log(f"  {project_id}: published recently — watching for feedback, "
+                    f"new work paused for ~{mins} min")
+                log_state["settle_notice"] = project_id
+            return
+    log_state.pop("settle_notice", None)
+
     if feedback:
         log(f"  {project_id}: {len(feedback)} new piece(s) of feedback")
     elif owed:
@@ -739,6 +755,7 @@ def cycle(args, root: Path, log_state: dict) -> None:
     attach_late_sheets(project_id, out_dir, state)
 
     pushed_names = []
+    published_now = False
     for path, key in collect_outputs(out_dir, state):
         try:
             # The named masters go in FINAL; everything else is WIP.
@@ -750,6 +767,7 @@ def cycle(args, root: Path, log_state: dict) -> None:
                 state.setdefault("pending_sheets", {})[path.stem] = entry_id
             state.setdefault("pushed", []).append(key)
             pushed_names.append(path.name)
+            published_now = True
             log(f"  pushed {path.name} -> {entry_id}")
         except SystemExit as err:
             log(f"  failed to push {path.name}: {err}")
@@ -775,6 +793,9 @@ def cycle(args, root: Path, log_state: dict) -> None:
                 missing.append("final_learnings.md")
             log(f"  {project_id}: still owed {', '.join(missing)}")
 
+    if published_now:
+        state["last_push_at"] = time.time()
+
     save_state(work, state)
 
 
@@ -798,7 +819,12 @@ def main():
         action="store_true",
         help="don't run an agent — just publish what appears in --out",
     )
-    parser.add_argument("--interval", type=int, default=300, help="seconds between cycles")
+    parser.add_argument("--interval", type=int, default=900, help="seconds between cycles (default 15 min)")
+    parser.add_argument(
+        "--settle", type=int, default=3600,
+        help="after publishing, hold off starting new work for this long while "
+             "still checking for feedback (default 1 h; 0 to disable)",
+    )
     parser.add_argument("--timeout", type=int, default=3600, help="max seconds per agent run")
     parser.add_argument("--once", action="store_true", help="one cycle, then exit")
     parser.add_argument("--idle-run", action="store_true", help="work even with no new feedback")
