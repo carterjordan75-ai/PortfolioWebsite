@@ -16,6 +16,7 @@ import {
   type Project,
   type ProjectStatus,
   type Asset,
+  type Pitch,
 } from '@/lib/dailies'
 
 export const dynamic = 'force-dynamic'
@@ -146,6 +147,30 @@ export async function POST(request: Request) {
     references = parsed
   }
 
+  /**
+   * The machine posts a round of pitches; the page picks one, or rejects
+   * the lot. Rejecting remembers the titles so the next round doesn't
+   * come back with the same ideas in different words.
+   */
+  let pitches: Pitch[] | undefined
+  if (body.pitches !== undefined) {
+    if (!Array.isArray(body.pitches)) {
+      return NextResponse.json({ error: 'pitches must be an array' }, { status: 400 })
+    }
+    pitches = (body.pitches as unknown[]).slice(0, 8).map((raw, i) => {
+      const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+      const str = (v: unknown, cap = 2000) => (typeof v === 'string' ? v.slice(0, cap) : '')
+      return {
+        id: typeof r.id === 'string' && r.id.trim() ? r.id.slice(0, 64) : `p${i + 1}`,
+        title: str(r.title, 200) || `Concept ${i + 1}`,
+        concept: str(r.concept),
+        constraint: str(r.constraint),
+        why: str(r.why),
+        risk: str(r.risk),
+      }
+    })
+  }
+
   let styles: string[] | undefined
   if (body.styles !== undefined) {
     if (!Array.isArray(body.styles)) {
@@ -198,6 +223,32 @@ export async function POST(request: Request) {
     references: references ?? existing?.references ?? [],
     sources: sources ?? existing?.sources ?? [],
     styles: styles ?? existing?.styles ?? [],
+    pitches:
+      body.reject_pitches === true ? [] : pitches ?? existing?.pitches ?? [],
+    chosen_pitch_id:
+      body.reject_pitches === true
+        ? null
+        : typeof body.chosen_pitch_id === 'string'
+          ? body.chosen_pitch_id
+          : body.chosen_pitch_id === null
+            ? null
+            : pitches !== undefined
+              // A fresh round supersedes whatever was chosen before.
+              ? null
+              : existing?.chosen_pitch_id ?? null,
+    pitch_round:
+      body.reject_pitches === true
+        ? (existing?.pitch_round ?? 0) + 1
+        : existing?.pitch_round ?? 0,
+    rejected_pitches:
+      body.reject_pitches === true
+        ? Array.from(
+            new Set([
+              ...(existing?.rejected_pitches ?? []),
+              ...(existing?.pitches ?? []).map(p => p.title),
+            ]),
+          ).slice(-40)
+        : existing?.rejected_pitches ?? [],
     learnings:
       typeof body.learnings === 'string'
         ? body.learnings.slice(0, 20_000)

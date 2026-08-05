@@ -124,6 +124,28 @@ export type Delivery = {
 export const DELIVERY_FORMATS = ['16:9', '9:16', '1:1'] as const
 
 /**
+ * A concept, proposed in words before anything is rendered.
+ *
+ * Renders cost hours; ideas cost nothing. Going straight to production
+ * spends the expensive currency on the cheap decision, and it converges
+ * on the middle of whatever the brief described. Making the machine
+ * commit to an idea and defend it — with a constraint, not just a
+ * description — is what moves the work off the default.
+ */
+export type Pitch = {
+  id: string
+  title: string
+  /** The idea itself. */
+  concept: string
+  /** The hard rule that forces invention. Descriptions invite defaults. */
+  constraint: string
+  /** Why it might be good. */
+  why: string
+  /** What could go wrong — stated up front, not discovered at hour five. */
+  risk: string
+}
+
+/**
  * Styles a project can be tagged with, grouped as the dropdown shows
  * them. Free text in a brief is easy to be vague in; picking "Character
  * Animation" and "Houdini" tells the machine what KIND of thing this is
@@ -203,6 +225,14 @@ export type Project = {
   sources: Asset[]
   /** What kind of thing this is — see STYLE_GROUPS. */
   styles: string[]
+  /** Concepts on the table. Empty until the machine has pitched. */
+  pitches: Pitch[]
+  /** The one being built. Nothing is produced until this is set. */
+  chosen_pitch_id: string | null
+  /** Bumped when you reject a whole round, so it knows to start again. */
+  pitch_round: number
+  /** Rejected titles, so a later round doesn't re-pitch the same thing. */
+  rejected_pitches: string[]
   /**
    * What the machine took away from making this: techniques that
    * worked, dead ends, gotchas. Written on delivery and read back at the
@@ -218,6 +248,10 @@ export type Project = {
 
 export const deliveryPending = (p: Project): boolean =>
   !!p.delivery?.requested_at && !p.delivery?.done_at
+
+/** Nothing gets made until a concept has been picked. */
+export const needsPitch = (p: Project): boolean =>
+  p.status === 'active' && !p.chosen_pitch_id
 
 /**
  * The one project the machine should be working on: the oldest that's

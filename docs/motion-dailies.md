@@ -582,3 +582,45 @@ pixels; WIP has no filter and so no probe.
 **Empty WIP / Empty Final** clears a whole folder — whole entries, one at a
 time so entries of the same project can't race. The confirm names the count and
 says which folder survives. Clearing WIP once the finals are in is the point.
+
+### Pitch before production
+
+A project with no entries yet produces **nothing** until a concept is chosen.
+The machine pitches four, in words, to `out/pitches.json`:
+
+```json
+[{ "id": "a", "title": "…", "concept": "…",
+   "constraint": "…", "why": "…", "risk": "…" }]
+```
+
+The prompt asks for a **constraint, not a description** — "particles that
+dissolve" invites the default version of itself; "one continuous shot, two
+colours, everything from a single primitive" forces invention. It also asks
+for the four to be mutually incompatible, and for one of them to be the idea
+it would normally talk itself out of.
+
+The page shows them as cards. **Build this** sets `chosen_pitch_id` and
+production begins with the concept and its constraint at the top of every
+prompt. **None of these** clears the round, bumps `pitch_round`, and remembers
+the titles in `rejected_pitches` so the next four aren't the same ideas
+renamed.
+
+Renders cost hours and concepts cost nothing, so the choice between directions
+is made in the cheap currency. It also changes the machine's posture: something
+that has to commit to an idea and defend it produces less middling work than
+something serving a description.
+
+The gate applies **only to projects with no entries**. One already twenty
+entries deep is underway, and stopping it to pitch would discard the direction
+it has already found.
+
+### Self-critique
+
+Every production prompt now carries a standing rule: make more than you intend
+to show, critique it as harshly as you'd critique someone else's, fix what you
+find, and look again — then show the best one or two and say what you killed.
+
+The questions are deliberately pointed: *is this interesting or just competent?
+Did the constraint quietly slip? What's the weakest second? Have I made the
+obvious version of this brief?* A round trip to the reviewer costs a day; a
+round trip to itself costs minutes.

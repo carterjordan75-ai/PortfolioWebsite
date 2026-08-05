@@ -88,6 +88,15 @@ const VIDEO_EXT_RE = /\.(mp4|mov|webm|m4v)(\?|$)/i
 export const isVideoRef = (r: { url: string; type?: string }) =>
   r.type === 'video' || (r.type !== 'image' && VIDEO_EXT_RE.test(r.url))
 
+export type Pitch = {
+  id: string
+  title: string
+  concept: string
+  constraint: string
+  why: string
+  risk: string
+}
+
 export type ProjectStatus = 'draft' | 'active' | 'done'
 
 /** Ordered as they appear in the dropdown. */
@@ -116,6 +125,10 @@ export type Project = {
   sources: Asset[]
   styles: string[]
   learnings: string
+  pitches: Pitch[]
+  chosen_pitch_id: string | null
+  pitch_round: number
+  rejected_pitches: string[]
   status: ProjectStatus
   delivery: { requested_at: string | null; done_at: string | null }
   created_at: string

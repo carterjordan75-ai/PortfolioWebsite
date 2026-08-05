@@ -213,6 +213,7 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
 
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 22 }}>
         <Status project={project} onSaved={load} />
+        <Pitches project={project} onSaved={load} />
         <Brief project={project} onSaved={load} />
         <AssetGrid
           project={project}
@@ -323,6 +324,117 @@ function Detail({ signOut }: { signOut: () => Promise<void> }) {
         <AssetOverlay asset={open} project={project} onClose={() => setOpenUrl(null)} onSaved={load} />
       )}
     </Page>
+  )
+}
+
+// ── pitches ─────────────────────────────────────────────────────────
+
+/**
+ * Concepts, before anything is rendered.
+ *
+ * Nothing is produced until one is picked — going straight from a brief
+ * to production is what converges on the competent middle. Rejecting the
+ * whole round is a first-class action, not a failure state: four ideas
+ * cost minutes to generate and the right move is often none of them.
+ */
+function Pitches({ project, onSaved }: { project: Project; onSaved: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const pitches = project.pitches || []
+  const chosen = pitches.find(p => p.id === project.chosen_pitch_id) || null
+
+  const post = async (body: Record<string, unknown>) => {
+    setBusy(true)
+    try {
+      await fetch('/api/dailies/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: project.id, ...body }),
+      })
+      onSaved()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (project.status !== 'active' && !chosen && pitches.length === 0) return null
+
+  // Chosen: a quiet reminder of what's being built, with a way out.
+  if (chosen) {
+    return (
+      <section style={{ ...card, padding: 15 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+          <span style={label}>Concept</span>
+          <button onClick={() => post({ reject_pitches: true })} disabled={busy} style={{ ...ghostBtn, padding: '4px 10px' }}>
+            {busy ? '…' : 'Pitch again'}
+          </button>
+        </div>
+        <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 6 }}>{chosen.title}</h3>
+        <p style={{ fontSize: 13, lineHeight: 1.6, opacity: 0.85 }}>{chosen.concept}</p>
+        {chosen.constraint && (
+          <p style={{ fontSize: 12, lineHeight: 1.6, marginTop: 9, color: 'rgb(252,211,77)' }}>
+            Constraint — {chosen.constraint}
+          </p>
+        )}
+      </section>
+    )
+  }
+
+  if (pitches.length === 0) {
+    return (
+      <section style={{ ...card, padding: 15 }}>
+        <span style={label}>Concept</span>
+        <p style={{ fontSize: 12, opacity: 0.45, lineHeight: 1.6 }}>
+          {project.status === 'active'
+            ? 'Waiting on the PC to pitch. Nothing gets rendered until you pick one.'
+            : 'Set this to In progress and the PC will pitch concepts before it builds anything.'}
+        </p>
+      </section>
+    )
+  }
+
+  return (
+    <section style={{ ...card, padding: 15 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <span style={label}>Pick a concept ({pitches.length})</span>
+        <button onClick={() => post({ reject_pitches: true })} disabled={busy} style={{ ...ghostBtn, padding: '4px 10px' }}>
+          {busy ? '…' : 'None of these — pitch again'}
+        </button>
+      </div>
+      <p style={{ fontSize: 11, opacity: 0.4, lineHeight: 1.55, marginBottom: 12 }}>
+        Nothing is rendered until you choose. Rejecting the round is free — it
+        remembers these so the next four aren&apos;t the same ideas renamed.
+      </p>
+
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+        {pitches.map(p => (
+          <div key={p.id} style={{
+            border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: 13,
+            display: 'flex', flexDirection: 'column', gap: 8,
+          }}>
+            <h4 style={{ fontSize: 13, fontWeight: 800, lineHeight: 1.3 }}>{p.title}</h4>
+            {p.concept && <p style={{ fontSize: 12, lineHeight: 1.55, opacity: 0.8 }}>{p.concept}</p>}
+            {p.constraint && (
+              <p style={{ fontSize: 11, lineHeight: 1.5, color: 'rgb(252,211,77)' }}>
+                <strong style={{ opacity: 0.7 }}>Constraint</strong> — {p.constraint}
+              </p>
+            )}
+            {p.why && <p style={{ fontSize: 11, lineHeight: 1.5, opacity: 0.5 }}>{p.why}</p>}
+            {p.risk && (
+              <p style={{ fontSize: 11, lineHeight: 1.5, opacity: 0.4 }}>
+                <strong>Risk</strong> — {p.risk}
+              </p>
+            )}
+            <button
+              onClick={() => post({ chosen_pitch_id: p.id })}
+              disabled={busy}
+              style={{ ...solidBtn, marginTop: 'auto', padding: '9px 16px', opacity: busy ? 0.5 : 1 }}
+            >
+              Build this
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 

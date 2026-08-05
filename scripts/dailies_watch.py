@@ -202,6 +202,75 @@ def download_feedback_refs(feedback: dict, work: Path) -> Path | None:
     return out
 
 
+PITCH_COUNT = 4
+
+
+def build_pitch_prompt(project: dict, past: list = None) -> str:
+    """
+    Ask for concepts, not renders.
+
+    A render costs hours and a concept costs nothing, so the choice
+    between directions should be made in words. It also changes the
+    posture: something that has to commit to an idea and defend it
+    produces less middling work than something serving a description.
+    """
+    parts = [
+        f"Project: \"{project['title']}\".",
+        "",
+        "BRIEF:",
+        project.get("brief") or "(none set)",
+    ]
+    if project.get("styles"):
+        parts += ["", "STYLE: " + ", ".join(project["styles"])]
+
+    parts += [
+        "",
+        "Reference material is in ./references/, source material in ./source/.",
+        "Look at them before you write anything.",
+    ]
+
+    if past:
+        parts += ["", "=" * 60, "WHAT YOU LEARNED ON EARLIER PROJECTS"]
+        for title, text in past:
+            parts += ["", f"--- {title} ---", text.strip()]
+        parts += ["=" * 60]
+
+    rejected = project.get("rejected_pitches") or []
+    if rejected:
+        parts += [
+            "",
+            "ALREADY REJECTED — do not come back with these, or with the same",
+            "idea under a different name:",
+        ] + [f"  - {t}" for t in rejected]
+
+    parts += [
+        "",
+        "=" * 60,
+        f"PITCH {PITCH_COUNT} CONCEPTS. Do not render anything yet.",
+        "",
+        "Each one needs a CONSTRAINT, not just a description. A description",
+        "invites the default version of itself; a hard rule forces invention.",
+        "\"Particles that dissolve\" is a description. \"One continuous shot,",
+        "two colours, everything built from a single primitive\" is a constraint.",
+        "",
+        "Make them genuinely incompatible with each other. If two of them could",
+        "sit in the same deck, you haven't gone far enough — push one until it's",
+        "uncomfortable. One of the four should be the idea you'd normally talk",
+        "yourself out of.",
+        "",
+        "Be honest in `risk`. Say what might make it fail, not a token worry.",
+        "",
+        "Write them to ./out/pitches.json, exactly this shape:",
+        "[",
+        '  {"id": "a", "title": "...", "concept": "...",',
+        '   "constraint": "...", "why": "...", "risk": "..."}',
+        "]",
+        "Nothing else in ./out/ this round.",
+        "=" * 60,
+    ]
+    return "\n".join(parts)
+
+
 def build_prompt(project: dict, feedback: list, work: Path, past: list = None) -> str:
     parts = [
         f"You are working on the project \"{project['title']}\".",
@@ -209,6 +278,24 @@ def build_prompt(project: dict, feedback: list, work: Path, past: list = None) -
         "STANDING BRIEF:",
         project.get("brief") or "(none set)",
     ]
+
+    chosen = next(
+        (p for p in (project.get("pitches") or []) if p.get("id") == project.get("chosen_pitch_id")),
+        None,
+    )
+    if chosen:
+        parts += [
+            "",
+            "=" * 60,
+            f"THE CONCEPT YOU ARE BUILDING: {chosen.get('title', '')}",
+            "",
+            chosen.get("concept", ""),
+            "",
+            f"CONSTRAINT — hold to this, it's the point: {chosen.get('constraint', '')}",
+        ]
+        if chosen.get("risk"):
+            parts += ["", f"Known risk: {chosen['risk']}"]
+        parts += ["=" * 60]
 
     styles = project.get("styles") or []
     if styles:
@@ -298,6 +385,28 @@ def build_prompt(project: dict, feedback: list, work: Path, past: list = None) -
         ]
 
     parts += [
+        "",
+        "=" * 60,
+        "BEFORE YOU SHOW ME ANYTHING — CRITIQUE YOUR OWN WORK.",
+        "",
+        "Make more than you intend to show. Then look at what you made, as",
+        "harshly as you'd look at someone else's, and answer:",
+        "",
+        "  - Is this actually interesting, or just competent? Be honest. Most",
+        "    first attempts are competent. Competent is not the bar.",
+        "  - Does it hold to the constraint, or did the constraint quietly slip?",
+        "  - What's the weakest second of it? Fix that, don't average it out.",
+        "  - Would this read at a glance on a phone, small and muted?",
+        "  - Have I made the obvious version of this brief? If yes, that's a",
+        "    reason to throw it away, not to polish it.",
+        "",
+        "Then fix what you found and look again. Iterate on the piece itself",
+        "before it ever reaches me — a round trip to me costs a day, a round",
+        "trip to yourself costs minutes.",
+        "",
+        "Show me the best one or two, NOT everything you made. In the note,",
+        "say what you killed and why. Killing things is the job.",
+        "=" * 60,
         "",
         "WHEN YOU HAVE SOMETHING TO SHOW:",
         "Write it into ./out/ — anything you leave there is uploaded to the",
@@ -523,6 +632,48 @@ def cycle(args, root: Path, log_state: dict) -> None:
         return
 
     sync_project(project, work)
+
+    # ── pitch gate ───────────────────────────────────────────────
+    # Nothing is rendered until a concept has been chosen. Producing
+    # straight from a brief is what converges on the competent middle.
+    #
+    # Only for projects that haven't produced anything yet: a project
+    # already twenty entries deep is underway, and stopping it to pitch
+    # would throw away the direction it's already found.
+    if (
+        project.get("status") == "active"
+        and not project.get("chosen_pitch_id")
+        and (project.get("entry_count") or 0) == 0
+    ):
+        if project.get("pitches"):
+            if log_state.get("pitch_notice") != project_id:
+                log(f"  {project_id}: {len(project['pitches'])} concepts waiting — pick one on the site")
+                log_state["pitch_notice"] = project_id
+            return
+        log_state.pop("pitch_notice", None)
+        log(f"  {project_id}: pitching {PITCH_COUNT} concepts")
+        prompt = build_pitch_prompt(project, past_learnings(projects, project_id))
+        (work / ".dailies-last-prompt.txt").write_text(prompt, encoding="utf-8")
+        run_agent(args.agent_cmd, prompt, work, args.timeout)
+
+        pitch_file = out_dir / "pitches.json"
+        if not pitch_file.exists():
+            log("  no pitches.json written — will try again next cycle")
+            return
+        try:
+            pitches = json.loads(pitch_file.read_text(encoding="utf-8"))
+            if not isinstance(pitches, list) or not pitches:
+                raise ValueError("expected a non-empty array")
+        except (ValueError, OSError) as err:
+            log(f"  pitches.json unreadable ({err}) — leaving it for next cycle")
+            return
+        _api("/api/dailies/projects", method="POST",
+             payload={"id": project_id, "pitches": pitches})
+        pitch_file.unlink()
+        log(f"  {project_id}: {len(pitches)} concepts posted — pick one at {BASE_URL}/dailies/{project_id}")
+        return
+
+    log_state.pop("pitch_notice", None)
     feedback = fetch_feedback(project_id, state.get("last_feedback_at"))
 
     delivery = project.get("delivery") or {}
