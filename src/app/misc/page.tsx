@@ -114,6 +114,21 @@ function MediaPanel({
     () => filter ? rawMedia.filter(m => (m.title || '').trim() === filter) : rawMedia,
     [rawMedia, filter],
   )
+  /**
+   * Reorders leave here as the order of the tiles ON SCREEN, which is the
+   * filtered list when a project filter is on. The parent splices what it
+   * gets back into the full list positionally, so handing it a short list
+   * leaves `undefined` holes where the hidden items were — dragging a tile
+   * while filtered corrupts the store. Put the new order back into the
+   * filtered slots first and the parent gets the full-length list it
+   * expects.
+   */
+  const withFilteredOrder = useCallback((newOrder: MediaItem[]): MediaItem[] => {
+    if (!filter) return newOrder
+    let k = 0
+    return rawMedia.map(m => ((m.title || '').trim() === filter ? newOrder[k++] : m))
+  }, [filter, rawMedia])
+
   // If the active filter no longer exists in rawMedia (e.g. last item with
   // that tag was deleted) reset to "All". Same idea for the slideshow
   // index — clamp it to the new filtered length.
@@ -576,7 +591,7 @@ function MediaPanel({
                   const next = [...media]
                   const [moved] = next.splice(from, 1)
                   next.splice(i, 0, moved)
-                  onReorder?.(next)
+                  onReorder?.(withFilteredOrder(next))
                 } : undefined}
                 onDragEnd={editMode ? () => {
                   setDragFromIdx(null)

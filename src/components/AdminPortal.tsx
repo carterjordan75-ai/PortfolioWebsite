@@ -2300,6 +2300,45 @@ function MiscUploadPanel() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [items])
 
+  /**
+   * Reshuffle the running order.
+   *
+   * By PROJECT, not by piece: the projects come out in a new order and
+   * each one's pieces travel with it, shuffled among themselves. A flat
+   * random sort scatters a project's thirty stills the length of the page,
+   * which reads as a mess rather than a reshuffle. Untagged items move
+   * together as their own group.
+   *
+   * Writes the new order rather than randomising on render, so what you
+   * approve here is what the page shows — and it survives a reload.
+   */
+  const shuffleProjects = async () => {
+    const groups = new Map<string, MiscItem[]>()
+    for (const item of items) {
+      const key = (item.title || '').trim()
+      const bucket = groups.get(key)
+      if (bucket) bucket.push(item)
+      else groups.set(key, [item])
+    }
+    const scramble = <T,>(xs: T[]): T[] => {
+      const out = [...xs]
+      for (let i = out.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[out[i], out[j]] = [out[j], out[i]]
+      }
+      return out
+    }
+    const shuffled = scramble(Array.from(groups.values())).flatMap(scramble)
+    setItems(shuffled)
+    // Order is positional, so the selection's indices no longer point at
+    // the rows the user picked. Dropping it beats silently reassigning it.
+    setSelected(new Set())
+    setLastSelectedIdx(null)
+    await saveItems(shuffled)
+    setStatus(`✓ Shuffled ${groups.size} project${groups.size === 1 ? '' : 's'}`)
+    setTimeout(() => setStatus(null), 2200)
+  }
+
   // Cascade rename — every item whose title matches `renamingProject`
   // gets the new title. Commits through saveItems so it lands in the
   // misc blob in one write.
@@ -2325,19 +2364,30 @@ function MiscUploadPanel() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-white text-[14px] font-bold uppercase tracking-[0.1em] mb-1">Misc / Experiments</h2>
-          <p className="text-white/30 text-[9px]">{items.length} pieces — displayed on both panels in shuffled order</p>
+          <p className="text-white/30 text-[9px]">
+            {items.length} pieces — click a row to select, shift+click for a range
+          </p>
         </div>
         {items.length > 0 && selected.size === 0 && (
-          <button
-            onClick={bulkDownload}
-            disabled={downloadingBulk}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold text-white/70 border border-white/15 hover:border-white/30 hover:text-white/90 hover:bg-white/5 transition-all disabled:opacity-40 disabled:cursor-wait"
-            title="Download every original file in this panel as a ZIP"
-          >
-            {downloadingBulk
-              ? (downloadProgress ? `⏳ ${downloadProgress.done}/${downloadProgress.total}` : '⏳ Zipping…')
-              : `↓ Download all (${items.length})`}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={shuffleProjects}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold text-white/70 border border-white/15 hover:border-white/30 hover:text-white/90 hover:bg-white/5 transition-all"
+              title="Reshuffle which project leads — pieces stay with their project"
+            >
+              ⤮ Shuffle order
+            </button>
+            <button
+              onClick={bulkDownload}
+              disabled={downloadingBulk}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold text-white/70 border border-white/15 hover:border-white/30 hover:text-white/90 hover:bg-white/5 transition-all disabled:opacity-40 disabled:cursor-wait"
+              title="Download every original file in this panel as a ZIP"
+            >
+              {downloadingBulk
+                ? (downloadProgress ? `⏳ ${downloadProgress.done}/${downloadProgress.total}` : '⏳ Zipping…')
+                : `↓ Download all (${items.length})`}
+            </button>
+          </div>
         )}
       </div>
 
@@ -2656,13 +2706,23 @@ function MiscUploadPanel() {
                 setDragSrcIdx(null)
                 setDragOverIdx(null)
               }}
+              // The whole row selects, not just the checkbox. A 4%-wide box
+              // with no label is invisible unless you already know it's
+              // there, which made shift+select effectively undiscoverable.
+              // Buttons and inputs inside the row stopPropagation, so Edit
+              // and ✕ still do their own thing.
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest('button, input, a')) return
+                toggleSelected(i, e.shiftKey)
+              }}
               className="flex items-center py-2 border-b border-white/5 hover:bg-white/3 transition-colors group"
               style={{
                 opacity: isInFlight ? 0.4 : 1,
-                background: selected.has(i) ? 'rgba(255,255,255,0.04)' : undefined,
+                background: selected.has(i) ? 'rgba(255,255,255,0.10)' : undefined,
+                boxShadow: selected.has(i) ? 'inset 2px 0 0 #ff69b4' : undefined,
                 borderTop: indicatorAbove ? '2px solid rgba(255,255,255,0.7)' : undefined,
                 borderBottom: indicatorBelow ? '2px solid rgba(255,255,255,0.7)' : '1px solid rgba(255,255,255,0.05)',
-                cursor: isInFlight ? 'grabbing' : 'default',
+                cursor: isInFlight ? 'grabbing' : 'pointer',
               }}
             >
               {/* Drag handle column */}
