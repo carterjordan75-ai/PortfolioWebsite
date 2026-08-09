@@ -155,7 +155,10 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  if (!(await checkSession(request))) {
+  // The machine reads these too: `dailies_push.py repair` needs to see
+  // which entries have media URLs that no longer resolve so it can put
+  // the file back. Nothing here is new to it — it wrote these entries.
+  if (!(await checkApiKey(request)) && !(await checkSession(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

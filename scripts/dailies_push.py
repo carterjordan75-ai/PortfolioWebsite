@@ -262,6 +262,93 @@ def cmd_pull(args):
     sys.stdout.write("\n")
 
 
+VIDEO_EXT = {".mp4", ".mov", ".webm", ".m4v"}
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
+def _alive(url) -> bool:
+    if not url:
+        return True  # nothing to check
+    try:
+        req = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(req, timeout=30) as res:
+            return res.status < 400
+    except Exception:
+        return False
+
+
+def cmd_repair(args):
+    """Put media back into entries whose files vanished from storage.
+
+    The entry survives a lost blob — its title, note, questions and any
+    feedback are all still there, only the URL points at nothing. So this
+    re-uploads the original into the SAME entry id rather than pushing a
+    duplicate, and the review history stays intact.
+
+    Local file to entry is matched on the title, which `dailies_watch`
+    derives from the filename stem. That's the only link back: uploads are
+    stored as video.mp4 / contact.png under the entry id, so the original
+    filename isn't in the URL to recover.
+    """
+    source = Path(args.source)
+    if not source.is_dir():
+        raise SystemExit(f"No such folder: {source}")
+
+    query = f"?project={args.project}" if args.project else ""
+    entries = (_api(f"/api/dailies{query}") or {}).get("entries", [])
+    if not entries:
+        raise SystemExit("No entries returned — check --project.")
+
+    # Same normalisation dailies_watch uses when it names an entry.
+    def label(stem):
+        return stem.replace("_", " ").replace("-", " ").strip().lower()
+
+    by_title = {}
+    for path in sorted(source.iterdir()):
+        if path.is_file() and path.suffix.lower() in VIDEO_EXT | IMAGE_EXT:
+            by_title.setdefault(label(path.stem), []).append(path)
+
+    repaired = skipped = 0
+    for entry in entries:
+        broken = [
+            field for field in ("video_url", "contact_sheet_url")
+            if entry.get(field) and not _alive(entry[field])
+        ]
+        if not broken:
+            continue
+
+        title = (entry.get("title") or "").strip().lower()
+        candidates = by_title.get(title, [])
+        video = next((p for p in candidates if p.suffix.lower() in VIDEO_EXT), None)
+        sheet = next((p for p in candidates if p.suffix.lower() in IMAGE_EXT), None)
+        if not (video or sheet):
+            print(f"  no local file for \"{entry.get('title')}\" — left as is")
+            skipped += 1
+            continue
+
+        print(f"repairing {entry['id']} — {entry.get('title')}")
+        if args.dry_run:
+            for field, path in (("video_url", video), ("contact_sheet_url", sheet)):
+                if field in broken and path:
+                    print(f"  would upload {path.name} -> {field}")
+            continue
+
+        payload = {"project_id": entry["project_id"], "id": entry["id"]}
+        if "video_url" in broken and video:
+            payload["video_url"] = upload(
+                video, project=entry["project_id"], kind="video", entry_id=entry["id"]
+            )
+        if "contact_sheet_url" in broken and sheet:
+            payload["contact_sheet_url"] = upload(
+                sheet, project=entry["project_id"], kind="contact_sheet",
+                entry_id=entry["id"],
+            )
+        _api("/api/dailies", method="POST", payload=payload)
+        repaired += 1
+
+    print(f"\n{repaired} entries repaired, {skipped} still missing their file.")
+
+
 def cmd_new_project(args):
     payload = {"title": args.title}
     if args.id:
@@ -302,6 +389,12 @@ def main():
     p.add_argument("--sheet", help="contact sheet image")
     p.add_argument("--questions", help="JSON file: array of {id, prompt, type, options?}")
     p.set_defaults(func=cmd_push)
+
+    p = sub.add_parser("repair", help="re-upload media for entries whose files went missing")
+    p.add_argument("--project", help="limit to one project")
+    p.add_argument("--source", required=True, help="folder holding the original renders")
+    p.add_argument("--dry-run", action="store_true", help="report what it would do")
+    p.set_defaults(func=cmd_repair)
 
     p = sub.add_parser("pull", help="fetch feedback")
     p.add_argument("--since", help="YYYY-MM-DD, inclusive, on submission date")
