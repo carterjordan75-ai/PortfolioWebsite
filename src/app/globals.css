@@ -78,16 +78,6 @@ body {
   border-radius: 3px;
 }
 
-/* Grain overlay */
-.grain-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-  opacity: 0.06;
-  mix-blend-mode: overlay;
-}
-
 /* White page nav — liquid glass, high transparency */
 .archive-nav {
   background: rgba(255, 255, 255, 0.18);

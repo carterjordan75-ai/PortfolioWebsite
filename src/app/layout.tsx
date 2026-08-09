@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { DM_Serif_Display, Inter, Permanent_Marker } from 'next/font/google'
 import './globals.css'
 import Navigation from '@/components/Navigation'
-import GrainOverlay from '@/components/GrainOverlay'
 import { DarkModeProvider } from '@/contexts/DarkModeContext'
 import { EditModeProvider } from '@/contexts/EditModeContext'
 import EditToolbar from '@/components/EditToolbar'
@@ -76,7 +75,6 @@ export default function RootLayout({
           <EditModeProvider>
             <Navigation />
             {children}
-            <GrainOverlay />
             <EditToolbar />
             <CustomCursor />
             <MediaProtect />
