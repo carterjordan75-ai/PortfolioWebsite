@@ -2502,8 +2502,9 @@ function MiscUploadPanel() {
           <p className="text-white/60 text-[9px] font-bold uppercase tracking-[0.1em] mb-2">
             Projects{' '}
             <span className="text-white/30 font-normal normal-case tracking-normal">
-              — click to select its files · ✎ rename · ✕ delete. To merge projects,
-              select them then type the shared name into “Set project”.
+              — Rename retitles every file in the project. Click a chip (or double-click
+              to rename) to select its files; to merge projects, select them then type
+              the shared name into “Set project”.
             </span>
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -2554,21 +2555,26 @@ function MiscUploadPanel() {
                     >
                       <button
                         onClick={() => selectProject(p.name)}
-                        className="pl-2.5 pr-1 py-1 text-[9px] uppercase tracking-[0.08em] font-bold text-white/75 hover:text-white"
-                        title={`Select the ${p.count} file${p.count !== 1 ? 's' : ''} in "${p.name}"`}
+                        onDoubleClick={() => { setRenamingProject(p.name); setRenameValue(p.name) }}
+                        className="pl-2.5 pr-1.5 py-1 text-[9px] uppercase tracking-[0.08em] font-bold text-white/75 hover:text-white"
+                        title={`Click: select the ${p.count} file${p.count !== 1 ? 's' : ''} in "${p.name}" · Double-click: rename`}
                       >
                         {p.name} <span className="opacity-50 font-mono ml-1">·{p.count}</span>
                       </button>
+                      {/* Spelled out, not a ✎. Clicking the chip used to
+                          rename outright; making it select instead moved
+                          the most-used action onto a 9px glyph at 35%
+                          opacity, which is no better than hiding it. */}
                       <button
                         onClick={() => { setRenamingProject(p.name); setRenameValue(p.name) }}
-                        className="px-1 py-1 text-[9px] text-white/35 hover:text-white"
+                        className="px-1.5 py-1 text-[8px] uppercase tracking-[0.08em] font-bold text-white/45 hover:text-white border-l border-white/10"
                         title={`Rename "${p.name}" across ${p.count} item${p.count !== 1 ? 's' : ''}`}
                       >
-                        ✎
+                        Rename
                       </button>
                       <button
                         onClick={() => deleteProject(p.name, p.count)}
-                        className="pl-1 pr-2 py-1 text-[9px] text-white/30 hover:text-red-400"
+                        className="pl-1.5 pr-2 py-1 text-[10px] text-white/35 hover:text-red-400 border-l border-white/10"
                         title={`Delete the project "${p.name}" — its files stay in Misc`}
                       >
                         ✕
