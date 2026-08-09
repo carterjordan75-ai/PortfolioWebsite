@@ -2015,15 +2015,34 @@ function MiscUploadPanel() {
   // by a featured project (the /misc page falls back to project media
   // for clients that have no explicit misc entries; without tombstones,
   // that fallback resurrects deletions on the next reload).
-  const saveItems = async (updated: MiscItem[], tombstones: string[] = []) => {
-    const res = await fetch('/api/misc', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: updated, tombstones }),
-    })
-    if (res.ok) {
+  /**
+   * A failed save used to do nothing at all — no throw, no message, and
+   * the optimistic setItems() left the screen showing the edit that never
+   * landed. You'd change a name, see it change, reload, and find it gone
+   * with no clue why. Failures are loud now, and they say so on screen.
+   *
+   * Returns whether it saved, so callers can avoid reporting success.
+   */
+  const saveItems = async (updated: MiscItem[], tombstones: string[] = []): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/misc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: updated, tombstones }),
+      })
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '')
+        setStatus(`✗ NOT SAVED — server said ${res.status}. ${detail.slice(0, 120)}`)
+        return false
+      }
       const data = await res.json()
+      // Trust the server's echo, not the local guess: if the two ever
+      // disagree, what's on screen matches what's actually stored.
       setItems(data.items)
+      return true
+    } catch (err) {
+      setStatus(`✗ NOT SAVED — ${String(err).slice(0, 140)}`)
+      return false
     }
   }
 
@@ -2145,7 +2164,7 @@ function MiscUploadPanel() {
     setItems(updated)
     // Tombstone the removed URL so the /misc page's auto-surface fallback
     // can't re-add it from a featured project on next reload.
-    await saveItems(updated, removedSrc ? [removedSrc] : [])
+    if (!(await saveItems(updated, removedSrc ? [removedSrc] : []))) return
     void deleteBlobUrls([removedSrc])
     setStatus('✓ Removed')
     setTimeout(() => setStatus(null), 1500)
@@ -2241,7 +2260,7 @@ function MiscUploadPanel() {
       return next
     })
     setItems(updated)
-    await saveItems(updated)
+    if (!(await saveItems(updated))) return
     setStatus(`✓ Updated ${selected.size} item${selected.size !== 1 ? 's' : ''}`)
     setBulkYear('')
     setBulkApplyMedium(false)
@@ -2253,7 +2272,7 @@ function MiscUploadPanel() {
     if (selected.size === 0) return
     const updated = items.filter((_, i) => !selected.has(i))
     setItems(updated)
-    await saveItems(updated)
+    if (!(await saveItems(updated))) return
     setStatus(`✓ Deleted ${selected.size} item${selected.size !== 1 ? 's' : ''}`)
     clearSelected()
     setTimeout(() => setStatus(null), 2000)
@@ -2299,7 +2318,7 @@ function MiscUploadPanel() {
     const updated = [...items]
     updated[idx] = { ...updated[idx], title: newTitle || updated[idx].title, year: newYear, medium: newMedium }
     setItems(updated)
-    await saveItems(updated)
+    if (!(await saveItems(updated))) return
     setEditIdx(null)
     setStatus('✓ Updated')
     setTimeout(() => setStatus(null), 1500)
@@ -2354,9 +2373,59 @@ function MiscUploadPanel() {
     // the rows the user picked. Dropping it beats silently reassigning it.
     setSelected(new Set())
     setLastSelectedIdx(null)
-    await saveItems(shuffled)
+    if (!(await saveItems(shuffled))) return
     setStatus(`✓ Shuffled ${groups.size} project${groups.size === 1 ? '' : 's'}`)
     setTimeout(() => setStatus(null), 2200)
+  }
+
+  /**
+   * Clicking a project selects everything in it.
+   *
+   * This is how you fold projects together: click the chips you want
+   * merged, type the shared name into "Set project", Apply. It's also how
+   * you add existing work to a project without hunting for its rows —
+   * which matters when the same project's files aren't next to each other
+   * in the list. Clicking an already-fully-selected project deselects it.
+   */
+  const selectProject = (name: string) => {
+    const idxs = items
+      .map((it, i) => ((it.title || '').trim() === name ? i : -1))
+      .filter(i => i >= 0)
+    setSelected(prev => {
+      const next = new Set(prev)
+      const allIn = idxs.every(i => next.has(i))
+      for (const i of idxs) {
+        if (allIn) next.delete(i)
+        else next.add(i)
+      }
+      return next
+    })
+    // The anchor belongs to click-a-row ranges; a chip isn't a row.
+    setLastSelectedIdx(null)
+  }
+
+  /**
+   * Delete a project — the grouping, not the work.
+   *
+   * Its files stay in Misc and become untagged, because "I don't want
+   * this project any more" almost never means "destroy the renders". If
+   * you do want the files gone, select the rows and use Delete, which
+   * says so and removes the blobs.
+   */
+  const deleteProject = async (name: string, count: number) => {
+    const ok = window.confirm(
+      `Delete the project "${name}"?\n\n` +
+      `Its ${count} file${count === 1 ? '' : 's'} stay in Misc and become untagged — ` +
+      `nothing is removed from storage.`,
+    )
+    if (!ok) return
+    const updated = items.map(item =>
+      (item.title || '').trim() === name ? { ...item, title: '' } : item,
+    )
+    setItems(updated)
+    if (!(await saveItems(updated))) return
+    setStatus(`✓ Deleted project "${name}" — ${count} file${count === 1 ? '' : 's'} kept`)
+    setTimeout(() => setStatus(null), 2600)
   }
 
   // Cascade rename — every item whose title matches `renamingProject`
@@ -2373,7 +2442,7 @@ function MiscUploadPanel() {
       (item.title || '').trim() === renamingProject ? { ...item, title: next } : item,
     )
     setItems(updated)
-    await saveItems(updated)
+    if (!(await saveItems(updated))) return
     setRenamingProject(null)
     setStatus(`✓ Renamed "${renamingProject}" → "${next}"`)
     setTimeout(() => setStatus(null), 2200)
@@ -2431,7 +2500,11 @@ function MiscUploadPanel() {
       {projectsList.length > 0 && (
         <div className="mb-5 p-3 rounded-lg border border-white/10" style={{ background: 'rgba(255,255,255,0.03)' }}>
           <p className="text-white/60 text-[9px] font-bold uppercase tracking-[0.1em] mb-2">
-            Projects <span className="text-white/30 font-normal normal-case tracking-normal">— click a chip to rename across every item</span>
+            Projects{' '}
+            <span className="text-white/30 font-normal normal-case tracking-normal">
+              — click to select its files · ✎ rename · ✕ delete. To merge projects,
+              select them then type the shared name into “Set project”.
+            </span>
           </p>
           <div className="flex flex-wrap gap-1.5">
             {projectsList.map(p => (
@@ -2465,14 +2538,44 @@ function MiscUploadPanel() {
                   </button>
                 </div>
               ) : (
-                <button
-                  key={p.name}
-                  onClick={() => { setRenamingProject(p.name); setRenameValue(p.name) }}
-                  className="px-2.5 py-1 rounded-full text-[9px] uppercase tracking-[0.08em] font-bold text-white/75 border border-white/15 hover:border-white/35 hover:text-white hover:bg-white/5 transition-colors"
-                  title={`Rename "${p.name}" across ${p.count} item${p.count !== 1 ? 's' : ''}`}
-                >
-                  {p.name} <span className="opacity-50 font-mono ml-1">·{p.count}</span>
-                </button>
+                (() => {
+                  const idxs = items
+                    .map((it, i) => ((it.title || '').trim() === p.name ? i : -1))
+                    .filter(i => i >= 0)
+                  const active = idxs.length > 0 && idxs.every(i => selected.has(i))
+                  return (
+                    <span
+                      key={p.name}
+                      className="inline-flex items-center rounded-full border transition-colors"
+                      style={{
+                        borderColor: active ? '#ff69b4' : 'rgba(255,255,255,0.15)',
+                        background: active ? 'rgba(255,105,180,0.14)' : 'transparent',
+                      }}
+                    >
+                      <button
+                        onClick={() => selectProject(p.name)}
+                        className="pl-2.5 pr-1 py-1 text-[9px] uppercase tracking-[0.08em] font-bold text-white/75 hover:text-white"
+                        title={`Select the ${p.count} file${p.count !== 1 ? 's' : ''} in "${p.name}"`}
+                      >
+                        {p.name} <span className="opacity-50 font-mono ml-1">·{p.count}</span>
+                      </button>
+                      <button
+                        onClick={() => { setRenamingProject(p.name); setRenameValue(p.name) }}
+                        className="px-1 py-1 text-[9px] text-white/35 hover:text-white"
+                        title={`Rename "${p.name}" across ${p.count} item${p.count !== 1 ? 's' : ''}`}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        onClick={() => deleteProject(p.name, p.count)}
+                        className="pl-1 pr-2 py-1 text-[9px] text-white/30 hover:text-red-400"
+                        title={`Delete the project "${p.name}" — its files stay in Misc`}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  )
+                })()
               )
             ))}
           </div>

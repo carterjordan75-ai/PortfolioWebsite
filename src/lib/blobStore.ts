@@ -82,6 +82,22 @@ export async function readJsonBlob<T>(
 /**
  * Write a JSON value to Blob under the given key. Overwrites any existing
  * blob at the same key.
+ *
+ * @deprecated Use `writeVersionedJson` for anything the admin edits.
+ *
+ * Overwriting keeps the blob's URL, and that URL is CDN-fronted, so the
+ * old body keeps being served for up to ~100s after the write. Every save
+ * through here looks like it silently failed: you change a project name,
+ * reload, and the old name is back. Worse, the admin does
+ * read-modify-write, so a second edit inside that window is built on the
+ * stale copy and drops the first.
+ *
+ * This burned two separate stores — misc, then admin-projects. No state
+ * document uses it any more. If you reach for it, also ask whether
+ * `storage-cleanup` and `storage-list` read the same key the same way:
+ * a writer on versioned names with a reader on the bare path returns the
+ * committed seed, and the sweep reads that as "everything is orphaned".
+ * That mismatch destroyed 34 files.
  */
 export async function writeJsonBlob<T>(key: string, value: T): Promise<void> {
   if (!HAS_TOKEN) {

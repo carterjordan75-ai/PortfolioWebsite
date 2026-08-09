@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { projects as codeProjects } from '@/data/projects'
-import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
+import { readVersionedJson, writeVersionedJson } from '@/lib/blobStore'
 import seedAdminProjects from '../../../../public/assets/_data/admin-projects.json'
 
 // Opt out of Next.js's default route-handler caching. Without this, the GET
@@ -29,7 +29,7 @@ const BLOB_KEY = 'state/admin-projects.json'
 type AdminData = Record<string, Record<string, unknown>>
 
 async function getAdminData(): Promise<AdminData> {
-  const data = await readJsonBlob<AdminData | Record<string, unknown>[]>(
+  const data = await readVersionedJson<AdminData | Record<string, unknown>[]>(
     BLOB_KEY,
     seedAdminProjects as AdminData | Record<string, unknown>[],
   )
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     if (action === 'add') {
       const newSlug = project.slug || `${(project.client || 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`
       adminData[newSlug] = { ...project, slug: newSlug }
-      await writeJsonBlob(BLOB_KEY, adminData)
+      await writeVersionedJson(BLOB_KEY, adminData)
       return NextResponse.json({ success: true, projects: getMergedProjects(adminData) })
     }
 
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       const targetSlug = slug || project?.slug
       if (!targetSlug) return NextResponse.json({ error: 'No slug provided' }, { status: 400 })
       adminData[targetSlug] = { ...(adminData[targetSlug] || {}), ...project, slug: targetSlug }
-      await writeJsonBlob(BLOB_KEY, adminData)
+      await writeVersionedJson(BLOB_KEY, adminData)
       return NextResponse.json({ success: true, projects: getMergedProjects(adminData) })
     }
 
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
       slugs.forEach((s: string, i: number) => {
         adminData[s] = { ...(adminData[s] || {}), featuredOrder: i }
       })
-      await writeJsonBlob(BLOB_KEY, adminData)
+      await writeVersionedJson(BLOB_KEY, adminData)
       return NextResponse.json({ success: true, projects: getMergedProjects(adminData) })
     }
 
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
       } else {
         delete adminData[slug]
       }
-      await writeJsonBlob(BLOB_KEY, adminData)
+      await writeVersionedJson(BLOB_KEY, adminData)
       return NextResponse.json({ success: true, projects: getMergedProjects(adminData) })
     }
 

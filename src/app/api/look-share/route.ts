@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { put } from '@vercel/blob'
-import { putMediaBlob, readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
+import { putMediaBlob, readVersionedJson, writeVersionedJson } from '@/lib/blobStore'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -166,8 +166,8 @@ async function registerLookItem(params: {
     addRandomSuffix: false,
     allowOverwrite: true,
   })
-  const existing = (await readJsonBlob<string[] | null>(ORDER_KEY, null)) || []
-  await writeJsonBlob(ORDER_KEY, [fileName, ...existing.filter(f => f !== fileName)])
+  const existing = (await readVersionedJson<string[] | null>(ORDER_KEY, null)) || []
+  await writeVersionedJson(ORDER_KEY, [fileName, ...existing.filter(f => f !== fileName)])
   return { fileName, path: url }
 }
 

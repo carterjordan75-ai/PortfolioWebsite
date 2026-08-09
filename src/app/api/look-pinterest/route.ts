@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { readJsonBlob, writeJsonBlob, putMediaBlob } from '@/lib/blobStore'
+import { readVersionedJson, writeVersionedJson, putMediaBlob } from '@/lib/blobStore'
 
 // Live feed — never serve from the edge cache; freshness is handled by
 // our own blob-backed TTL below.
@@ -398,14 +398,14 @@ function visibleFeed(cache: FeedCache): FeedCache {
 }
 
 export async function GET() {
-  const cached = await readJsonBlob<FeedCache>(BLOB_KEY, EMPTY)
+  const cached = await readVersionedJson<FeedCache>(BLOB_KEY, EMPTY)
   const fresh = cached.items.length > 0 && Date.now() - cached.fetchedAt < TTL_MS
   if (fresh) {
     return NextResponse.json(visibleFeed(cached), NO_CACHE)
   }
   const feed = await refreshFeed(cached)
   if (feed) {
-    await writeJsonBlob(BLOB_KEY, feed)
+    await writeVersionedJson(BLOB_KEY, feed)
     return NextResponse.json(visibleFeed(feed), NO_CACHE)
   }
   // Refresh failed — serve whatever we have rather than nothing.
@@ -429,33 +429,33 @@ export async function POST(request: Request) {
     // read-modify-write of per-id hide/unhide could read stale state
     // and silently drop an earlier hide).
     if (body?.action === 'set-hidden' && Array.isArray(body.hidden)) {
-      const cached = await readJsonBlob<FeedCache>(BLOB_KEY, EMPTY)
+      const cached = await readVersionedJson<FeedCache>(BLOB_KEY, EMPTY)
       const next = { ...cached, hidden: (body.hidden as unknown[]).map(String) }
-      await writeJsonBlob(BLOB_KEY, next)
+      await writeVersionedJson(BLOB_KEY, next)
       return NextResponse.json({ success: true, hiddenCount: next.hidden.length, ...visibleFeed(next) }, NO_CACHE)
     }
 
     if (body?.action === 'hide' || body?.action === 'unhide') {
       const id = String(body.id || '')
       if (!id) return NextResponse.json({ error: 'No id' }, { status: 400 })
-      const cached = await readJsonBlob<FeedCache>(BLOB_KEY, EMPTY)
+      const cached = await readVersionedJson<FeedCache>(BLOB_KEY, EMPTY)
       const hidden = new Set(cached.hidden || [])
       if (body.action === 'hide') hidden.add(id)
       else hidden.delete(id)
       const next = { ...cached, hidden: Array.from(hidden) }
-      await writeJsonBlob(BLOB_KEY, next)
+      await writeVersionedJson(BLOB_KEY, next)
       return NextResponse.json({ success: true, hiddenCount: next.hidden.length, ...visibleFeed(next) }, NO_CACHE)
     }
 
     if (body?.action !== 'sync') {
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
     }
-    const cached = await readJsonBlob<FeedCache>(BLOB_KEY, EMPTY)
+    const cached = await readVersionedJson<FeedCache>(BLOB_KEY, EMPTY)
     const feed = await refreshFeed(cached)
     if (!feed) {
       return NextResponse.json({ error: 'Pinterest fetch failed' }, { status: 502 })
     }
-    await writeJsonBlob(BLOB_KEY, feed)
+    await writeVersionedJson(BLOB_KEY, feed)
     return NextResponse.json({ success: true, ...visibleFeed(feed) }, NO_CACHE)
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })

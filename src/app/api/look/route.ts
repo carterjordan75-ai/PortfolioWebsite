@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { put } from '@vercel/blob'
 import {
   listBlobs,
-  readJsonBlob,
-  writeJsonBlob,
+  readVersionedJson,
+  writeVersionedJson,
   deleteBlob,
 } from '@/lib/blobStore'
 
@@ -51,7 +51,7 @@ export async function GET() {
       if (data) items.push(data)
     }
 
-    const order = await readJsonBlob<string[] | null>(ORDER_KEY, null)
+    const order = await readVersionedJson<string[] | null>(ORDER_KEY, null)
 
     if (order && Array.isArray(order)) {
       const orderMap = new Map(order.map((fname, i) => [fname, i]))
@@ -101,9 +101,9 @@ export async function POST(request: NextRequest) {
         allowOverwrite: true,
       })
       // Prepend to the order so it shows first in the gallery.
-      const existing = (await readJsonBlob<string[] | null>(ORDER_KEY, null)) || []
+      const existing = (await readVersionedJson<string[] | null>(ORDER_KEY, null)) || []
       const nextOrder = [body.fileName, ...existing.filter(f => f !== body.fileName)]
-      await writeJsonBlob(ORDER_KEY, nextOrder)
+      await writeVersionedJson(ORDER_KEY, nextOrder)
       return NextResponse.json({ success: true, item: metadata })
     }
 
@@ -144,14 +144,14 @@ export async function POST(request: NextRequest) {
       await deleteBlob(`media/look/${body.fileName}`)
       // If the meta included a `path` that was a full URL, delete that too.
       if (body.url) await deleteBlob(body.url)
-      const existing = (await readJsonBlob<string[] | null>(ORDER_KEY, null)) || []
+      const existing = (await readVersionedJson<string[] | null>(ORDER_KEY, null)) || []
       const next = existing.filter(f => f !== body.fileName)
-      await writeJsonBlob(ORDER_KEY, next)
+      await writeVersionedJson(ORDER_KEY, next)
       return NextResponse.json({ success: true })
     }
 
     if (body.action === 'reorder' && Array.isArray(body.order)) {
-      await writeJsonBlob(ORDER_KEY, body.order)
+      await writeVersionedJson(ORDER_KEY, body.order)
       return NextResponse.json({ success: true })
     }
 
@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
           await deleteBlob(`media/look/${fileName}`)
         }
       }
-      await writeJsonBlob(ORDER_KEY, body.items)
+      await writeVersionedJson(ORDER_KEY, body.items)
       return NextResponse.json({ success: true })
     }
 

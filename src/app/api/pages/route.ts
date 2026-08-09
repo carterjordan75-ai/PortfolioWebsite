@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readJsonBlob, writeJsonBlob } from '@/lib/blobStore'
+import { readVersionedJson, writeVersionedJson } from '@/lib/blobStore'
 // Static import of the committed seed data so Next bundles it into the
 // function. The first read on a fresh deploy (when nothing has been written
 // to Blob yet) returns this; subsequent writes go to Blob and reads come back
@@ -23,7 +23,7 @@ const BLOB_KEY = 'state/pages.json'
 type PagesData = Record<string, Record<string, unknown>>
 
 async function getPagesData(): Promise<PagesData> {
-  return readJsonBlob<PagesData>(BLOB_KEY, seedPages as PagesData)
+  return readVersionedJson<PagesData>(BLOB_KEY, seedPages as PagesData)
 }
 
 export async function GET() {
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     const data = await getPagesData()
     data[pageId] = { ...(data[pageId] || {}), ...fields }
 
-    await writeJsonBlob(BLOB_KEY, data)
+    await writeVersionedJson(BLOB_KEY, data)
 
     return NextResponse.json({ success: true, pages: data })
   } catch (err) {

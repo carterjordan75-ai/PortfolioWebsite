@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { list } from '@vercel/blob'
-import { readJsonBlob, readVersionedJson, listBlobs } from '@/lib/blobStore'
+import { readVersionedJson, listBlobs } from '@/lib/blobStore'
 import seedAdminProjects from '../../../../public/assets/_data/admin-projects.json'
 import seedPages from '../../../../data/pages.json'
 import seedMisc from '../../../../data/misc.json'
@@ -49,13 +49,13 @@ export async function GET() {
   try {
     // Pull every admin-managed JSON, falling back to the committed seed.
     const [pages, misc, adminProjects, lookOrder] = await Promise.all([
-      readJsonBlob<Record<string, unknown>>('state/pages.json', seedPages as Record<string, unknown>),
+      readVersionedJson<Record<string, unknown>>('state/pages.json', seedPages as Record<string, unknown>),
       readVersionedJson<{ items: unknown[] }>('state/misc.json', seedMisc as { items: unknown[] }),
-      readJsonBlob<Record<string, unknown>>(
+      readVersionedJson<Record<string, unknown>>(
         'state/admin-projects.json',
         seedAdminProjects as Record<string, unknown>,
       ),
-      readJsonBlob<string[] | null>('state/look-order.json', null),
+      readVersionedJson<string[] | null>('state/look-order.json', null),
     ])
     // Look meta blobs each carry their own URL — pull them all in parallel.
     const lookMetas = await listBlobs('meta/look/')
