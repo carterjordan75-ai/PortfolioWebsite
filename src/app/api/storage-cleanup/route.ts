@@ -1,33 +1,55 @@
 import { NextResponse } from 'next/server'
 import { list } from '@vercel/blob'
 import { readJsonBlob, readVersionedJsonMeta, listBlobs, deleteBlob } from '@/lib/blobStore'
+import { listProjects, listEntries } from '@/lib/dailies'
 import seedAdminProjects from '../../../../public/assets/_data/admin-projects.json'
 import seedPages from '../../../../data/pages.json'
 import seedMisc from '../../../../data/misc.json'
 
 /**
- * Auto-cleanup endpoint. Walks all admin state for referenced media URLs,
- * lists every blob in the bucket, and deletes any blob that is:
+ * Orphan sweep. Walks admin state for referenced media URLs, lists the
+ * bucket, and reports blobs that nothing points at any more.
  *
- *   1. inside `media/*` (we never touch `state/*` or `meta/*` — those are
- *      infrastructure blobs that aren't referenced as media URLs but must
- *      survive),
- *   2. unreferenced by any admin-managed JSON document,
- *   3. older than GRACE_HOURS — so a freshly uploaded blob that's mid-flow
- *      to being saved into state isn't nuked out from under the user.
+ * It DELETES NOTHING unless the caller passes `{ confirm: true }`. Opening
+ * the admin panel only asks for the report; removing the files is a button
+ * you press. This endpoint has destroyed live media twice by running as an
+ * invisible side effect of a page load, and both times the bug was upstream
+ * of the delete — a document it couldn't read, then a folder it had never
+ * heard of. Nothing about that class of mistake is detectable from in here,
+ * so the last line of defence is that a human sees the list first.
  *
- * Triggered automatically when the admin panel opens (background fetch);
- * callers can also POST it manually after large remove operations. Returns
- * { deleted, kept, freedBytes, totalBytes } so the UI can surface stats.
+ * Two rules keep the blast radius small:
  *
- * Safety: never deletes blobs we can't classify (e.g. missing uploadedAt) —
- * those are kept. Errors per-file don't abort the run.
+ *   SWEEPABLE — the sweep only considers folders it can actually check,
+ *   i.e. ones whose contents are referenced by a document listed below.
+ *   A folder it doesn't recognise is left alone and counted in `skipped`.
+ *   "I don't know what this is" must never resolve to "delete it": that is
+ *   exactly how every file the render PC uploaded to media/dailies/ was
+ *   destroyed, because the sweep had no idea dailies state existed.
+ *
+ *   GRACE_HOURS — even inside a sweepable folder, a blob younger than the
+ *   window is kept, so an upload that's mid-flow to being saved into state
+ *   isn't taken out from under whoever is uploading it.
+ *
+ * Adding a new media folder means adding its state document to the refs
+ * gathered in POST *and* its prefix to SWEEPABLE — in that order. Miss the
+ * first and the second deletes the folder.
  */
 
 export const dynamic = 'force-dynamic'
 const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
 
 const GRACE_HOURS = 6
+
+/**
+ * Folders whose every file is accounted for by a document read below.
+ *
+ * `media/dailies/` is deliberately absent. Its refs ARE gathered now, so
+ * listing it here would be correct today — but it fills from an unattended
+ * machine at 3am, and a sweep that runs while a project is mid-upload has
+ * more ways to be wrong than a few stale renders are worth.
+ */
+const SWEEPABLE = ['media/projects/', 'media/Misc/', 'media/home-videos/']
 
 function collectUrls(node: unknown, out: Set<string>): void {
   if (!node) return
@@ -48,7 +70,16 @@ function collectUrls(node: unknown, out: Set<string>): void {
   }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  // Report unless explicitly told to delete. A bare POST — which is what
+  // the admin panel sends — is a question, not an instruction.
+  let confirm = false
+  try {
+    confirm = (await request.json())?.confirm === true
+  } catch {
+    /* no body: report only */
+  }
+
   try {
     // 1. Gather every URL referenced by admin state.
     const [pages, miscRead, adminProjects, lookOrder] = await Promise.all([
@@ -88,21 +119,34 @@ export async function POST() {
           } catch { return null }
         }),
     )
+    // Dailies keeps its media in media/dailies/ and its refs in a store
+    // this sweep didn't used to read at all. It isn't sweepable, so these
+    // aren't load-bearing today — they're here so the day someone adds the
+    // prefix to SWEEPABLE, the refs are already correct.
+    const [dailiesProjects, dailiesEntries] = await Promise.all([
+      listProjects(),
+      listEntries(),
+    ])
+
     const refs = new Set<string>()
     collectUrls(pages, refs)
     collectUrls(misc, refs)
     collectUrls(adminProjects, refs)
     collectUrls(lookOrder, refs)
     collectUrls(lookItems, refs)
+    collectUrls(dailiesProjects, refs)
+    collectUrls(dailiesEntries, refs)
 
     // 2. Walk every blob and decide.
     const cutoff = Date.now() - GRACE_HOURS * 60 * 60 * 1000
     let cursor: string | undefined
     let deleted = 0
     let kept = 0
+    let skipped = 0
     let freedBytes = 0
     let totalBytes = 0
     const deletedPaths: string[] = []
+    const skippedFolders = new Set<string>()
 
     do {
       const page = await list({ cursor, limit: 1000 })
@@ -119,6 +163,15 @@ export async function POST() {
           kept++
           continue
         }
+        // A media folder no state document accounts for. Everything in it
+        // looks unreferenced whether it's an orphan or not, so the sweep
+        // has nothing to reason with and keeps its hands off.
+        if (!SWEEPABLE.some(prefix => b.pathname.startsWith(prefix))) {
+          kept++
+          skipped++
+          skippedFolders.add(b.pathname.split('/').slice(0, 2).join('/'))
+          continue
+        }
         // Referenced → keep.
         if (refs.has(b.url)) {
           kept++
@@ -130,7 +183,13 @@ export async function POST() {
           kept++
           continue
         }
-        // Orphan + old → delete.
+        // Orphan + old. Report it; only remove it if that was asked for.
+        if (!confirm) {
+          deleted++
+          freedBytes += b.size
+          deletedPaths.push(b.pathname)
+          continue
+        }
         const ok = await deleteBlob(b.url)
         if (ok) {
           deleted++
@@ -144,7 +203,19 @@ export async function POST() {
     } while (cursor)
 
     return NextResponse.json(
-      { deleted, kept, freedBytes, totalBytes, deletedPaths, graceHours: GRACE_HOURS },
+      {
+        // `deleted` counts what a confirmed run WOULD remove when this was
+        // only a report; `dryRun` says which of the two you're looking at.
+        dryRun: !confirm,
+        deleted,
+        kept,
+        skipped,
+        skippedFolders: Array.from(skippedFolders).sort(),
+        freedBytes,
+        totalBytes,
+        deletedPaths,
+        graceHours: GRACE_HOURS,
+      },
       NO_CACHE,
     )
   } catch (err) {

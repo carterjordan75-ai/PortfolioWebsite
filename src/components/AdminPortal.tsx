@@ -76,10 +76,12 @@ export default function AdminPortal({ show, onClose }: { show: boolean; onClose:
     }
   }, [show, authenticated])
 
-  // Background sweep: every time the admin opens the panel (after auth),
-  // POST /api/storage-cleanup to delete any orphan media blobs older than
-  // the grace window. Fire-and-forget — the user doesn't wait for it, and
-  // we don't surface errors unless something interesting happened.
+  // Opening the panel ASKS about orphan media — it doesn't remove any.
+  // A bare POST is report-only; deleting needs `{ confirm: true }`, which
+  // nothing sends automatically. This used to sweep on open, and twice
+  // that quietly destroyed live media because the sweep had misread the
+  // state it was checking against. Storage costs pennies; the renders it
+  // ate don't come back.
   useEffect(() => {
     if (!show || !authenticated) return
     let cancelled = false
@@ -90,7 +92,10 @@ export default function AdminPortal({ show, onClose }: { show: boolean; onClose:
         if (d.deleted > 0) {
           const mb = (d.freedBytes / (1024 * 1024)).toFixed(1)
           // eslint-disable-next-line no-console
-          console.info(`[storage-cleanup] removed ${d.deleted} orphan${d.deleted === 1 ? '' : 's'}, freed ${mb} MB`)
+          console.info(
+            `[storage-cleanup] ${d.deleted} orphan${d.deleted === 1 ? '' : 's'} (${mb} MB) — nothing deleted. ` +
+            `POST {confirm:true} to remove them.`,
+          )
         }
       })
       .catch(() => {})
