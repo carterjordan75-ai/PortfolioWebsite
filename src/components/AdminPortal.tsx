@@ -1963,6 +1963,9 @@ function MiscUploadPanel() {
   const [editIdx, setEditIdx] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const miscFileRef = useRef<HTMLInputElement>(null)
+  // Focused when an upload is attempted with no project name, so the
+  // message and the field you need to fill are the same place.
+  const projectFieldRef = useRef<HTMLInputElement>(null)
   // Drag-to-reorder state
   const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null)
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
@@ -1978,7 +1981,6 @@ function MiscUploadPanel() {
   // toolbar so N selected items can be tagged to one project in one
   // commit. Same datalist as the project-rename pills below.
   const [bulkProject, setBulkProject] = useState<string>('')
-  const [bulkApplyProject, setBulkApplyProject] = useState(false)
   // Inline rename UX — `renamingProject` is the title currently being
   // renamed (null = not editing). renameValue holds the new text. Commit
   // cascades through every item that shares that title.
@@ -2108,6 +2110,23 @@ function MiscUploadPanel() {
     setTimeout(() => setStatus(null), 3000)
   }
 
+  /**
+   * Nothing gets uploaded without a project name.
+   *
+   * It used to fall back to the filename, which means every drop landed as
+   * its own project called something like `shotc-webm-001-mp94uxzi0` — the
+   * project list filled up with 23 one-item projects nobody named. Asking
+   * once, before the files go anywhere, costs a sentence and saves the
+   * batch-rename afterwards.
+   */
+  const requireProject = (): boolean => {
+    if (newTitle.trim()) return true
+    setStatus('✗ Name the project first — the field above the button')
+    setTimeout(() => setStatus(null), 3200)
+    projectFieldRef.current?.focus()
+    return false
+  }
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) await uploadBatch(e.target.files)
   }
@@ -2115,7 +2134,9 @@ function MiscUploadPanel() {
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setDragOver(false)
-    if (e.dataTransfer.files?.length) await uploadBatch(e.dataTransfer.files)
+    if (!e.dataTransfer.files?.length) return
+    if (!requireProject()) return
+    await uploadBatch(e.dataTransfer.files)
   }
 
   const handleDelete = async (idx: number) => {
@@ -2216,7 +2237,7 @@ function MiscUploadPanel() {
       const next = { ...item }
       if (yearNum !== null && !isNaN(yearNum)) next.year = yearNum
       if (bulkApplyMedium) next.medium = bulkMedium.length ? bulkMedium : ['3D']
-      if (bulkApplyProject && projectTitle) next.title = projectTitle
+      if (projectTitle) next.title = projectTitle
       return next
     })
     setItems(updated)
@@ -2224,7 +2245,6 @@ function MiscUploadPanel() {
     setStatus(`✓ Updated ${selected.size} item${selected.size !== 1 ? 's' : ''}`)
     setBulkYear('')
     setBulkApplyMedium(false)
-    setBulkApplyProject(false)
     setBulkProject('')
     setTimeout(() => setStatus(null), 2000)
   }
@@ -2480,8 +2500,18 @@ function MiscUploadPanel() {
 
         <div className="grid grid-cols-3 gap-3">
           <div>
-            <label className={labelStyle}>Title <span className="text-white/25">(optional — filename used otherwise)</span></label>
-            <input type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} className={inputStyle} placeholder="Leave blank for filename" />
+            <label className={labelStyle}>
+              Project <span className="text-white/25">(required — existing or new)</span>
+            </label>
+            <input
+              ref={projectFieldRef}
+              type="text"
+              value={newTitle}
+              list="misc-admin-project-tags"
+              onChange={e => setNewTitle(e.target.value)}
+              className={inputStyle}
+              placeholder="e.g. Lay By Nights"
+            />
           </div>
           <div>
             <label className={labelStyle}>Year</label>
@@ -2520,6 +2550,7 @@ function MiscUploadPanel() {
           <button
             onClick={() => {
               if (uploading) return
+              if (!requireProject()) return
               miscFileRef.current?.click()
             }}
             disabled={uploading}
@@ -2558,23 +2589,19 @@ function MiscUploadPanel() {
             Clear
           </button>
           <div className="h-3 w-px bg-white/15" />
-          <label className="flex items-center gap-1.5 text-white/40 text-[7px] uppercase tracking-[0.12em] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={bulkApplyProject}
-              onChange={e => setBulkApplyProject(e.target.checked)}
-              className="accent-white"
-            />
-            Set project:
-          </label>
+          {/* No enable-checkbox here. Text in the field IS the intent —
+              gating it behind a 7px tickbox made the one control people
+              actually came for look broken. Type an existing project to
+              add to it, or a new name to start one. Empty = untouched. */}
+          <label className="text-white/40 text-[7px] uppercase tracking-[0.12em]">Set project:</label>
           <input
             type="text"
             value={bulkProject}
             list="misc-admin-project-tags"
             onChange={e => setBulkProject(e.target.value)}
-            placeholder="project tag"
-            disabled={!bulkApplyProject}
-            className={`w-36 px-2 py-1 rounded text-[10px] bg-white/5 border border-white/10 text-white outline-none focus:border-white/25 ${bulkApplyProject ? '' : 'opacity-40'}`}
+            onKeyDown={e => { if (e.key === 'Enter' && bulkProject.trim()) applyBulkEdit() }}
+            placeholder={`name for all ${selected.size}`}
+            className="w-44 px-2 py-1 rounded text-[10px] bg-white/5 border border-white/10 text-white outline-none focus:border-white/25"
           />
           <div className="h-3 w-px bg-white/15" />
           <label className="text-white/40 text-[7px] uppercase tracking-[0.12em]">Set year:</label>
@@ -2614,7 +2641,7 @@ function MiscUploadPanel() {
           <div className="flex-1" />
           <button
             onClick={applyBulkEdit}
-            disabled={!bulkYear.trim() && !bulkApplyMedium && !(bulkApplyProject && bulkProject.trim())}
+            disabled={!bulkYear.trim() && !bulkApplyMedium && !bulkProject.trim()}
             className="px-3 py-1 rounded text-[8px] font-bold text-green-400 border border-green-400/30 hover:bg-green-400/10 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             Apply
