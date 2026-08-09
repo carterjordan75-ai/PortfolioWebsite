@@ -17,6 +17,8 @@ type GalleryItem = {
   rows: number
   credit: string
   source?: string
+  /** Known up front for feed items; measured lazily for the rest. */
+  aspect?: number
 }
 
 type RawItem = Omit<GalleryItem, 'cols' | 'rows'>
@@ -181,7 +183,9 @@ export default function LookPage() {
         })
       }
       const pinCredit = pinsRes.boardTitle ? `Pinterest — ${pinsRes.boardTitle}` : 'Pinterest'
-      for (const pin of (pinsRes.items || []) as Array<{ src: string; link: string; type?: string }>) {
+      for (const pin of (pinsRes.items || []) as Array<{
+        src: string; link: string; type?: string; width?: number; height?: number
+      }>) {
         // Video pins are imported as self-hosted MP4s by the sync; the
         // feed marks them type: 'video' so they render as <video>.
         raw.push({
@@ -189,6 +193,9 @@ export default function LookPage() {
           type: pin.type === 'video' ? 'video' : 'image',
           credit: pinCredit,
           source: pin.link,
+          // Pinterest reports these, so the gallery never has to download
+          // a file to find out what shape it is.
+          aspect: pin.width && pin.height ? pin.width / pin.height : undefined,
         })
       }
       // Shuffle the combined list once (Fisher–Yates) so the gallery opens on a
@@ -199,13 +206,76 @@ export default function LookPage() {
         const j = Math.floor(Math.random() * (i + 1))
         ;[raw[i], raw[j]] = [raw[j], raw[i]]
       }
-      const aspects = await Promise.all(raw.map(measureAspect))
       if (cancelled) return
-      setGalleryItems(raw.map((r, i) => ({ ...r, ...chooseSpan(aspects[i], i) })))
+
+      /*
+       * Lay out immediately, refine after.
+       *
+       * This used to await measureAspect() for every item first, which
+       * downloads each image at full size purely to read its dimensions —
+       * the entire gallery's bytes, before a single tile appeared. Items
+       * whose aspect the feed already knows need no download at all;
+       * the rest start on a sensible default and settle when their own
+       * measurement lands, so nothing is fetched twice and nothing is
+       * fetched before it's needed.
+       */
+      const provisional = raw.map((r, i) => ({
+        ...r,
+        ...chooseSpan(r.aspect ?? (r.type === 'video' ? 16 / 9 : 4 / 3), i),
+      }))
+      setGalleryItems(provisional)
       setLoading(false)
+
+      /*
+       * Videos still get a metadata probe — it's a few KB and there's no
+       * other way to learn their shape. Images don't: the tile downloads
+       * the picture in order to show it, so it reports its own dimensions
+       * on load (see onLoad below). Measuring them here as well meant
+       * fetching every original twice.
+       */
+      const unknown = raw
+        .map((r, i) => [r, i] as const)
+        .filter(([r]) => !r.aspect && r.type === 'video')
+      if (unknown.length === 0) return
+      const measured = await Promise.all(unknown.map(([r]) => measureAspect(r)))
+      if (cancelled) return
+      setGalleryItems(prev => {
+        const next = [...prev]
+        unknown.forEach(([, idx], k) => {
+          next[idx] = { ...next[idx], ...chooseSpan(measured[k], idx) }
+        })
+        return next
+      })
     }
     load()
     return () => { cancelled = true }
+  }, [])
+
+  /*
+   * Aspects reported by tiles as they load.
+   *
+   * Batched into one state update on the next frame: forty images
+   * finishing at once would otherwise be forty re-layouts of the whole
+   * mosaic.
+   */
+  const pendingAspects = useRef<Record<string, number>>({})
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const noteAspect = useCallback((src: string, aspect: number) => {
+    if (pendingAspects.current[src]) return
+    pendingAspects.current[src] = aspect
+    if (flushTimer.current) return
+    flushTimer.current = setTimeout(() => {
+      flushTimer.current = null
+      const batch = pendingAspects.current
+      pendingAspects.current = {}
+      setGalleryItems(prev =>
+        prev.map((it, i) =>
+          batch[it.src] && !it.aspect
+            ? { ...it, aspect: batch[it.src], ...chooseSpan(batch[it.src], i) }
+            : it,
+        ),
+      )
+    }, 250)
   }, [])
 
   // Repeat the items enough times to make the infinite-scroll loop feel
@@ -332,7 +402,14 @@ export default function LookPage() {
                     sizes="(max-width: 768px) 50vw, 25vw"
                     draggable={false}
                     onContextMenu={(e) => e.preventDefault()}
-                    unoptimized
+                    // The picture is being downloaded to display it, so this
+                    // costs nothing — and it's the only aspect measurement
+                    // an image needs.
+                    onLoad={(e) => {
+                      const el = e.currentTarget
+                      if (!el.naturalWidth || !el.naturalHeight) return
+                      noteAspect(item.src, el.naturalWidth / el.naturalHeight)
+                    }}
                   />
                 ) : (
                   // No autoPlay + preload="none": the IntersectionObserver
