@@ -150,6 +150,8 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     setLastSelectedIdx(idx)
   }
   const clearSelected = () => { setSelected(new Set()); setLastSelectedIdx(null) }
+  const selectAll = () => { setSelected(new Set(media.map((_, i) => i))); setLastSelectedIdx(null) }
+  const allSelected = media.length > 0 && selected.size === media.length
 
   // Group the currently-selected items into one row. The selected items are
   // pulled out, given a shared rowId, then reinserted as a contiguous block
@@ -432,6 +434,29 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                {/* Select / deselect all, always reachable. Deselect used to
+                    be an 8px lowercase "clear" wedged inside the selection
+                    toolbar, which is the wrong place for it — the moment you
+                    most want to drop a selection is mid-rejig, when you're
+                    looking at the list, not at the toolbar. */}
+                {media.length > 0 && (
+                  <button
+                    onClick={allSelected ? clearSelected : selectAll}
+                    className="px-2.5 py-1 rounded-full text-[7px] uppercase tracking-[0.1em] font-bold text-white/70 border border-white/20 hover:bg-white/10 hover:text-white transition-all"
+                    title={allSelected ? 'Deselect everything' : 'Select every item in this project'}
+                  >
+                    {allSelected ? 'Deselect all' : `Select all (${media.length})`}
+                  </button>
+                )}
+                {media.length > 0 && selected.size > 0 && !allSelected && (
+                  <button
+                    onClick={clearSelected}
+                    className="px-2.5 py-1 rounded-full text-[7px] uppercase tracking-[0.1em] font-bold text-white/70 border border-white/20 hover:bg-white/10 hover:text-white transition-all"
+                    title={`Deselect the ${selected.size} currently selected`}
+                  >
+                    Deselect all ({selected.size})
+                  </button>
+                )}
                 {media.length > 0 && selected.size === 0 && (
                   <button
                     onClick={() => runDownload('all')}
@@ -480,7 +505,12 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
             {selected.size > 0 && (
               <div className="mx-5 mt-3 p-2.5 rounded-lg border border-white/15 bg-white/5 flex flex-wrap items-center gap-2 text-[8px] uppercase tracking-[0.1em]">
                 <span className="text-white/80 font-bold">{selected.size} selected</span>
-                <button onClick={clearSelected} className="text-white/35 hover:text-white">clear</button>
+                <button
+                  onClick={clearSelected}
+                  className="px-2 py-0.5 rounded text-[7px] font-bold text-white/60 border border-white/20 hover:bg-white/10 hover:text-white"
+                >
+                  Deselect all
+                </button>
                 <div className="flex-1" />
                 <button
                   onClick={groupSelectedAsRow}

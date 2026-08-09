@@ -669,13 +669,22 @@ Contact: carterjordan75@gmail.com`
                 padding: '3rem',
               }}
             >
+              {/*
+                The box takes its shape from the media, not the other way
+                round. It used to force `aspect` onto a full-width frame and
+                object-cover the media into it — but `aspect` is only set on
+                items that were measured at upload, so nearly everything fell
+                back to 16/9 and anything portrait or square got cropped to a
+                letterbox. Sizing the media itself against the viewport caps
+                needs no stored ratio and no measuring: intrinsic dimensions
+                already describe the file exactly, whatever it is.
+              */}
               <motion.div
                 initial={{ scale: 0.85, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.9, opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                className="relative bg-black w-full max-w-[85vw] max-h-[80vh] overflow-hidden"
-                style={{ aspectRatio: allMedia[expandedMedia]?.aspect || '16/9' }}
+                className="relative bg-black overflow-hidden leading-none"
                 onClick={(e) => e.stopPropagation()}
               >
                 {allMedia[expandedMedia]?.mediaType === 'video' ? (
@@ -686,7 +695,7 @@ Contact: carterjordan75@gmail.com`
                     controls
                     controlsList="nodownload"
                     disablePictureInPicture
-                    className="absolute inset-0 w-full h-full object-cover"
+                    className="block max-w-[85vw] max-h-[80vh] w-auto h-auto"
                     src={allMedia[expandedMedia]?.src}
                   />
                 ) : (
@@ -694,7 +703,7 @@ Contact: carterjordan75@gmail.com`
                   <img
                     src={allMedia[expandedMedia]?.src}
                     alt={allMedia[expandedMedia]?.label}
-                    className="absolute inset-0 w-full h-full object-cover"
+                    className="block max-w-[85vw] max-h-[80vh] w-auto h-auto"
                   />
                 )}
               </motion.div>
