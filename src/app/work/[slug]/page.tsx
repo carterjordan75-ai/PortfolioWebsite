@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useRef } from 'react'
 import EditableText from '@/components/EditableText'
 import ProjectMediaPanel, { type ProjectMediaItem } from '@/components/ProjectMediaPanel'
+import ProjectLinks, { type ProjectLink } from '@/components/ProjectLinks'
 import PageLoader from '@/components/PageLoader'
 import { useEditMode } from '@/contexts/EditModeContext'
 
@@ -59,6 +60,9 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   // sit above any early returns below, hence declared here.
   const [localMedia, setLocalMedia] = useState<Array<{ name?: string; path?: string }> | null>(null)
   const [mediaPanelOpen, setMediaPanelOpen] = useState(false)
+  // Press links, same deal — local so the inline editor reflects a change
+  // immediately instead of waiting on a refetch.
+  const [localLinks, setLocalLinks] = useState<ProjectLink[]>([])
 
   // Scroll-driven audio: only one inline video plays audio at a time —
   // whichever is most centered in the right-column scroll container.
@@ -167,6 +171,14 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   useEffect(() => {
     const m = (adminProject?.media as Array<{ name?: string; path?: string }> | undefined) || null
     setLocalMedia(m)
+    const raw = adminProject?.links
+    setLocalLinks(
+      Array.isArray(raw)
+        ? (raw as unknown[])
+            .filter((l): l is Record<string, unknown> => !!l && typeof l === 'object')
+            .map(l => ({ label: String(l.label ?? ''), url: String(l.url ?? '') }))
+        : [],
+    )
   }, [adminProject])
 
   // Merge: code project as base, admin data as overrides
@@ -522,6 +534,17 @@ Contact: carterjordan75@gmail.com`
                 tag="div"
                 className="text-[9px] leading-[1.6] mb-5 py-3"
                 style={{ borderTop: `1px solid ${rule}`, borderBottom: `1px solid ${rule}` }}
+              />
+
+              {/* Press — articles about the work. Sits with the other
+                  metadata rather than under the media, and renders nothing
+                  at all when a project has no links and you're not editing. */}
+              <ProjectLinks
+                slug={project.slug}
+                links={localLinks}
+                editMode={editMode}
+                onChange={setLocalLinks}
+                rule={rule}
               />
 
               {/* Bottom — copyright right-aligned */}
