@@ -203,6 +203,21 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
     } : {}),
   } : null
 
+  // The lightbox video lives in this component rather than inside
+  // MediaBlock, so it needs its own ref and bounce driver. Both sit ABOVE
+  // the early returns below — a hook after a conditional return changes
+  // call order between renders. That's also why this reads `localMedia`
+  // straight rather than `allMedia`, which isn't built until later; the
+  // filter matches how allMedia is indexed.
+  const lightboxVideoRef = useRef<HTMLVideoElement | null>(null)
+  const lightboxItem =
+    expandedMedia !== null ? (localMedia ?? []).filter(m => !!m.path)[expandedMedia] : undefined
+  const lightboxBounces =
+    !!lightboxItem?.path &&
+    classifyMedia(lightboxItem.path) === 'video' &&
+    !!(lightboxItem as { bounce?: boolean }).bounce
+  useBouncePlayback(lightboxVideoRef, lightboxBounces)
+
   // Show the circle-grid loader while admin data is still in flight. The
   // loader covers the page in 'data' mode — it stays put until adminLoading
   // flips false, then plays its reveal animation as the page slides in
@@ -296,13 +311,21 @@ Contact: carterjordan75@gmail.com`
   // The page renders ONLY admin-uploaded media (no test-pool fallback). When
   // the admin list is empty the right column shows an empty-state hint
   // pointing the user to the admin panel.
-  const allMedia: { aspect: string; label: string; src: string; mediaType: 'video' | 'image' }[] =
+  const allMedia: {
+    aspect: string; label: string; src: string; mediaType: 'video' | 'image'; bounce?: boolean
+  }[] =
     (localMedia ?? [])
       .filter(m => !!m.path)
       .map((m, i) => {
         const mediaType: 'video' | 'image' = classifyMedia(m.path!)
         const aspect = (m as { aspect?: string }).aspect || (mediaType === 'video' ? '16/9' : '4/3')
-        return { aspect, label: String(i + 1).padStart(2, '0'), src: m.path!, mediaType }
+        return {
+          aspect,
+          label: String(i + 1).padStart(2, '0'),
+          src: m.path!,
+          mediaType,
+          bounce: (m as { bounce?: boolean }).bounce,
+        }
       })
 
   return (
@@ -576,6 +599,7 @@ Contact: carterjordan75@gmail.com`
                             mediaSrc={item.path}
                             mediaType={mediaType}
                             objectPos={objectPos}
+                            bounce={(item as { bounce?: boolean }).bounce}
                             isLightboxOpen={expandedMedia !== null}
                             audioActive={idx === activeAudioIdx}
                             pageAudioMuted={pageAudioMuted}
@@ -606,6 +630,7 @@ Contact: carterjordan75@gmail.com`
                                 mediaSrc={item.path}
                                 mediaType={mediaType}
                                 objectPos={objectPos}
+                                bounce={(item as { bounce?: boolean }).bounce}
                                 isLightboxOpen={expandedMedia !== null}
                                 audioActive={idx === activeAudioIdx}
                                 pageAudioMuted={pageAudioMuted}
@@ -689,8 +714,10 @@ Contact: carterjordan75@gmail.com`
               >
                 {allMedia[expandedMedia]?.mediaType === 'video' ? (
                   <video
+                    ref={lightboxVideoRef}
                     autoPlay
-                    loop
+                    // Bounce needs `ended` to fire, and `loop` swallows it.
+                    loop={!lightboxBounces}
                     playsInline
                     controls
                     controlsList="nodownload"
@@ -757,9 +784,84 @@ Contact: carterjordan75@gmail.com`
 // `idx` and `dark` are part of the public API for call sites that pass them
 // (handy for future hover states / theming), but not currently consumed inside —
 // underscore-prefix keeps ESLint happy.
-function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, objectPos, isLightboxOpen, audioActive, pageAudioMuted, onAudioToggle, rootRef }: {
+/**
+ * Play a video forwards, then backwards, forever — instead of cutting back
+ * to frame 0 on loop.
+ *
+ * No browser can do this natively: `playbackRate = -1` is unsupported in
+ * Chrome and Safari, so the return leg has to be driven by hand, stepping
+ * `currentTime` down each tick. That means the reverse leg is a series of
+ * seeks, so two things are inherent rather than bugs:
+ *
+ *   - it's silent going backwards (seeking doesn't render audio), and
+ *   - it's only as smooth as the file's keyframes. A clip exported with
+ *     sparse keyframes will judder in reverse no matter what we do here;
+ *     re-export with a tighter GOP if a particular video looks rough.
+ *
+ * Stepping is capped at ~30fps. At 60 the seek requests queue up faster
+ * than the decoder retires them and the motion gets *less* smooth, not
+ * more, which is the opposite of what the frame budget suggests.
+ */
+function useBouncePlayback(
+  videoRef: React.RefObject<HTMLVideoElement | null>,
+  enabled: boolean,
+) {
+  useEffect(() => {
+    const v = videoRef.current
+    if (!enabled || !v) return
+
+    let raf = 0
+    let last = 0
+    const MIN_STEP_MS = 1000 / 30
+    // Ceiling on a single step. requestAnimationFrame is suspended while
+    // the tab is hidden, so the first frame after you switch back carries
+    // a gap of however long you were away — unclamped, that one step
+    // subtracts minutes and snaps the video to frame 0, which is the exact
+    // hard cut bounce exists to avoid. Clamped, a long gap costs one
+    // ordinary step instead.
+    const MAX_STEP_S = 0.1
+
+    const step = (now: number) => {
+      const dt = Math.min((now - last) / 1000, MAX_STEP_S)
+      if ((now - last) < MIN_STEP_MS) {
+        raf = requestAnimationFrame(step)
+        return
+      }
+      last = now
+      const next = v.currentTime - dt * (v.playbackRate || 1)
+      if (next <= 0) {
+        // Back at the start: hand control to normal playback again.
+        v.currentTime = 0
+        v.play().catch(() => {})
+        return
+      }
+      v.currentTime = next
+      raf = requestAnimationFrame(step)
+    }
+
+    // `ended` only fires because the element is rendered without `loop`
+    // when bounce is on — with loop set the browser wraps silently and
+    // this never runs.
+    const onEnded = () => {
+      v.pause()
+      last = performance.now()
+      raf = requestAnimationFrame(step)
+    }
+
+    v.addEventListener('ended', onEnded)
+    return () => {
+      v.removeEventListener('ended', onEnded)
+      cancelAnimationFrame(raf)
+    }
+  }, [enabled, videoRef])
+}
+
+function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, objectPos, bounce, isLightboxOpen, audioActive, pageAudioMuted, onAudioToggle, rootRef }: {
   idx: number; aspect: string; label: string; onExpand: () => void; dark: boolean;
   mediaSrc?: string; mediaType?: 'video' | 'image'; objectPos?: string;
+  // Ping-pong this video instead of looping it. Per-item, set in the media
+  // manager — see useBouncePlayback for why it isn't free.
+  bounce?: boolean;
   // When the page-level lightbox is open the inline videos should mute so
   // their audio doesn't overlap with the expanded view's audio.
   isLightboxOpen?: boolean;
@@ -804,6 +906,7 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
       document.addEventListener('keydown', retry, { once: true })
     })
   }, [shouldBeMuted, mediaType])
+  useBouncePlayback(videoRef, mediaType === 'video' && !!bounce && !loadFailed)
   return (
     // maxHeight cap so a 16:9 item in the wide media column doesn't fill the
     // viewport on big screens — visually anchored to ~85% of viewport height,
@@ -830,7 +933,8 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
           // page-level pageAudioMuted toggle and the lightbox-open guard
           // additionally force a mute regardless of audioActive state.
           muted={shouldBeMuted}
-          loop
+          // Bounce needs `ended` to fire, and `loop` swallows it.
+          loop={!bounce}
           playsInline
           className="absolute inset-0 w-full h-full object-cover"
           style={{ objectPosition: pos }}

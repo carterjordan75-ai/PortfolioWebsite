@@ -42,6 +42,10 @@ export type ProjectMediaItem = {
   // this to control which part of the image shows when the frame's aspect
   // ratio differs from the source's. Stored as a CSS string.
   objectPos?: string
+  // Play forwards, then backwards, instead of cutting back to frame 0.
+  // Opt-in per video: it suits a slow orbit or a build-up, and ruins
+  // anything with a deliberate hard cut on the loop point.
+  bounce?: boolean
 }
 
 // Common aspect ratios offered in the per-item dropdown. The `value` is what
@@ -674,6 +678,32 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
                             </option>
                           ))}
                         </select>
+                        {/* Videos only — an image has nothing to bounce.
+                            Opt-in per clip: it flatters a slow orbit or a
+                            build, and wrecks anything cut to land on its
+                            own loop point. */}
+                        {isVideo(item.path) && (
+                          <label
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1 text-[8px] uppercase tracking-[0.1em] font-bold text-white/45 hover:text-white/80 cursor-pointer select-none"
+                            title="Play forwards then backwards instead of cutting back to the first frame"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!item.bounce}
+                              onChange={(e) => {
+                                const on = e.target.checked
+                                const next = media.map((m, j) =>
+                                  j === i ? { ...m, bounce: on || undefined } : m,
+                                )
+                                persist(next)
+                              }}
+                              className="accent-white cursor-pointer"
+                            />
+                            Bounce
+                          </label>
+                        )}
                       </div>
                       {/* Focus / crop anchor: 3×3 grid of buttons. Click a
                           cell to pin which part of the image stays visible
