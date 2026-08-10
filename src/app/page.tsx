@@ -458,13 +458,31 @@ export default function Home() {
               <div className="absolute right-6 top-1/2 -translate-y-1/2 z-10">
                 <Link
                   href={`/work/${v.projectSlug}`}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[9px] uppercase tracking-[0.16em] font-bold text-white transition-all hover:scale-105 active:scale-95"
+                  // Sits back like the number rail does. The rail rests at
+                  // 0.3 and only goes full while you're scrolling; a button
+                  // can't be that faint and still invite a click, so it
+                  // rests a little above the rail and takes the same trip
+                  // to full — on hover, which is a button's version of the
+                  // rail's "something is happening" state.
+                  //
+                  // Brightening is done on the element rather than with a
+                  // hover: utility. The two Tailwind opacity classes fight
+                  // over one property, and which wins depends on emitted
+                  // rule order — it resolved to the resting value here even
+                  // with the hover rule later and more specific. Setting it
+                  // on the node removes the question, and matches how the
+                  // index dropdown's segments already do their hover.
+                  onMouseEnter={(e) => { e.currentTarget.style.opacity = '1' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.55' }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[9px] uppercase tracking-[0.16em] font-bold text-white hover:scale-105 active:scale-95"
                   style={{
-                    border: '1px solid rgba(255,255,255,0.45)',
-                    background: 'rgba(0,0,0,0.28)',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    background: 'rgba(0,0,0,0.22)',
                     backdropFilter: 'blur(10px)',
                     WebkitBackdropFilter: 'blur(10px)',
                     textShadow: '0 1px 6px rgba(0,0,0,0.6)',
+                    opacity: 0.55,
+                    transition: 'opacity 0.18s ease-out, transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1)',
                   }}
                 >
                   View project <span aria-hidden="true">→</span>
