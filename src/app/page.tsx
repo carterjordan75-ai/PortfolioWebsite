@@ -426,8 +426,8 @@ export default function Home() {
               </div>
             )}
 
-            {/* Bottom-right: title + year + optional project link */}
-            {(v.title || v.label || v.year || v.projectSlug) && (
+            {/* Bottom-right: title + year */}
+            {(v.title || v.label || v.year) && (
               <div className="absolute bottom-8 right-6 z-10 pointer-events-none flex flex-col items-end">
                 {(v.title || v.label) && (
                   <h2
@@ -445,24 +445,30 @@ export default function Home() {
                     {v.year}
                   </p>
                 )}
-                {/* Through to the project this clip came from. The wrapper
-                    is pointer-events-none so the video stays scrollable
-                    under the caption, so the link has to opt back in. */}
-                {v.projectSlug && (
-                  <Link
-                    href={`/work/${v.projectSlug}`}
-                    className="pointer-events-auto mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[9px] uppercase tracking-[0.16em] font-bold text-white transition-all hover:scale-105 active:scale-95"
-                    style={{
-                      border: '1px solid rgba(255,255,255,0.45)',
-                      background: 'rgba(0,0,0,0.28)',
-                      backdropFilter: 'blur(10px)',
-                      WebkitBackdropFilter: 'blur(10px)',
-                      textShadow: '0 1px 6px rgba(0,0,0,0.6)',
-                    }}
-                  >
-                    View project <span aria-hidden="true">→</span>
-                  </Link>
-                )}
+              </div>
+            )}
+
+            {/* Through to the project this clip came from. Sits centre-right,
+                mirroring the scroll number rail on the left — the rail is
+                `fixed left-6 top-1/2`, and each section is exactly one
+                viewport tall, so centring inside the section lands on the
+                same line without needing to be fixed itself (which would
+                stack all three tripled copies on top of each other). */}
+            {v.projectSlug && (
+              <div className="absolute right-6 top-1/2 -translate-y-1/2 z-10">
+                <Link
+                  href={`/work/${v.projectSlug}`}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[9px] uppercase tracking-[0.16em] font-bold text-white transition-all hover:scale-105 active:scale-95"
+                  style={{
+                    border: '1px solid rgba(255,255,255,0.45)',
+                    background: 'rgba(0,0,0,0.28)',
+                    backdropFilter: 'blur(10px)',
+                    WebkitBackdropFilter: 'blur(10px)',
+                    textShadow: '0 1px 6px rgba(0,0,0,0.6)',
+                  }}
+                >
+                  View project <span aria-hidden="true">→</span>
+                </Link>
               </div>
             )}
 
