@@ -216,7 +216,8 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
     !!lightboxItem?.path &&
     classifyMedia(lightboxItem.path) === 'video' &&
     !!(lightboxItem as { bounce?: boolean }).bounce
-  useBouncePlayback(lightboxVideoRef, lightboxBounces)
+  const { canvasRef: lightboxCanvasRef, reversing: lightboxReversing } =
+    useBouncePlayback(lightboxVideoRef, lightboxBounces)
 
   // Show the circle-grid loader while admin data is still in flight. The
   // loader covers the page in 'data' mode — it stays put until adminLoading
@@ -713,18 +714,31 @@ Contact: carterjordan75@gmail.com`
                 onClick={(e) => e.stopPropagation()}
               >
                 {allMedia[expandedMedia]?.mediaType === 'video' ? (
-                  <video
-                    ref={lightboxVideoRef}
-                    autoPlay
-                    // Bounce needs `ended` to fire, and `loop` swallows it.
-                    loop={!lightboxBounces}
-                    playsInline
-                    controls
-                    controlsList="nodownload"
-                    disablePictureInPicture
-                    className="block max-w-[85vw] max-h-[80vh] w-auto h-auto"
-                    src={allMedia[expandedMedia]?.src}
-                  />
+                  <>
+                    <video
+                      ref={lightboxVideoRef}
+                      autoPlay
+                      // Bounce needs `ended` to fire, and `loop` swallows it.
+                      loop={!lightboxBounces}
+                      playsInline
+                      controls
+                      controlsList="nodownload"
+                      disablePictureInPicture
+                      className="block max-w-[85vw] max-h-[80vh] w-auto h-auto"
+                      style={{ opacity: lightboxReversing ? 0 : 1 }}
+                      src={allMedia[expandedMedia]?.src}
+                    />
+                    {/* Return leg. The wrapper hugs the video exactly, so
+                        inset-0 lands on the same box the video occupies. */}
+                    {lightboxBounces && (
+                      <canvas
+                        ref={lightboxCanvasRef}
+                        aria-hidden="true"
+                        className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                        style={{ opacity: lightboxReversing ? 1 : 0 }}
+                      />
+                    )}
+                  </>
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -788,49 +802,204 @@ Contact: carterjordan75@gmail.com`
  * Play a video forwards, then backwards, forever — instead of cutting back
  * to frame 0 on loop.
  *
- * No browser can do this natively: `playbackRate = -1` is unsupported in
- * Chrome and Safari, so the return leg has to be driven by hand, stepping
- * `currentTime` down each tick. That means the reverse leg is a series of
- * seeks, so two things are inherent rather than bugs:
+ * No browser plays video backwards natively (`playbackRate = -1` is
+ * unsupported in Chrome and Safari), and the obvious workaround — stepping
+ * `currentTime` down each frame — is what made the first version of this
+ * judder. Every assignment is a seek, and a seek means jumping to the
+ * previous keyframe and decoding forward to the target. At 30 of those a
+ * second the decoder never catches up, so frames get dropped and the
+ * motion lurches. Tuning the step rate can't fix it; the seeking is the
+ * problem.
  *
- *   - it's silent going backwards (seeking doesn't render audio), and
- *   - it's only as smooth as the file's keyframes. A clip exported with
- *     sparse keyframes will judder in reverse no matter what we do here;
- *     re-export with a tighter GOP if a particular video looks rough.
+ * So don't seek. The forward pass already decodes every frame perfectly —
+ * grab them as they go by, then blit them back in reverse off a canvas.
+ * The return leg becomes drawImage calls with zero decoding, which is
+ * smooth by construction and independent of how the file was encoded.
  *
- * Stepping is capped at ~30fps. At 60 the seek requests queue up faster
- * than the decoder retires them and the motion gets *less* smooth, not
- * more, which is the opposite of what the frame budget suggests.
+ * The cost is memory, so there's a frame budget. A clip that doesn't
+ * finish caching inside it falls back to the old seek-stepping — steppy,
+ * but it still bounces rather than failing outright. Bounce is meant for
+ * short loops; the budget is sized for those.
+ *
+ * Still inherent: the reverse leg is silent, because there's no audio to
+ * play off a canvas.
  */
 function useBouncePlayback(
   videoRef: React.RefObject<HTMLVideoElement | null>,
   enabled: boolean,
 ) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  // Drives the crossfade-free swap between the <video> and the <canvas>.
+  const [reversing, setReversing] = useState(false)
+
   useEffect(() => {
     const v = videoRef.current
     if (!enabled || !v) return
 
+    /**
+     * Cached frames are uncompressed, so the budget is real: a second of
+     * 960x540 costs ~62 MB. Rather than a fixed cap with a quality cliff,
+     * spend the budget across however long the clip is — degrading
+     * resolution keeps the motion smooth, which is the whole point, where
+     * degrading the frame rate would just reintroduce the judder.
+     *
+     * From a 1080p source that's roughly 1150px wide for a 1s loop, 830px
+     * at 2s, 540px at 5s. Short loops stay effectively sharp; long ones go
+     * soft on the way back. Past HARD_MAX_SECONDS nothing is cached and it
+     * falls back to seek-stepping, which judders — so bounce is worth
+     * ticking on short clips and not on long ones.
+     *
+     * Per clip, not per page: three bounced videos is three budgets.
+     */
+    const MEMORY_BUDGET_BYTES = 96 * 1024 * 1024
+    const HARD_MAX_SECONDS = 12
+    const ASSUMED_FPS = 30
+    let maxFrames = 0
+    let captureW = 0
+    let captureH = 0
+
+    // Worked out once, from metadata — duration and native size are both
+    // needed and neither is known at mount.
+    const planCapture = (): boolean => {
+      const duration = v.duration
+      const w = v.videoWidth
+      const h = v.videoHeight
+      if (!Number.isFinite(duration) || duration <= 0 || !w || !h) return false
+      if (duration > HARD_MAX_SECONDS) return false
+      maxFrames = Math.ceil(duration * ASSUMED_FPS) + 4
+      const bytesEach = MEMORY_BUDGET_BYTES / maxFrames
+      const maxPixels = bytesEach / 4
+      const scale = Math.min(1, Math.sqrt(maxPixels / (w * h)))
+      captureW = Math.max(2, Math.round(w * scale))
+      captureH = Math.max(2, Math.round(h * scale))
+      return true
+    }
+
+    type Frame = { bmp: ImageBitmap; t: number }
+    let frames: Frame[] = []
+    let capturing = true
+    let cacheComplete = false
+    let cancelled = false
     let raf = 0
-    let last = 0
+    let vfcHandle = 0
+
+    type VFC = HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: () => void) => number
+      cancelVideoFrameCallback?: (h: number) => void
+    }
+    const vfc = v as VFC
+    const hasVFC = typeof vfc.requestVideoFrameCallback === 'function'
+
+    const dropFrames = () => {
+      for (const f of frames) f.bmp.close?.()
+      frames = []
+    }
+
+    // ── capture, during ordinary forward playback ──────────────────────
+    const scheduleCapture = () => {
+      if (cancelled || !capturing) return
+      if (hasVFC) vfcHandle = vfc.requestVideoFrameCallback!(() => void capture())
+      else raf = requestAnimationFrame(() => void capture())
+    }
+
+    const capture = async () => {
+      if (cancelled || !capturing) return
+      // Nothing decodable yet, or we're on the return leg — check back.
+      if (v.readyState < 2 || v.paused || v.ended) return void scheduleCapture()
+      // First usable frame: size the cache now that metadata has landed.
+      if (captureW === 0 && !planCapture()) {
+        // Too long to cache, or metadata still missing. Seek-step instead.
+        capturing = false
+        return
+      }
+      const t = v.currentTime
+      // requestVideoFrameCallback can fire twice for one frame; rAF
+      // certainly will on a 60Hz screen showing 24fps footage.
+      if (frames.length > 0 && t <= frames[frames.length - 1].t) {
+        return void scheduleCapture()
+      }
+      if (frames.length >= maxFrames) {
+        // Ran past the plan — variable frame rate, or above 30fps. The
+        // cache now covers only the FRONT of the clip, and replaying that
+        // when the video ends would jump straight to a mid-clip frame.
+        // A partial cache is worse than none: drop it and seek instead.
+        capturing = false
+        dropFrames()
+        return
+      }
+      try {
+        const bmp = await createImageBitmap(v, {
+          resizeWidth: captureW,
+          resizeHeight: captureH,
+          resizeQuality: 'medium',
+        })
+        if (cancelled) return void bmp.close?.()
+        frames.push({ bmp, t })
+      } catch {
+        // createImageBitmap throws on a tainted frame (cross-origin video
+        // without CORS). Blob serves access-control-allow-origin: *, so
+        // this shouldn't fire — but if it does, fall back rather than die.
+        capturing = false
+        dropFrames()
+        return
+      }
+      scheduleCapture()
+    }
+
+    // ── return leg A: replay cached frames (smooth) ────────────────────
+    const playCached = () => {
+      const canvas = canvasRef.current
+      const ctx = canvas?.getContext('2d')
+      if (!canvas || !ctx || frames.length < 2) return seekBackwards()
+
+      canvas.width = frames[0].bmp.width
+      canvas.height = frames[0].bmp.height
+      const lastT = frames[frames.length - 1].t
+      const firstT = frames[0].t
+      let i = frames.length - 1
+      const startedAt = performance.now()
+
+      v.pause()
+      setReversing(true)
+
+      const draw = () => {
+        if (cancelled) return
+        // Walk video-time backwards in real time, then pick the nearest
+        // captured frame. Timing comes off the wall clock rather than a
+        // frame counter, so a dropped frame costs one frame, not sync.
+        const target = lastT - (performance.now() - startedAt) / 1000
+        while (i > 0 && frames[i].t > target) i--
+        ctx.drawImage(frames[i].bmp, 0, 0)
+        if (i <= 0 || target <= firstT) {
+          setReversing(false)
+          v.currentTime = 0
+          v.play().catch(() => {})
+          return
+        }
+        raf = requestAnimationFrame(draw)
+      }
+      draw()
+    }
+
+    // ── return leg B: seek-stepping (fallback, judders) ────────────────
     const MIN_STEP_MS = 1000 / 30
-    // Ceiling on a single step. requestAnimationFrame is suspended while
-    // the tab is hidden, so the first frame after you switch back carries
-    // a gap of however long you were away — unclamped, that one step
-    // subtracts minutes and snaps the video to frame 0, which is the exact
-    // hard cut bounce exists to avoid. Clamped, a long gap costs one
-    // ordinary step instead.
+    // Ceiling on one step. rAF is suspended while the tab is hidden, so
+    // the first frame back carries however long you were away — unclamped
+    // that single step subtracts minutes and slams to frame 0, the exact
+    // hard cut bounce exists to avoid.
     const MAX_STEP_S = 0.1
+    let last = 0
 
     const step = (now: number) => {
-      const dt = Math.min((now - last) / 1000, MAX_STEP_S)
-      if ((now - last) < MIN_STEP_MS) {
+      if (cancelled) return
+      if (now - last < MIN_STEP_MS) {
         raf = requestAnimationFrame(step)
         return
       }
+      const dt = Math.min((now - last) / 1000, MAX_STEP_S)
       last = now
       const next = v.currentTime - dt * (v.playbackRate || 1)
       if (next <= 0) {
-        // Back at the start: hand control to normal playback again.
         v.currentTime = 0
         v.play().catch(() => {})
         return
@@ -839,21 +1008,40 @@ function useBouncePlayback(
       raf = requestAnimationFrame(step)
     }
 
-    // `ended` only fires because the element is rendered without `loop`
-    // when bounce is on — with loop set the browser wraps silently and
-    // this never runs.
-    const onEnded = () => {
+    const seekBackwards = () => {
       v.pause()
       last = performance.now()
       raf = requestAnimationFrame(step)
     }
 
+    // `ended` only fires because the element renders without `loop` when
+    // bounce is on — with loop set the browser wraps silently and this
+    // never runs.
+    const onEnded = () => {
+      // Reaching the end with capture still running means the whole clip
+      // fitted in the budget. Freeze the cache and reuse it every cycle.
+      if (capturing) {
+        capturing = false
+        cacheComplete = frames.length >= 2
+      }
+      if (cacheComplete) playCached()
+      else seekBackwards()
+    }
+
     v.addEventListener('ended', onEnded)
+    scheduleCapture()
+
     return () => {
+      cancelled = true
       v.removeEventListener('ended', onEnded)
       cancelAnimationFrame(raf)
+      if (hasVFC && vfcHandle) vfc.cancelVideoFrameCallback?.(vfcHandle)
+      dropFrames()
+      setReversing(false)
     }
   }, [enabled, videoRef])
+
+  return { canvasRef, reversing }
 }
 
 function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc, mediaType, objectPos, bounce, isLightboxOpen, audioActive, pageAudioMuted, onAudioToggle, rootRef }: {
@@ -906,7 +1094,10 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
       document.addEventListener('keydown', retry, { once: true })
     })
   }, [shouldBeMuted, mediaType])
-  useBouncePlayback(videoRef, mediaType === 'video' && !!bounce && !loadFailed)
+  const { canvasRef: bounceCanvasRef, reversing } = useBouncePlayback(
+    videoRef,
+    mediaType === 'video' && !!bounce && !loadFailed,
+  )
   return (
     // maxHeight cap so a 16:9 item in the wide media column doesn't fill the
     // viewport on big screens — visually anchored to ~85% of viewport height,
@@ -937,9 +1128,21 @@ function MediaBlock({ idx: _idx, aspect, label, onExpand, dark: _dark, mediaSrc,
           loop={!bounce}
           playsInline
           className="absolute inset-0 w-full h-full object-cover"
-          style={{ objectPosition: pos }}
+          style={{ objectPosition: pos, opacity: reversing ? 0 : 1 }}
           src={mediaSrc}
           onError={() => setLoadFailed(true)}
+        />
+      )}
+      {/* The return leg draws here instead of seeking the video. Same box,
+          same object-fit, so the swap is invisible — canvas is a replaced
+          element, so object-cover/object-position behave as they do on the
+          <video> it stands in for. */}
+      {mediaSrc && mediaType === 'video' && !loadFailed && bounce && (
+        <canvas
+          ref={bounceCanvasRef}
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          style={{ objectPosition: pos, opacity: reversing ? 1 : 0 }}
         />
       )}
       {mediaSrc && mediaType === 'image' && !loadFailed && (
