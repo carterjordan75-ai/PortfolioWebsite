@@ -346,6 +346,9 @@ type HomeVideo = {
   category?: string         // '3D & Motion' | 'Generative Film'
   year?: string | number
   label?: string            // legacy field — pre-typed videos used `label`; keep for back-compat
+  // Slug of a featured project. When set, the video shows a pill
+  // linking through to /work/<slug>.
+  projectSlug?: string
 }
 
 const HOME_VIDEO_CATEGORIES = ['3D & Motion', 'Generative Film'] as const
@@ -362,6 +365,27 @@ function HomePagePanel() {
   // Site-wide library picker for pulling existing media (e.g. a SOFTBOYS
   // clip) into the home page playlist without re-uploading.
   const [libraryOpen, setLibraryOpen] = useState(false)
+  // Projects a home video can link through to. Picked from a list rather
+  // than typed: a mistyped slug renders a button that 404s, and nothing
+  // on this screen would tell you.
+  const [projectOptions, setProjectOptions] = useState<Array<{ slug: string; label: string }>>([])
+  useEffect(() => {
+    fetch('/api/projects', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => {
+        const list = (d.projects || []) as Array<Record<string, unknown>>
+        setProjectOptions(
+          list
+            .filter(p => typeof p.slug === 'string' && p.slug)
+            .map(p => ({
+              slug: String(p.slug),
+              label: [p.client, p.title].filter(Boolean).join(' — ') || String(p.slug),
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label)),
+        )
+      })
+      .catch(() => setProjectOptions([]))
+  }, [])
 
   // Pending upload form — appears after a file is picked, so user can confirm
   // title / category / year before sending the file to the server.
@@ -560,6 +584,27 @@ function HomePagePanel() {
                   placeholder="Year"
                   className={`${inputBase} w-16`}
                 />
+              </div>
+              {/* Optional "View project →" pill on the home page. Blank =
+                  no button, which is the default for a clip that isn't
+                  client work. */}
+              <div className="flex items-center gap-2 pl-7">
+                <label className="text-white/35 text-[7px] uppercase tracking-[0.12em] flex-shrink-0">
+                  Button →
+                </label>
+                <select
+                  value={v.projectSlug || ''}
+                  onChange={(e) => updateField(i, 'projectSlug', e.target.value)}
+                  className={`${inputBase} flex-1 min-w-0 cursor-pointer`}
+                  title="Show a pill on this video linking through to a project"
+                >
+                  <option value="" className="bg-black text-white">No button</option>
+                  {projectOptions.map(p => (
+                    <option key={p.slug} value={p.slug} className="bg-black text-white">
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           ))}

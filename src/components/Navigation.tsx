@@ -537,50 +537,67 @@ export default function Navigation() {
                           }}
                         >
                           <div className="py-2 px-1">
-                            {/* 3D / GEN toggle pill — switches which bucket of featured
-                                projects the dropdown lists. Active segment gets a fill;
-                                inactive segment is dimmed. */}
-                            <div className="flex items-center gap-1 px-3 py-1 mb-1">
-                              {(['gen', '3d'] as const).map(cat => {
-                                const active = indexCategory === cat
-                                return (
-                                  <button
-                                    key={cat}
-                                    onClick={() => setIndexCategory(cat)}
-                                    // Hover affordance: pop up via scale + brighten the
-                                    // inactive segment so it's obvious you can click it.
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.transform = 'scale(1.18)'
-                                      if (!active) {
-                                        e.currentTarget.style.opacity = '0.85'
+                            {/* GENAI / 3D switch — picks which bucket of featured
+                                projects the dropdown lists.
+
+                                Drawn as a segmented control inside its own
+                                bordered track. The two labels used to sit bare
+                                on the panel with the inactive one at 0.3 alpha,
+                                which read as a heading you couldn't do anything
+                                with — nothing said the dim word was a control
+                                until you happened to hover it. The track outline
+                                makes it a switch on sight, and the inactive
+                                segment is legible now rather than a ghost. */}
+                            <div className="px-3 py-1 mb-1">
+                              <div
+                                role="tablist"
+                                aria-label="Project category"
+                                className="inline-flex items-center gap-0.5 p-0.5 rounded-full"
+                                style={{
+                                  border: `1px solid ${dark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.12)'}`,
+                                  background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                                }}
+                              >
+                                {([
+                                  { cat: 'gen', label: 'GenAI' },
+                                  { cat: '3d', label: '3D' },
+                                ] as const).map(({ cat, label }) => {
+                                  const active = indexCategory === cat
+                                  return (
+                                    <button
+                                      key={cat}
+                                      role="tab"
+                                      aria-selected={active}
+                                      onClick={() => setIndexCategory(cat)}
+                                      onMouseEnter={(e) => {
+                                        if (active) return
+                                        e.currentTarget.style.opacity = '1'
                                         e.currentTarget.style.background = dark
-                                          ? 'rgba(255,255,255,0.06)'
-                                          : 'rgba(0,0,0,0.04)'
-                                      }
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.transform = 'scale(1)'
-                                      if (!active) {
-                                        e.currentTarget.style.opacity = '0.3'
+                                          ? 'rgba(255,255,255,0.09)'
+                                          : 'rgba(0,0,0,0.06)'
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (active) return
+                                        e.currentTarget.style.opacity = '0.6'
                                         e.currentTarget.style.background = 'transparent'
-                                      }
-                                    }}
-                                    className="text-[8px] uppercase tracking-[0.18em] font-bold px-2 py-0.5 rounded-md cursor-pointer"
-                                    style={{
-                                      color: dark ? '#fff' : '#000',
-                                      opacity: active ? 1 : 0.3,
-                                      background: active
-                                        ? (dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)')
-                                        : 'transparent',
-                                      transform: 'scale(1)',
-                                      transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out, background 0.18s ease-out',
-                                      transformOrigin: 'center',
-                                    }}
-                                  >
-                                    {cat.toUpperCase()}
-                                  </button>
-                                )
-                              })}
+                                      }}
+                                      className="text-[8px] uppercase tracking-[0.16em] font-bold px-2.5 py-1 rounded-full cursor-pointer"
+                                      style={{
+                                        color: active
+                                          ? (dark ? '#0a0a0a' : '#ffffff')
+                                          : (dark ? '#fff' : '#000'),
+                                        opacity: active ? 1 : 0.6,
+                                        background: active
+                                          ? (dark ? '#ffffff' : '#000000')
+                                          : 'transparent',
+                                        transition: 'opacity 0.18s ease-out, background 0.18s ease-out, color 0.18s ease-out',
+                                      }}
+                                    >
+                                      {label}
+                                    </button>
+                                  )
+                                })}
+                              </div>
                             </div>
                             {(() => {
                               // Filter featured projects by the active category. Projects

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import PageTransition from '@/components/PageTransition'
 import EmailPopup from '@/components/EmailPopup'
 import AdminPortal from '@/components/AdminPortal'
@@ -14,6 +15,9 @@ type HomeVideo = {
   category?: string
   year?: string | number
   label?: string  // legacy fallback
+  // Slug of a featured project. When set, the video shows a pill
+  // linking through to /work/<slug>.
+  projectSlug?: string
 }
 
 // ─── Scroll-reactive number rail ─────────────────────────────────────
@@ -422,8 +426,8 @@ export default function Home() {
               </div>
             )}
 
-            {/* Bottom-right: title + year */}
-            {(v.title || v.label || v.year) && (
+            {/* Bottom-right: title + year + optional project link */}
+            {(v.title || v.label || v.year || v.projectSlug) && (
               <div className="absolute bottom-8 right-6 z-10 pointer-events-none flex flex-col items-end">
                 {(v.title || v.label) && (
                   <h2
@@ -440,6 +444,24 @@ export default function Home() {
                   >
                     {v.year}
                   </p>
+                )}
+                {/* Through to the project this clip came from. The wrapper
+                    is pointer-events-none so the video stays scrollable
+                    under the caption, so the link has to opt back in. */}
+                {v.projectSlug && (
+                  <Link
+                    href={`/work/${v.projectSlug}`}
+                    className="pointer-events-auto mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[9px] uppercase tracking-[0.16em] font-bold text-white transition-all hover:scale-105 active:scale-95"
+                    style={{
+                      border: '1px solid rgba(255,255,255,0.45)',
+                      background: 'rgba(0,0,0,0.28)',
+                      backdropFilter: 'blur(10px)',
+                      WebkitBackdropFilter: 'blur(10px)',
+                      textShadow: '0 1px 6px rgba(0,0,0,0.6)',
+                    }}
+                  >
+                    View project <span aria-hidden="true">→</span>
+                  </Link>
                 )}
               </div>
             )}
