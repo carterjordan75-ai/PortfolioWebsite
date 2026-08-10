@@ -5,16 +5,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 }
 
-// The four loader colours — same palette as the PageLoader fill and the
-// index-page hover rows, so even the lock screen speaks the site's
-// colour language.
-const CIRCLES = [
-  { letter: 'X', color: '#e94560' },
-  { letter: 'O', color: '#ff6b35' },
-  { letter: 'X', color: '#00b4d8' },
-  { letter: 'O', color: '#7209b7' },
-] as const
-
 /**
  * Phone lock screen. Phones are rewritten here by the middleware for
  * every route while the mobile experience is unfinished. Static, no JS.
@@ -27,32 +17,17 @@ export default function MobileLock() {
       className="fixed inset-0 flex flex-col items-center justify-center gap-8 px-8"
       style={{ background: '#0a0a0a', zIndex: 10050 }}
     >
-      <div className="flex items-center gap-2">
-        {CIRCLES.map(({ letter, color }, i) => (
-          <div
-            key={i}
-            className="flex items-center justify-center rounded-full"
-            style={{ width: 40, height: 40, background: color }}
-            aria-hidden="true"
-          >
-            {letter === 'X' ? (
-              <svg viewBox="0 0 60 60" width="55%" height="55%">
-                <path
-                  d="M14 14 L46 46 M46 14 L14 46"
-                  stroke="#ffffff"
-                  strokeWidth="7"
-                  strokeLinecap="round"
-                  fill="none"
-                />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 60 60" width="55%" height="55%">
-                <circle cx="30" cy="30" r="16" stroke="#ffffff" strokeWidth="7" fill="none" />
-              </svg>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* The real wordmark, not the loader's X/O circles — for most phone
+          visitors this screen is the only page they see, so it should be
+          the brand rather than a stand-in for one. Inverted to white for
+          the dark background, same treatment as the nav's dark popup. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/assets/Logos/xoxo_Logo_001.png"
+        alt="XOXO"
+        className="block w-auto"
+        style={{ height: 'clamp(2.6rem, 12vw, 4.5rem)', filter: 'invert(1)' }}
+      />
       <div className="text-center">
         <p className="text-white font-black uppercase tracking-[0.18em] text-[13px] leading-relaxed">
           Please view on a desktop screen

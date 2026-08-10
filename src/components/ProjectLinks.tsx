@@ -68,13 +68,20 @@ export default function ProjectLinks({
   const [status, setStatus] = useState<string | null>(null)
 
   const persist = async (next: ProjectLink[]) => {
+    // Keep every row on screen, but only store the ones with a URL. A
+    // half-filled row is someone mid-edit — persist fires on blur, so
+    // pruning the local list here would delete the row the moment you
+    // tabbed from the label to the URL field. Storing them instead leaves
+    // `links: [{label:'',url:''}]` behind, which is an empty section that
+    // renders as a heading with nothing under it.
+    const storable = next.filter(l => l.url.trim().length > 0)
     onChange(next)
     setStatus('⟳')
     try {
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update', slug, project: { slug, links: next } }),
+        body: JSON.stringify({ action: 'update', slug, project: { slug, links: storable } }),
       })
       // fetch only rejects on network failure — a 500 resolves normally.
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`)
