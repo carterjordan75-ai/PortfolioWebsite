@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import XoxoBrandLoader, { XOXO_BRAND_DURATION } from './XoxoBrandLoader'
+import XoxoBrandLoader from './XoxoBrandLoader'
+import { currentLoader, primeLoaderPool } from '@/lib/loaderPool'
 
 interface PageLoaderProps {
   show: boolean
@@ -29,6 +30,10 @@ interface PageLoaderProps {
  * No backdrop: the overlay paints the mark and nothing else, so whatever
  * is behind stays visible. It still covers the viewport, because the
  * point is to hold the pointer off a half-built page, not to hide it.
+ *
+ * Which animation plays comes from the loader pool — the set managed in
+ * the admin panel — falling back to the one compiled into the bundle.
+ * Nothing here waits on that: see lib/loaderPool.
  */
 
 /**
@@ -45,11 +50,21 @@ const MARK_WIDTH = 'min(34vw, 340px)'
  * same trick the previous loader used, and the reason navigation doesn't
  * feel gated on the animation.
  */
-const HANDOVER_MS = Math.round(XOXO_BRAND_DURATION * 0.62)
+const HANDOVER_FRACTION = 0.62
 
 export default function PageLoader({ show, onComplete, mode = 'transition' }: PageLoaderProps) {
   const [visible, setVisible] = useState(show)
   const handedOver = useRef(false)
+
+  // Resolved once per mount, so the mark cannot swap mid-animation if the
+  // pool arrives while it is playing.
+  const art = useMemo(() => currentLoader(), [])
+
+  // Warm the pool for the rest of the session. Deliberately not awaited:
+  // the built-in plays now, the pick applies from the next loader on.
+  useEffect(() => {
+    primeLoaderPool()
+  }, [])
 
   // Any fresh `show` restarts the moment.
   useEffect(() => {
@@ -67,13 +82,13 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
         handedOver.current = true
         onComplete?.()
       }
-    }, HANDOVER_MS)
-    const done = setTimeout(() => setVisible(false), XOXO_BRAND_DURATION + 120)
+    }, Math.round(art.duration * HANDOVER_FRACTION))
+    const done = setTimeout(() => setVisible(false), art.duration + 120)
     return () => {
       clearTimeout(hand)
       clearTimeout(done)
     }
-  }, [visible, mode, onComplete])
+  }, [visible, mode, onComplete, art.duration])
 
   // Data mode leaves when the parent says the data is in. If that happens
   // before the mark has finished, it still gets its full run — cutting an
@@ -104,7 +119,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
           {/* The component fills whatever box it is handed, so the size
               decision lives here rather than inside it. */}
           <div style={{ width: MARK_WIDTH }}>
-            <XoxoBrandLoader />
+            <XoxoBrandLoader art={art} />
           </div>
         </motion.div>
       )}

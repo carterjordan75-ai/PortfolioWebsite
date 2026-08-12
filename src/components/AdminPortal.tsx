@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
+import XoxoBrandLoader from './XoxoBrandLoader'
+import { clearLoaderPick } from '@/lib/loaderPool'
 import { upload } from '@vercel/blob/client'
 import { useEditMode } from '@/contexts/EditModeContext'
 import { downloadAssetsZip } from '@/lib/downloadZip'
@@ -13,7 +15,7 @@ import MediaLibraryPicker from './MediaLibraryPicker'
 
 const ADMIN_PASSWORD = '3432'
 
-type Section = 'dashboard' | 'work' | 'archive' | 'employment' | 'experiments' | 'look' | 'info' | 'storage'
+type Section = 'dashboard' | 'work' | 'archive' | 'employment' | 'experiments' | 'look' | 'info' | 'loaders' | 'storage'
 
 /**
  * Direct-to-Blob file upload. Used by every admin panel that accepts file
@@ -127,6 +129,7 @@ export default function AdminPortal({ show, onClose }: { show: boolean; onClose:
     { id: 'experiments', label: 'Misc' },
     { id: 'look', label: 'Look Gallery' },
     { id: 'info', label: 'Info / About' },
+    { id: 'loaders', label: 'Loaders' },
     { id: 'storage', label: 'Storage' },
   ]
 
@@ -279,6 +282,10 @@ export default function AdminPortal({ show, onClose }: { show: boolean; onClose:
 
                   {activeSection === 'info' && (
                     <InfoPopupEditor onClose={onClose} />
+                  )}
+
+                  {activeSection === 'loaders' && (
+                    <LoadersAdminPanel />
                   )}
 
                   {activeSection === 'storage' && (
@@ -3456,6 +3463,237 @@ function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+/**
+ * Loader pool — which wordmark animations the site can play.
+ *
+ * Loaders are made in /logo and exported from there as a standalone HTML
+ * file; this reads that file, strips it down to the stylesheet and the
+ * SVG, and stores it. With randomise on, each visit picks one of the
+ * enabled loaders.
+ *
+ * There is always the one compiled into the bundle as well — it is what
+ * plays on the very first paint of a session, before a pick can have
+ * been fetched, and whenever the pool is empty. So an empty list here
+ * means the built-in, not no loader.
+ */
+/** Mirrors the /api/loaders index. Kept local so a client component does
+ *  not import from a route module. */
+type LoaderIndexShape = {
+  randomise: boolean
+  pinnedId: string | null
+  items: Array<{ id: string; name: string; enabled: boolean; duration: number; bytes: number }>
+}
+
+function LoadersAdminPanel() {
+  const [index, setIndex] = useState<LoaderIndexShape>({ randomise: true, pinnedId: null, items: [] })
+  const [loading, setLoading] = useState(true)
+  const [status, setStatus] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [pendingName, setPendingName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [previewArt, setPreviewArt] = useState<{ css: string; svg: string } | null>(null)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    fetch('/api/loaders', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => { setIndex(d); setLoading(false) })
+      .catch(e => { setError(String(e)); setLoading(false) })
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const patch = async (body: Record<string, unknown>) => {
+    setError(null)
+    const res = await fetch('/api/loaders', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) { setError(`Save failed (HTTP ${res.status})`); return false }
+    setIndex(await res.json())
+    // The visitor's pick is cached for their session; drop ours so the
+    // next loader here reflects the change rather than the old roll.
+    clearLoaderPick()
+    return true
+  }
+
+  const add = async () => {
+    if (!pendingFile || !pendingName.trim()) return
+    setBusy(true); setError(null); setStatus(null)
+    try {
+      const html = await pendingFile.text()
+      const res = await fetch('/api/loaders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: pendingName.trim(), html }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      setStatus(`Added — plays for ${(data.duration / 1000).toFixed(1)}s`)
+      setPendingFile(null); setPendingName('')
+      clearLoaderPick()
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (id: string, name: string) => {
+    if (!confirm(`Delete "${name}"? The site will stop using it.`)) return
+    const res = await fetch(`/api/loaders?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+    if (!res.ok) { setError(`Delete failed (HTTP ${res.status})`); return }
+    setIndex(await res.json())
+    if (previewId === id) { setPreviewId(null); setPreviewArt(null) }
+    clearLoaderPick()
+  }
+
+  const preview = async (id: string) => {
+    if (previewId === id) { setPreviewId(null); setPreviewArt(null); return }
+    setPreviewId(id); setPreviewArt(null)
+    const res = await fetch(`/api/loaders?id=${encodeURIComponent(id)}`, { cache: 'no-store' })
+    if (res.ok) setPreviewArt(await res.json())
+  }
+
+  const enabled = index.items.filter(i => i.enabled)
+
+  return (
+    <div>
+      <h2 className="text-white text-[11px] uppercase tracking-[0.2em] font-black mb-1">Loaders</h2>
+      <p className="text-white/35 text-[9px] leading-relaxed mb-5 max-w-lg">
+        Made in <span className="text-white/60">/logo</span> and exported from there. With randomise on,
+        each visit plays one of the enabled ones. The loader built into the site always covers the first
+        paint of a session and any gap, so an empty list here means that one — never nothing.
+      </p>
+
+      {error && <p className="text-red-400 text-[9px] mb-3">{error}</p>}
+      {status && <p className="text-emerald-400 text-[9px] mb-3">{status}</p>}
+
+      {/* ── add ─────────────────────────────────────────────── */}
+      <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 mb-5">
+        <p className="text-white/30 text-[7px] uppercase tracking-[0.15em] mb-2">Add a loader</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="file"
+            accept=".html,text/html"
+            onChange={e => {
+              const f = e.target.files?.[0] || null
+              setPendingFile(f)
+              if (f && !pendingName) setPendingName(f.name.replace(/\.html?$/i, ''))
+            }}
+            className="text-white/60 text-[9px] max-w-[210px]"
+          />
+          <input
+            value={pendingName}
+            onChange={e => setPendingName(e.target.value)}
+            placeholder="Name it"
+            className="bg-white/5 border border-white/12 rounded-full px-3 py-1.5 text-white text-[10px] outline-none"
+          />
+          <button
+            onClick={add}
+            disabled={busy || !pendingFile || !pendingName.trim()}
+            className="px-4 py-1.5 rounded-full text-[9px] uppercase tracking-[0.14em] font-bold bg-white text-black disabled:opacity-30"
+          >
+            {busy ? 'Reading…' : 'Add'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── behaviour ───────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <label className="flex items-center gap-2 text-white/70 text-[10px] cursor-pointer">
+          <input
+            type="checkbox"
+            checked={index.randomise}
+            onChange={e => patch({ randomise: e.target.checked })}
+          />
+          Randomise — pick one at random each visit
+        </label>
+        {!index.randomise && (
+          <select
+            value={index.pinnedId || ''}
+            onChange={e => patch({ pinnedId: e.target.value || null })}
+            className="bg-white/5 border border-white/12 rounded-full px-3 py-1.5 text-white text-[10px] outline-none"
+          >
+            <option value="">First enabled</option>
+            {enabled.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </select>
+        )}
+      </div>
+
+      {/* ── list ────────────────────────────────────────────── */}
+      {loading ? (
+        <p className="text-white/30 text-[9px]">Loading…</p>
+      ) : !index.items.length ? (
+        <p className="text-white/30 text-[9px]">
+          Nothing added. The site is using the built-in loader.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {index.items.map(item => (
+            <div key={item.id} className="rounded-lg border border-white/8 bg-white/[0.02]">
+              <div className="flex items-center gap-3 px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={item.enabled}
+                  onChange={e => patch({ items: [{ id: item.id, enabled: e.target.checked }] })}
+                  title={item.enabled ? 'In the pool' : 'Not in the pool'}
+                />
+                <input
+                  defaultValue={item.name}
+                  onBlur={e => {
+                    if (e.target.value.trim() && e.target.value !== item.name) {
+                      patch({ items: [{ id: item.id, name: e.target.value }] })
+                    }
+                  }}
+                  className="bg-transparent text-white text-[11px] outline-none flex-1 min-w-0 border-b border-transparent focus:border-white/20"
+                />
+                <span className="text-white/25 text-[8px] tabular-nums whitespace-nowrap">
+                  {(item.duration / 1000).toFixed(1)}s · {Math.round(item.bytes / 1024)}KB
+                </span>
+                <button
+                  onClick={() => preview(item.id)}
+                  className="text-white/50 hover:text-white text-[8px] uppercase tracking-[0.12em]"
+                >
+                  {previewId === item.id ? 'Hide' : 'Play'}
+                </button>
+                <button
+                  onClick={() => remove(item.id, item.name)}
+                  className="text-white/30 hover:text-red-400 text-[11px] leading-none"
+                  title="Delete"
+                >
+                  ×
+                </button>
+              </div>
+              {previewId === item.id && (
+                <div className="px-3 pb-3">
+                  <div className="rounded-md bg-black p-4 flex items-center justify-center min-h-[120px]">
+                    {previewArt ? (
+                      <div style={{ width: 'min(70%, 320px)' }}>
+                        <XoxoBrandLoader
+                          key={`${item.id}-${previewId}`}
+                          art={{ ...previewArt, duration: item.duration }}
+                          knockout="#000000"
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-white/25 text-[9px]">Fetching…</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function StorageAdminPanel() {
