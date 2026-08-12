@@ -22,6 +22,20 @@ export type LoaderArt = {
   svg: string
   /** Longest animation end, ms — how long until the mark is complete. */
   duration: number
+  /**
+   * True when the mark paints in a single greyscale colour.
+   *
+   * Such a mark is not "white" or "black", it is "the ink" — it should
+   * follow whatever it is placed on, so the colour is stripped and the
+   * renderer supplies one from the current theme. Anything with an
+   * actual colour, or a gradient, keeps what it was given.
+   */
+  mono: boolean
+}
+
+const isGrey = (hex: string) => {
+  const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex)
+  return !!m && m[1].toLowerCase() === m[2].toLowerCase() && m[2].toLowerCase() === m[3].toLowerCase()
 }
 
 /** Whole viewBox units. The mark is 1000 wide, so this is sub-pixel. */
@@ -93,7 +107,18 @@ export function importLoaderHtml(html: string): LoaderArt {
         .join(', ')}`,
     )
 
+  // A loader paints the mark and nothing else. The export is a whole
+  // page, so it brings page chrome — a body background above all — and
+  // scoping that to `.xoxo-brand body` would only turn it into dead
+  // rules rather than removing it. Both go: the chrome selectors are
+  // dropped, and any background declaration is stripped from what is
+  // left, so no export can smuggle one in.
+  const isPageChrome = (sel: string) => /^\s*(html|body|:root)\b/.test(sel)
+  const dropBackground = (body: string) =>
+    body.replace(/(^|;)\s*background(-color)?\s*:[^;]*/gi, '$1').replace(/^;+/, '')
+
   let css = rules
+    .filter(([head]) => head.startsWith('@') || !isPageChrome(head))
     .map(([head, body]) => {
       if (head.startsWith('@keyframes')) {
         return `@keyframes ${KF_PREFIX}${head.split(/\s+/).pop()}{${body}}`
@@ -103,9 +128,11 @@ export function importLoaderHtml(html: string): LoaderArt {
         .split(',')
         .map(s => s.trim())
         .filter(Boolean)
+        .filter(s => !isPageChrome(s))
         .map(s => (s.startsWith(`.${LOADER_CLASS}`) ? s : `.${LOADER_CLASS} ${s}`))
         .join(',')
-      return `${sels}{${renameAnimations(body)}}`
+      if (!sels) return ''
+      return `${sels}{${dropBackground(renameAnimations(body))}}`
     })
     .join('')
 
@@ -119,15 +146,22 @@ export function importLoaderHtml(html: string): LoaderArt {
     `animation-delay:0ms!important;animation-iteration-count:1!important}}` +
     css
 
-  // The export hard-codes --bg for the arc knockout. Inline style beats
-  // anything the component sets, so it comes out and the knockout colour
-  // becomes the caller's decision — they know what it is sitting on.
-  const svg = rounded.svg
-    .replace(/(style="[^"]*?);?--bg:[^;"]*/, '$1')
-    .replace(/>\s+</g, '><')
-    .trim()
+  // Whether the mark carries a colour of its own. A gradient always
+  // does; a solid one only if it is not greyscale. Newer exports already
+  // omit the colour when they are mono, so an absent one counts as mono.
+  const inkMatch = rounded.svg.match(/style="[^"]*color:\s*(#[0-9a-fA-F]{3,8})/)
+  const gradient = /<(linear|radial)Gradient/i.test(rounded.svg) || /url\(#inkg\)/.test(css)
+  const mono = !gradient && (!inkMatch || isGrey(inkMatch[1]))
 
-  return { css, svg, duration: longestEnd(css) }
+  // Strip anything the export baked in that the renderer should decide:
+  // the knockout colour always, and the ink too when it is mono. Inline
+  // style beats anything a component sets, so leaving them would make
+  // the props below silently do nothing.
+  let svg = rounded.svg.replace(/(style="[^"]*?);?--bg:[^;"]*/, '$1')
+  if (mono) svg = svg.replace(/(style="[^"]*?);?color:[^;"]*/, '$1')
+  svg = svg.replace(/ style="\s*"/, '').replace(/>\s+</g, '><').trim()
+
+  return { css, svg, duration: longestEnd(css), mono }
 }
 
 /**

@@ -4,9 +4,17 @@ import {
   XOXO_BRAND_CSS,
   XOXO_BRAND_SVG,
   XOXO_BRAND_DURATION,
+  XOXO_BRAND_MONO,
 } from '@/components/xoxoBrandLoaderAssets'
 
-export type LoaderArt = { css: string; svg: string; duration: number }
+export type LoaderArt = {
+  css: string
+  svg: string
+  duration: number
+  /** Paints in one greyscale colour, so it follows the theme rather than
+   *  carrying a colour of its own. */
+  mono: boolean
+}
 
 /**
  * The loader compiled into the bundle. Always available, needs no
@@ -16,6 +24,7 @@ export const BUILT_IN: LoaderArt = {
   css: XOXO_BRAND_CSS,
   svg: XOXO_BRAND_SVG,
   duration: XOXO_BRAND_DURATION,
+  mono: XOXO_BRAND_MONO,
 }
 
 const CACHE_KEY = 'xoxoLoaderPick'

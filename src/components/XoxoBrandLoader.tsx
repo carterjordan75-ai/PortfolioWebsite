@@ -1,6 +1,7 @@
 'use client'
 
 import { useId } from 'react'
+import { useDarkMode } from '@/contexts/DarkModeContext'
 import { BUILT_IN, type LoaderArt } from '@/lib/loaderPool'
 import { XOXO_BRAND_DURATION } from './xoxoBrandLoaderAssets'
 
@@ -17,14 +18,12 @@ export type { LoaderArt }
  * it usable on a gate as well as a loader — the same component either
  * covers a wait or sits finished behind a form.
  *
- * Transparent by default: it paints the mark and nothing else, so it
- * sits on whatever is behind it.
+ * It paints the mark and nothing else. No background, ever: a loader that
+ * brought its own would be a coloured screen with a mark on it.
  *
- * The stylesheet is injected per-instance rather than living in
- * globals.css because it is ~200KB of generated keyframes that only a
- * few routes ever need. Selectors are namespaced to `.xoxo-brand` and
- * keyframes to `xb-` when the loader is imported, so it cannot reach
- * anything else on the page.
+ * A mark exported in a single greyscale colour is treated as "the ink"
+ * rather than as white or black, and follows the site's light/dark mode.
+ * One with a colour or a gradient keeps exactly what it was given.
  */
 export default function XoxoBrandLoader({
   className = '',
@@ -34,30 +33,42 @@ export default function XoxoBrandLoader({
    */
   art = BUILT_IN,
   /**
+   * Force the ink colour, overriding the light/dark inversion. For
+   * surfaces that know what they are — a dark gate, a preview swatch —
+   * rather than following the viewer's own theme.
+   */
+  ink,
+  /**
    * Colour the arc knockout paints in.
    *
-   * The exported artwork can have arcs that cross the letterforms, and
-   * it separates them by painting a wider stroke of the background
-   * colour underneath — which only works if you can name that colour. On
-   * a transparent loader you can't, so this defaults to `transparent`:
-   * the arcs then simply meet the letters instead of cutting through
-   * them. Set it to a solid colour when the loader sits on one.
+   * The exported artwork can have arcs that cross the letterforms, and it
+   * separates them by painting a wider stroke of the background colour
+   * underneath — which only works if you can name that colour. With no
+   * background you can't, so this defaults to `transparent`: the arcs
+   * then simply meet the letters instead of cutting through them. Set it
+   * when the loader sits on a solid ground.
    */
   knockout = 'transparent',
 }: {
   className?: string
   art?: LoaderArt
+  ink?: string
   knockout?: string
 }) {
   // One <style> per mount would duplicate ~200KB if two instances ever
-  // rendered together. They don't today, but the id keeps it honest if
-  // that changes — React dedupes identical keys, not identical content.
+  // rendered together. The id keeps that honest — React dedupes identical
+  // keys, not identical content.
   const id = useId()
+  const { dark } = useDarkMode()
+
+  // Only a mono mark takes a colour from here; anything else carries its
+  // own and must not be overpainted.
+  const colour = ink ?? (art.mono ? (dark ? '#ffffff' : '#111111') : undefined)
 
   return (
     <div
       className={`xoxo-brand ${className}`}
-      style={{ ['--bg' as string]: knockout }}
+      style={{ ...(colour ? { color: colour } : null), ['--bg' as string]: knockout }}
       role="img"
       aria-label="XOXO"
     >

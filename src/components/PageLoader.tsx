@@ -66,10 +66,14 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
     primeLoaderPool()
   }, [])
 
+  // When the current run started, so it can always be allowed to finish.
+  const startedAt = useRef(0)
+
   // Any fresh `show` restarts the moment.
   useEffect(() => {
     if (show) {
       handedOver.current = false
+      startedAt.current = Date.now()
       setVisible(true)
     }
   }, [show])
@@ -90,14 +94,17 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
     }
   }, [visible, mode, onComplete, art.duration])
 
-  // Data mode leaves when the parent says the data is in. If that happens
-  // before the mark has finished, it still gets its full run — cutting an
-  // animation off mid-flight to reveal a page reads as a glitch.
+  // Data mode leaves when the parent says the data is in — but never
+  // before the mark has finished. Data usually arrives inside the
+  // animation, and cutting it off mid-flight to reveal the page is the
+  // one thing that makes a loader read as a glitch rather than a moment.
+  // So the exit waits out whatever is left of the run.
   useEffect(() => {
     if (mode !== 'data' || show || !visible) return
-    const t = setTimeout(() => setVisible(false), 80)
+    const remaining = Math.max(0, art.duration - (Date.now() - startedAt.current))
+    const t = setTimeout(() => setVisible(false), remaining + 80)
     return () => clearTimeout(t)
-  }, [show, visible, mode])
+  }, [show, visible, mode, art.duration])
 
   return (
     <AnimatePresence>

@@ -83,7 +83,9 @@ export default function GatePage() {
           draggable={false}
           onDragStart={(e) => e.preventDefault()}
         >
-          <XoxoBrandLoader />
+          {/* Dark video backdrop: white ink regardless of the viewer's
+              theme, and no knockout colour to name. */}
+          <XoxoBrandLoader ink="#ffffff" />
         </div>
 
         <p

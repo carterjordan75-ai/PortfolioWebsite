@@ -3480,6 +3480,8 @@ function formatBytes(n: number): string {
  */
 /** Mirrors the /api/loaders index. Kept local so a client component does
  *  not import from a route module. */
+type LoaderArtShape = { css: string; svg: string; duration: number; mono: boolean }
+
 type LoaderIndexShape = {
   randomise: boolean
   pinnedId: string | null
@@ -3495,7 +3497,12 @@ function LoadersAdminPanel() {
   const [pendingName, setPendingName] = useState('')
   const [busy, setBusy] = useState(false)
   const [previewId, setPreviewId] = useState<string | null>(null)
-  const [previewArt, setPreviewArt] = useState<{ css: string; svg: string } | null>(null)
+  const [previewArt, setPreviewArt] = useState<LoaderArtShape | null>(null)
+  const [previewW, setPreviewW] = useState(320)
+  // Loaders carry no background, so a preview has to supply one — and
+  // which one matters: a mono mark inverts, so it needs checking on both.
+  const [previewBg, setPreviewBg] = useState<'dark' | 'light' | 'none'>('dark')
+  const [replay, setReplay] = useState(0)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -3559,6 +3566,7 @@ function LoadersAdminPanel() {
     setPreviewId(id); setPreviewArt(null)
     const res = await fetch(`/api/loaders?id=${encodeURIComponent(id)}`, { cache: 'no-store' })
     if (res.ok) setPreviewArt(await res.json())
+    setReplay(r => r + 1)
   }
 
   const enabled = index.items.filter(i => i.enabled)
@@ -3673,19 +3681,76 @@ function LoadersAdminPanel() {
               </div>
               {previewId === item.id && (
                 <div className="px-3 pb-3">
-                  <div className="rounded-md bg-black p-4 flex items-center justify-center min-h-[120px]">
+                  <div className="flex flex-wrap items-center gap-3 mb-2">
+                    <label className="flex items-center gap-2 text-white/40 text-[8px] uppercase tracking-[0.12em]">
+                      Size
+                      <input
+                        type="range" min={80} max={900} step={10}
+                        value={previewW}
+                        onChange={e => setPreviewW(Number(e.target.value))}
+                        className="w-40"
+                      />
+                      <span className="tabular-nums text-white/30 w-10">{previewW}px</span>
+                    </label>
+                    <div className="flex items-center gap-1">
+                      {(['dark', 'light', 'none'] as const).map(b => (
+                        <button
+                          key={b}
+                          onClick={() => setPreviewBg(b)}
+                          className={`px-2.5 py-1 rounded-full text-[8px] uppercase tracking-[0.12em] border ${
+                            previewBg === b
+                              ? 'bg-white text-black border-white'
+                              : 'text-white/50 border-white/15'
+                          }`}
+                        >
+                          {b}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setReplay(r => r + 1)}
+                      className="text-white/50 hover:text-white text-[8px] uppercase tracking-[0.12em]"
+                    >
+                      ↻ Replay
+                    </button>
+                  </div>
+                  <div
+                    className="rounded-md p-5 flex items-center justify-center min-h-[140px] overflow-hidden"
+                    style={{
+                      background:
+                        previewBg === 'dark' ? '#0a0a0a'
+                        : previewBg === 'light' ? '#f2f2ef'
+                        // A chequerboard, so "no background" reads as
+                        // transparent rather than as some third colour.
+                        : 'repeating-conic-gradient(#2a2a2a 0% 25%, #1c1c1c 0% 50%) 50%/16px 16px',
+                    }}
+                  >
                     {previewArt ? (
-                      <div style={{ width: 'min(70%, 320px)' }}>
+                      <div style={{ width: previewW, maxWidth: '100%' }}>
                         <XoxoBrandLoader
-                          key={`${item.id}-${previewId}`}
+                          key={`${item.id}-${replay}-${previewBg}`}
                           art={{ ...previewArt, duration: item.duration }}
-                          knockout="#000000"
+                          ink={previewBg === 'light' ? '#111111' : '#ffffff'}
+                          knockout={
+                            previewBg === 'dark' ? '#0a0a0a'
+                            : previewBg === 'light' ? '#f2f2ef'
+                            : 'transparent'
+                          }
                         />
                       </div>
                     ) : (
                       <span className="text-white/25 text-[9px]">Fetching…</span>
                     )}
                   </div>
+                  {!previewArt ? null : previewArt.mono ? (
+                    <p className="text-white/25 text-[8px] mt-1.5">
+                      Mono — follows the site&rsquo;s light / dark mode. Check it on both.
+                    </p>
+                  ) : (
+                    <p className="text-white/25 text-[8px] mt-1.5">
+                      Has its own colour — shown as exported, whatever the mode.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

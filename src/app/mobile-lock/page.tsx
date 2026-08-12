@@ -27,7 +27,7 @@ export default function MobileLock() {
         {/* This screen has a solid ground, so the arc knockout has a
             colour to knock out to. The loader defaults to transparent
             because most places it appears do not. */}
-        <XoxoBrandLoader knockout="#0a0a0a" />
+        <XoxoBrandLoader ink="#ffffff" knockout="#0a0a0a" />
       </div>
       <div className="text-center">
         <p className="text-white font-black uppercase tracking-[0.18em] text-[13px] leading-relaxed">
