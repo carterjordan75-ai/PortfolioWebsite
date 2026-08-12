@@ -10,10 +10,13 @@ interface PageLoaderProps {
   show: boolean
   onComplete?: () => void
   /**
-   * 'transition' (default) — plays the wordmark once, hands over partway
-   *   through so the parent can start navigating, then fades.
-   * 'data' — plays once and then holds on the finished mark for as long
+   * 'transition' (default) — plays the wordmark through, then hands over
+   *   and fades.
+   * 'data' — plays through, then holds on the finished mark for as long
    *   as `show` stays true. When `show` goes false it fades out.
+   *
+   * Both obey the same rule: a full play-through, every time, before
+   * anything is revealed.
    */
   mode?: 'transition' | 'data'
 }
@@ -22,11 +25,16 @@ interface PageLoaderProps {
  * The site's loading screen: the XOXO wordmark animation, tuned in /logo
  * and exported from there.
  *
- * The mark plays once and stays complete — every animation in the
- * exported stylesheet carries `fill-mode: both`, so there is no loop to
- * stop and no resting state to arrange. A wait longer than the animation
- * simply sits on the finished wordmark, which reads better than a
- * spinner going round for the fourth time.
+ * The rule it exists to keep: the mark plays through once, completely,
+ * and then holds its final frame until the thing it covers is ready. A
+ * page is never revealed part way through a run, however quickly it
+ * loads — a loader cut off mid-flight reads as a glitch, and one that
+ * only sometimes completes reads as a broken one.
+ *
+ * Holding costs nothing to arrange: every animation in the exported
+ * stylesheet carries `fill-mode: both`, so there is no loop to stop. A
+ * wait longer than the animation simply sits on the finished wordmark,
+ * which reads better than a spinner going round for the fourth time.
  *
  * The screen has a ground — black or white with the site's mode — because
  * its job is to cover a half-built page. The mark itself carries no
@@ -52,12 +60,12 @@ interface PageLoaderProps {
 const MARK_WIDTH = 'min(34vw, 340px)'
 
 /**
- * When a transition hands over. Partway through rather than at the end,
- * so the incoming route mounts underneath while the mark finishes — the
- * same trick the previous loader used, and the reason navigation doesn't
- * feel gated on the animation.
+ * A beat after the mark completes, before anything is revealed. Without
+ * it the exit begins on the same frame the last keyframe lands, which
+ * reads as the animation being cut off at the very end rather than
+ * finishing.
  */
-const HANDOVER_FRACTION = 0.62
+const SETTLE_MS = 90
 
 export default function PageLoader({ show, onComplete, mode = 'transition' }: PageLoaderProps) {
   const [visible, setVisible] = useState(show)
@@ -82,6 +90,18 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   // When the current run started, so it can always be allowed to finish.
   const startedAt = useRef(0)
 
+  /**
+   * THE RULE, and the only place it lives: a loader plays through once,
+   * completely, and then holds its final frame until whatever it covers
+   * is ready. Nothing is revealed part way through a run.
+   *
+   * Everything below asks this how long is left. It reads the clock
+   * rather than a timer, so an exit requested at any point — before the
+   * mark has started, half way, or long after — resolves to the same
+   * answer.
+   */
+  const msLeftOfRun = () => Math.max(0, art.duration - (Date.now() - startedAt.current))
+
   // Any fresh `show` restarts the moment.
   useEffect(() => {
     if (show) {
@@ -91,31 +111,28 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
     }
   }, [show])
 
-  // Transition mode drives itself: hand over partway, then leave.
+  // Transition mode drives itself. The handover used to fire at 62% so
+  // the incoming route could mount underneath while the mark finished —
+  // faster, but it put a half-played loader over a live page, which is
+  // exactly what the rule forbids. It now waits for the full run.
   useEffect(() => {
     if (!visible || mode !== 'transition') return
-    const hand = setTimeout(() => {
+    const t = setTimeout(() => {
       if (!handedOver.current) {
         handedOver.current = true
         onComplete?.()
       }
-    }, Math.round(art.duration * HANDOVER_FRACTION))
-    const done = setTimeout(() => setVisible(false), art.duration + 120)
-    return () => {
-      clearTimeout(hand)
-      clearTimeout(done)
-    }
+      setVisible(false)
+    }, msLeftOfRun() + SETTLE_MS)
+    return () => clearTimeout(t)
   }, [visible, mode, onComplete, art.duration])
 
-  // Data mode leaves when the parent says the data is in — but never
-  // before the mark has finished. Data usually arrives inside the
-  // animation, and cutting it off mid-flight to reveal the page is the
-  // one thing that makes a loader read as a glitch rather than a moment.
-  // So the exit waits out whatever is left of the run.
+  // Data mode leaves when the parent says the data is in — but only once
+  // the run is done. Data usually lands inside the animation, so this is
+  // the common path, not the edge case.
   useEffect(() => {
     if (mode !== 'data' || show || !visible) return
-    const remaining = Math.max(0, art.duration - (Date.now() - startedAt.current))
-    const t = setTimeout(() => setVisible(false), remaining + 80)
+    const t = setTimeout(() => setVisible(false), msLeftOfRun() + SETTLE_MS)
     return () => clearTimeout(t)
   }, [show, visible, mode, art.duration])
 
