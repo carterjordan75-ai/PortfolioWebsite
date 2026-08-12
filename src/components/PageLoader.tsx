@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import XoxoBrandLoader from './XoxoBrandLoader'
+import { useDarkMode } from '@/contexts/DarkModeContext'
 import { currentLoader, primeLoaderPool } from '@/lib/loaderPool'
 
 interface PageLoaderProps {
@@ -27,9 +28,15 @@ interface PageLoaderProps {
  * simply sits on the finished wordmark, which reads better than a
  * spinner going round for the fourth time.
  *
- * No backdrop: the overlay paints the mark and nothing else, so whatever
- * is behind stays visible. It still covers the viewport, because the
- * point is to hold the pointer off a half-built page, not to hide it.
+ * The screen has a ground — black or white with the site's mode — because
+ * its job is to cover a half-built page. The mark itself carries no
+ * background of its own: that is the artwork's rule, not the screen's,
+ * and the two are easy to confuse. Here is where the colour is decided;
+ * XoxoBrandLoader never paints one.
+ *
+ * Having a ground also gives the arc knockout something to knock out to,
+ * so it is handed the same colour — otherwise arcs crossing a letterform
+ * would merge into it.
  *
  * Which animation plays comes from the loader pool — the set managed in
  * the admin panel — falling back to the one compiled into the bundle.
@@ -55,6 +62,12 @@ const HANDOVER_FRACTION = 0.62
 export default function PageLoader({ show, onComplete, mode = 'transition' }: PageLoaderProps) {
   const [visible, setVisible] = useState(show)
   const handedOver = useRef(false)
+  const { dark } = useDarkMode()
+
+  // The screen's ground. The mark's ink follows the same mode inside
+  // XoxoBrandLoader, so a mono loader lands white-on-black or
+  // black-on-white without either end having to know about the other.
+  const ground = dark ? '#0a0a0a' : '#ffffff'
 
   // Resolved once per mount, so the mark cannot swap mid-animation if the
   // pool arrives while it is playing.
@@ -118,6 +131,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
+            background: ground,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -126,7 +140,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
           {/* The component fills whatever box it is handed, so the size
               decision lives here rather than inside it. */}
           <div style={{ width: MARK_WIDTH }}>
-            <XoxoBrandLoader art={art} />
+            <XoxoBrandLoader art={art} knockout={ground} />
           </div>
         </motion.div>
       )}
