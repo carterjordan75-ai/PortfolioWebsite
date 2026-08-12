@@ -79,7 +79,7 @@ export default function GatePage() {
             in the exported sheet ends with fill-mode: both. */}
         <div
           className="block mb-6"
-          style={{ width: 'clamp(12rem, 30vw, 22rem)' }}
+          style={{ width: 'clamp(10rem, 24vw, 17rem)' }}
           draggable={false}
           onDragStart={(e) => e.preventDefault()}
         >

@@ -26,13 +26,18 @@ interface PageLoaderProps {
  * simply sits on the finished wordmark, which reads better than a
  * spinner going round for the fourth time.
  *
- * The background is the one the mark was designed against rather than
- * the site's dark-mode setting. The artwork is white with a knockout
- * that assumes a dark ground, so following the theme would break it on
- * the light pages.
+ * No backdrop: the overlay paints the mark and nothing else, so whatever
+ * is behind stays visible. It still covers the viewport, because the
+ * point is to hold the pointer off a half-built page, not to hide it.
  */
 
-const BACKDROP = '#0a0a0a'
+/**
+ * How wide the mark sits. A loading screen wants the mark legible, not
+ * filling the window — the arcs and accents throw well outside the
+ * wordmark's own box, so the artwork occupies noticeably more room than
+ * this number suggests.
+ */
+const MARK_WIDTH = 'min(34vw, 340px)'
 
 /**
  * When a transition hands over. Partway through rather than at the end,
@@ -91,7 +96,6 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
-            background: BACKDROP,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -99,7 +103,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
         >
           {/* The component fills whatever box it is handed, so the size
               decision lives here rather than inside it. */}
-          <div style={{ width: 'min(74vw, 860px)' }}>
+          <div style={{ width: MARK_WIDTH }}>
             <XoxoBrandLoader />
           </div>
         </motion.div>
