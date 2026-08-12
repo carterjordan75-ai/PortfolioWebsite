@@ -33,6 +33,38 @@ function Tool({ signOut }: { signOut: () => Promise<void> }) {
   const [doc, setDoc] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // The tuner cannot store its own saved versions: a srcDoc frame has an
+  // opaque origin, so its localStorage is a throwaway that empties on
+  // reload. It asks through here instead, and this side does the fetch
+  // from a real origin with a real session.
+  useEffect(() => {
+    const onMessage = async (e: MessageEvent) => {
+      const msg = e.data
+      if (!msg || typeof msg !== 'object' || msg.chan !== 'xoxo-presets') return
+      const reply = (payload: unknown) =>
+        (e.source as Window | null)?.postMessage(
+          { chan: 'xoxo-presets', id: msg.id, payload }, '*',
+        )
+      try {
+        if (msg.op === 'load') {
+          const r = await fetch('/api/logo-presets', { cache: 'no-store' })
+          reply(r.ok ? (await r.json()).presets ?? {} : {})
+        } else if (msg.op === 'save') {
+          const r = await fetch('/api/logo-presets', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ presets: msg.presets }),
+          })
+          reply({ ok: r.ok })
+        }
+      } catch {
+        reply(msg.op === 'load' ? {} : { ok: false })
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
   useEffect(() => {
     let alive = true
     fetch('/api/logo-tool', { cache: 'no-store', credentials: 'same-origin' })
