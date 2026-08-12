@@ -240,6 +240,9 @@ export default function Navigation() {
   // links that make no sense from inside a review session.
   if (pathname === '/gate') return null
   if (pathname === '/dailies' || pathname.startsWith('/dailies/')) return null
+  // The logo tuner is a full-screen tool behind its own password —
+  // the site chrome has nothing to offer it.
+  if (pathname === '/logo') return null
 
   return (
     <>

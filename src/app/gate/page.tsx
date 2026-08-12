@@ -3,6 +3,7 @@
 import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { startAmbientAudio } from '@/lib/ambientAudio'
+import XoxoBrandLoader from '@/components/XoxoBrandLoader'
 
 export default function GatePage() {
   const [passcode, setPasscode] = useState('')
@@ -72,24 +73,18 @@ export default function GatePage() {
         onSubmit={handleSubmit}
         className="relative w-full max-w-sm flex flex-col items-center text-center"
       >
-        {/* XOXO wordmark — inverted to white via CSS filter so the same
-            artwork works on the dark backdrop. */}
+        {/* XOXO wordmark, animated. It plays once on load and then holds
+            on the finished mark — the gate is a place someone sits and
+            types, so a loop would be a distraction, and every animation
+            in the exported sheet ends with fill-mode: both. */}
         <div
-          role="img"
-          aria-label="XOXO"
           className="block mb-6"
+          style={{ width: 'clamp(12rem, 30vw, 22rem)' }}
           draggable={false}
           onDragStart={(e) => e.preventDefault()}
-          style={{
-            backgroundImage: 'url(/assets/Logos/xoxo_Logo_001.png)',
-            backgroundRepeat: 'no-repeat',
-            backgroundPosition: 'center',
-            backgroundSize: 'contain',
-            height: 'clamp(2rem, 5vw, 3.5rem)',
-            width: 'clamp(12rem, 30vw, 22rem)',
-            filter: 'invert(1)',
-          }}
-        />
+        >
+          <XoxoBrandLoader />
+        </div>
 
         <p
           className="text-[9px] md:text-[10px] uppercase tracking-[0.22em] font-bold mb-6"

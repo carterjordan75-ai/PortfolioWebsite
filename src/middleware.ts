@@ -65,6 +65,19 @@ export function middleware(request: NextRequest) {
     return NextResponse.rewrite(new URL('/mobile-lock', request.url))
   }
 
+  // ── Logo tuner ──────────────────────────────────────────────────
+  // Exempt from the site passcode for the same reason the dailies portal
+  // is: it carries its own password (the dailies one), so the site gate
+  // would only be a second, redundant prompt. It is NOT exempt from the
+  // phone lock — that block runs above this one and catches phones
+  // first, which is right for a desktop tool.
+  //
+  // /api/logo-tool checks the dailies session itself before returning a
+  // byte; the page's gate only decides what to render.
+  if (pathname === '/logo' || pathname.startsWith('/api/logo-tool')) {
+    return NextResponse.next()
+  }
+
   // ── Passcode gate ───────────────────────────────────────────────
   const cookie = request.cookies.get(COOKIE_NAME)
   if (cookie?.value === SITE_PASSCODE) {

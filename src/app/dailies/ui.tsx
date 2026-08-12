@@ -315,7 +315,14 @@ export async function downloadAsset(url: string, filename?: string) {
  * Wraps a view in the password gate. `authed` starts null (unknown) so
  * neither the login form nor the content flashes before we know.
  */
-export function Gate({ children }: { children: (signOut: () => Promise<void>) => React.ReactNode }) {
+export function Gate({
+  children, title = 'Motion Dailies', subtitle = 'Private review portal',
+}: {
+  children: (signOut: () => Promise<void>) => React.ReactNode
+  /** What the login screen calls itself. The password is shared, the name is not. */
+  title?: string
+  subtitle?: string
+}) {
   const [authed, setAuthed] = useState<boolean | null>(null)
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -366,10 +373,10 @@ export function Gate({ children }: { children: (signOut: () => Promise<void>) =>
       <Shell>
         <form onSubmit={submit} style={{ width: '100%', maxWidth: 320 }}>
           <h1 style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 6 }}>
-            Motion Dailies
+            {title}
           </h1>
           <p style={{ fontSize: 10, opacity: 0.45, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 22 }}>
-            Private review portal
+            {subtitle}
           </p>
           <input
             type="password"

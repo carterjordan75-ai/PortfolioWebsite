@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import XoxoBrandLoader from '@/components/XoxoBrandLoader'
 
 export const metadata: Metadata = {
   title: 'Please view on a desktop screen',
@@ -17,17 +18,14 @@ export default function MobileLock() {
       className="fixed inset-0 flex flex-col items-center justify-center gap-8 px-8"
       style={{ background: '#0a0a0a', zIndex: 10050 }}
     >
-      {/* The real wordmark, not the loader's X/O circles — for most phone
-          visitors this screen is the only page they see, so it should be
-          the brand rather than a stand-in for one. Inverted to white for
-          the dark background, same treatment as the nav's dark popup. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/assets/Logos/xoxo_Logo_001.png"
-        alt="XOXO"
-        className="block w-auto"
-        style={{ height: 'clamp(2.6rem, 12vw, 4.5rem)', filter: 'invert(1)' }}
-      />
+      {/* The real wordmark, animated. For most phone visitors this screen
+          is the only page they see, so it gets the brand moment rather
+          than a still. It plays once on load and holds on the finished
+          mark — there is nothing to wait for here, so a loop would just
+          be movement for its own sake. */}
+      <div style={{ width: 'min(78vw, 26rem)' }}>
+        <XoxoBrandLoader />
+      </div>
       <div className="text-center">
         <p className="text-white font-black uppercase tracking-[0.18em] text-[13px] leading-relaxed">
           Please view on a desktop screen
