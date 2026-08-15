@@ -339,8 +339,13 @@ export default function LookPage() {
   const activeData = activeItem !== null ? allItems[activeItem] : null
 
   return (
-    <PageTransition>
+    <>
+      {/* Outside PageTransition on purpose: the loader is a fixed
+          full-screen overlay, and PageTransition animates a transform,
+          which makes it the containing block for anything fixed inside
+          it. See the note on the home page. */}
       <PageLoader show={loading} mode="data" />
+    <PageTransition>
       <div style={{ background: '#000000', minHeight: '100vh' }}>
         <div
           ref={scrollRef}
@@ -595,5 +600,6 @@ export default function LookPage() {
       <EmailPopup show={showEmail} onClose={() => setShowEmail(false)} />
       <AdminPortal show={showAdmin} onClose={() => setShowAdmin(false)} />
     </PageTransition>
+    </>
   )
 }

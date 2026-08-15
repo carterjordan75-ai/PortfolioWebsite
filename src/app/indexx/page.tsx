@@ -178,6 +178,12 @@ function ArchivePageInner() {
   )
 
   return (
+    <>
+      {/* Outside PageTransition on purpose: the loader is a fixed
+          full-screen overlay, and PageTransition animates a transform,
+          which makes it the containing block for anything fixed inside
+          it. See the note on the home page. */}
+      <PageLoader show={showLoader} onComplete={handleLoaderComplete} />
     <PageTransition>
       {/* Full-page theme wrapper — controls nav + page colors. Flex column
           so the footer (which is the last child of <main>) sits at the
@@ -411,7 +417,7 @@ function ArchivePageInner() {
       </div>
       <EmailPopup show={showEmail} onClose={() => setShowEmail(false)} />
       <AdminPortal show={showAdmin} onClose={() => setShowAdmin(false)} />
-      <PageLoader show={showLoader} onComplete={handleLoaderComplete} />
     </PageTransition>
+    </>
   )
 }

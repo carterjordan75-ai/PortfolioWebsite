@@ -17,8 +17,6 @@ import ProjectLinks, { type ProjectLink } from '@/components/ProjectLinks'
 import PageLoader from '@/components/PageLoader'
 import { useEditMode } from '@/contexts/EditModeContext'
 
-const featuredProjects = projects.filter(p => p.featured)
-
 // Client logo mapping
 const clientLogos: Record<string, { src: string; width: number; height: number }> = {
   'Nike': { src: '/assets/Logos/Logo_NIKE.svg', width: 220, height: 80 },
@@ -53,6 +51,15 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   const leftPanelRef = useRef<HTMLDivElement>(null)
   const [adminProject, setAdminProject] = useState<Record<string, unknown> | null>(null)
   const [adminLoading, setAdminLoading] = useState(!codeProject)
+  // Whether the loader has finished its run. Kept separate from
+  // adminLoading because the two answer different questions: one is "is
+  // the data here", the other is "has the mark finished". Swapping the
+  // page in on the first alone is what cut the animation off.
+  const [loaderDone, setLoaderDone] = useState(false)
+  // Stable identity: PageLoader schedules its hand-off in an effect that
+  // depends on this, and a fresh arrow every render would tear that
+  // timer down and rebuild it on every render of a heavy page.
+  const handleLoaderDone = useCallback(() => setLoaderDone(true), [])
   const { editMode, addChange } = useEditMode()
   const [logoScale, setLogoScale] = useState(100)
   // Admin-supplied media list (preferred). Held in local state so the
@@ -231,14 +238,22 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   const { canvasRef: lightboxCanvasRef, reversing: lightboxReversing } =
     useBouncePlayback(lightboxVideoRef, lightboxBounces)
 
-  // Show the circle-grid loader while admin data is still in flight. The
-  // loader covers the page in 'data' mode — it stays put until adminLoading
-  // flips false, then plays its reveal animation as the page slides in
-  // underneath. (See PageLoader's 'data' mode.)
-  if (adminLoading) {
+  // Cover the page while admin data is in flight.
+  //
+  // This branch used to end the moment adminLoading flipped, which
+  // replaced the whole tree — loader included — so on a fast response
+  // the mark was destroyed part way through and the animation just
+  // stopped. It now waits for the loader to say it has finished, which
+  // is the same rule every other loader on the site keeps: play through
+  // once, hold the last frame, then hand over.
+  if (adminLoading || !loaderDone) {
     return (
       <div style={{ background: dark ? '#0a0a0a' : '#f5f5f0', minHeight: '100vh' }}>
-        <PageLoader show={true} mode="data" />
+        <PageLoader
+          show={adminLoading}
+          mode="data"
+          onComplete={handleLoaderDone}
+        />
       </div>
     )
   }
@@ -313,10 +328,6 @@ Contact: carterjordan75@gmail.com`
       setDownloadProgress(null)
     }
   }
-
-  const featIdx = featuredProjects.findIndex(p => p.slug === params.slug)
-  const prev = featIdx > 0 ? featuredProjects[featIdx - 1] : featuredProjects[featuredProjects.length - 1]
-  const next = featIdx < featuredProjects.length - 1 ? featuredProjects[featIdx + 1] : featuredProjects[0]
 
   const pageBg = dark ? '#0a0a0a' : '#f5f5f0'
   const rule = dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
@@ -552,11 +563,16 @@ Contact: carterjordan75@gmail.com`
                 <span className="text-[9px] tracking-[0.1em] uppercase" style={{ opacity: 0.35 }}>© 2026</span>
               </div>
 
-              {/* Nav */}
-              <div className="flex justify-between items-center pt-3" style={{ borderTop: `1px solid ${rule}` }}>
-                <Link href={`/work/${prev.slug}`} className="text-[10px] uppercase tracking-[0.1em] hover:opacity-70 transition-opacity">← {prev.client}</Link>
+              {/* Nav — the index, and only the index.
+                  There used to be previous/next arrows flanking this,
+                  paging one project to the next. They are gone
+                  deliberately: which projects are on show is a decision
+                  made in one place, and a reader who can walk sideways
+                  out of a project is not reading the set that decision
+                  produced. Going back to the index to choose again is
+                  the whole navigation. */}
+              <div className="flex justify-center items-center pt-3" style={{ borderTop: `1px solid ${rule}` }}>
                 <Link href="/indexx" className="text-[10px] uppercase tracking-[0.1em] font-bold hover:opacity-70 transition-opacity" style={{ opacity: 0.5 }}>Index</Link>
-                <Link href={`/work/${next.slug}`} className="text-[10px] uppercase tracking-[0.1em] hover:opacity-70 transition-opacity">{next.client} →</Link>
               </div>
             </div>
           </div>

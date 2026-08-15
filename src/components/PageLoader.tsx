@@ -130,11 +130,23 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   // Data mode leaves when the parent says the data is in — but only once
   // the run is done. Data usually lands inside the animation, so this is
   // the common path, not the edge case.
+  //
+  // onComplete fires here too, not just in transition mode. A caller that
+  // swaps its whole tree when the data arrives needs to be told when the
+  // mark has finished, or it tears the loader down mid-run and the
+  // animation simply stops partway — which is the rule this component
+  // exists to keep.
   useEffect(() => {
     if (mode !== 'data' || show || !visible) return
-    const t = setTimeout(() => setVisible(false), msLeftOfRun() + SETTLE_MS)
+    const t = setTimeout(() => {
+      if (!handedOver.current) {
+        handedOver.current = true
+        onComplete?.()
+      }
+      setVisible(false)
+    }, msLeftOfRun() + SETTLE_MS)
     return () => clearTimeout(t)
-  }, [show, visible, mode, art.duration])
+  }, [show, visible, mode, onComplete, art.duration])
 
   return (
     <AnimatePresence>

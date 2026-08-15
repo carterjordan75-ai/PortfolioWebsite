@@ -40,15 +40,38 @@ const CACHE_KEY = 'xoxoLoaderPick'
  * which is also why the pick is per session rather than per navigation.
  * Refreshing rerolls it.
  */
+/**
+ * Resolved once and then held.
+ *
+ * This has to be stable by IDENTITY, not just by value. The mark is
+ * painted by handing a stylesheet and an SVG to dangerouslySetInnerHTML,
+ * and React rewrites both the moment the strings it is given differ.
+ * Rewriting the stylesheet redefines every @keyframes in it, which
+ * restarts all 319 animations from zero — mid-run, with no DOM change
+ * to show for it.
+ *
+ * That is exactly what used to happen: this function read sessionStorage
+ * on every call and built a new object each time, while primeLoaderPool
+ * filled that storage in the background about a second in. Any recompute
+ * after it landed handed back a different loader and the mark started
+ * again part way through. useMemo was no defence — React is free to
+ * discard a memo and recompute it, and it does.
+ *
+ * Holding the first answer means a run cannot be interrupted by one. A
+ * pool pick still applies, from the next full page load.
+ */
+let resolved: LoaderArt | null = null
+
 export function currentLoader(): LoaderArt {
   if (typeof window === 'undefined') return BUILT_IN
+  if (resolved) return resolved
   try {
     const raw = sessionStorage.getItem(CACHE_KEY)
-    if (!raw) return BUILT_IN
+    if (!raw) return (resolved = BUILT_IN)
     const art = JSON.parse(raw) as LoaderArt
-    return art && art.css && art.svg ? art : BUILT_IN
+    return (resolved = art && art.css && art.svg ? art : BUILT_IN)
   } catch {
-    return BUILT_IN
+    return (resolved = BUILT_IN)
   }
 }
 
@@ -84,4 +107,5 @@ export function clearLoaderPick() {
     /* nothing to clear */
   }
   primed = false
+  resolved = null
 }

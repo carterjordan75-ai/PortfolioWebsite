@@ -1183,8 +1183,13 @@ export default function ExperimentsPage() {
   }, [expandedSide])
 
   return (
-    <PageTransition>
+    <>
+      {/* Outside PageTransition on purpose: the loader is a fixed
+          full-screen overlay, and PageTransition animates a transform,
+          which makes it the containing block for anything fixed inside
+          it. See the note on the home page. */}
       <PageLoader show={loading} mode="data" />
+    <PageTransition>
       <div style={{ background: dark ? '#0a0a0a' : '#f5f5f0', color: fg, minHeight: '100vh' }}>
         {/* 96px top padding clears the glass header (which is ~92px tall
             with its inner padding). Earlier this was 68px and the
@@ -1264,5 +1269,6 @@ export default function ExperimentsPage() {
       <EmailPopup show={showEmail} onClose={() => setShowEmail(false)} />
       <AdminPortal show={showAdmin} onClose={() => setShowAdmin(false)} />
     </PageTransition>
+    </>
   )
 }

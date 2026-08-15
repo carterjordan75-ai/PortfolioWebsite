@@ -18,6 +18,9 @@ type HomeVideo = {
   // Slug of a featured project. When set, the video shows a pill
   // linking through to /work/<slug>.
   projectSlug?: string
+  // One line under the title, set per video in the admin panel. Home
+  // page only — the project page never reads it.
+  blurb?: string
 }
 
 // ─── Scroll-reactive number rail ─────────────────────────────────────
@@ -375,8 +378,17 @@ export default function Home() {
   }, [activeIdx, N])
 
   return (
-    <PageTransition>
+    <>
+      {/* Outside PageTransition on purpose. The loader is a fixed
+          full-screen overlay, and PageTransition animates a transform —
+          which makes it the containing block for anything fixed inside
+          it. The overlay was being positioned against that wrapper
+          rather than the viewport, sitting 12px low and then snapping
+          into place when the transform cleared. It also meant the whole
+          288-element mark was repainted on every frame of the wrapper's
+          slide, right when the page is at its busiest. */}
       <PageLoader show={loading} mode="data" />
+      <PageTransition>
       <div
         ref={scrollContainerRef}
         className="relative h-screen overflow-y-auto bg-black"
@@ -426,8 +438,8 @@ export default function Home() {
               </div>
             )}
 
-            {/* Bottom-right: title + year */}
-            {(v.title || v.label || v.year) && (
+            {/* Bottom-right: title, its line, then year */}
+            {(v.title || v.label || v.blurb || v.year) && (
               <div className="absolute bottom-8 right-6 z-10 pointer-events-none flex flex-col items-end">
                 {(v.title || v.label) && (
                   <h2
@@ -436,6 +448,20 @@ export default function Home() {
                   >
                     {v.title || v.label}
                   </h2>
+                )}
+                {/* Sentence case and normal tracking, unlike the title
+                    above and the year below — it is a line to be read,
+                    and setting it like the labels around it would turn
+                    it into another label. Capped in width so a long one
+                    wraps into the corner instead of running across the
+                    frame. */}
+                {v.blurb && (
+                  <p
+                    className="text-[11px] md:text-sm leading-snug text-white/85 mt-1.5 text-right max-w-[15rem] md:max-w-xs text-balance"
+                    style={{ textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}
+                  >
+                    {v.blurb}
+                  </p>
                 )}
                 {v.year && (
                   <p
@@ -559,5 +585,6 @@ export default function Home() {
       <EmailPopup show={showEmail} onClose={() => setShowEmail(false)} />
       <AdminPortal show={showAdmin} onClose={() => setShowAdmin(false)} />
     </PageTransition>
+    </>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useId } from 'react'
+import { memo, useId } from 'react'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 import { BUILT_IN, type LoaderArt } from '@/lib/loaderPool'
 import { XOXO_BRAND_DURATION } from './xoxoBrandLoaderAssets'
@@ -25,6 +25,31 @@ export type { LoaderArt }
  * rather than as white or black, and follows the site's light/dark mode.
  * One with a colour or a gradient keeps exactly what it was given.
  */
+/**
+ * The stylesheet and the mark itself, held apart from everything that
+ * changes around them.
+ *
+ * Both are injected as raw HTML, and React rewrites raw HTML whenever
+ * the string it is handed differs. Rewriting the stylesheet redefines
+ * every @keyframes in it, and redefining a keyframes rule restarts every
+ * animation using it — from zero, part way through the run, with the
+ * elements themselves untouched so nothing looks like it moved.
+ *
+ * Memoised on the two strings, so a re-render for any other reason —
+ * the theme resolving, the parent's loading flag flipping, a parent
+ * re-rendering for reasons of its own — cannot reach them. The ink and
+ * knockout colours live on the wrapper outside this, where they can
+ * change freely without touching the animation.
+ */
+const Art = memo(function Art({ id, css, svg }: { id: string; css: string; svg: string }) {
+  return (
+    <>
+      <style data-xoxo-brand={id} dangerouslySetInnerHTML={{ __html: css }} />
+      <div className="xoxo-brand-art" dangerouslySetInnerHTML={{ __html: svg }} />
+    </>
+  )
+})
+
 export default function XoxoBrandLoader({
   className = '',
   /**
@@ -72,8 +97,7 @@ export default function XoxoBrandLoader({
       role="img"
       aria-label="XOXO"
     >
-      <style data-xoxo-brand={id} dangerouslySetInnerHTML={{ __html: art.css }} />
-      <div className="xoxo-brand-art" dangerouslySetInnerHTML={{ __html: art.svg }} />
+      <Art id={id} css={art.css} svg={art.svg} />
     </div>
   )
 }

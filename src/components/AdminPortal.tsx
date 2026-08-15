@@ -356,6 +356,12 @@ type HomeVideo = {
   // Slug of a featured project. When set, the video shows a pill
   // linking through to /work/<slug>.
   projectSlug?: string
+  // One line under the title on the home page, and nowhere else. It
+  // lives on the video rather than on the project on purpose: the home
+  // page is a reel, and what a clip needs said about it there is not
+  // what the project page says about the work. Keeping it here means it
+  // cannot leak onto /work/<slug> by being in scope.
+  blurb?: string
 }
 
 const HOME_VIDEO_CATEGORIES = ['3D & Motion', 'Generative Film'] as const
@@ -572,6 +578,19 @@ function HomePagePanel() {
                   <button onClick={() => move(i, 1)} disabled={i === videos.length - 1} className="text-white/40 hover:text-white/80 disabled:opacity-15 disabled:cursor-not-allowed text-[10px] w-5 h-5 flex items-center justify-center" aria-label="Move down">↓</button>
                   <button onClick={() => remove(i)} className="text-red-400/40 hover:text-red-400 text-[10px] w-5 h-5 flex items-center justify-center ml-1" aria-label="Remove">✕</button>
                 </div>
+              </div>
+              {/* The line that sits under the title on the home page.
+                  Placed directly under the title field here too, so the
+                  panel reads in the order the page does. */}
+              <div className="flex items-center gap-2 pl-7">
+                <input
+                  type="text"
+                  value={v.blurb || ''}
+                  onChange={(e) => updateField(i, 'blurb', e.target.value)}
+                  placeholder="Line under the title — home page only"
+                  className={`${inputBase} flex-1 min-w-0`}
+                  title="Shows under the title on the home page. Does not appear on the project page."
+                />
               </div>
               <div className="flex items-center gap-2 pl-7">
                 <select
