@@ -1,0 +1,1478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Character animator</title>
+<style>
+:root{
+  --bg:#0a0a0a; --panel:#131313; --line:rgba(255,255,255,.11);
+  --ink:#ededed; --dim:rgba(237,237,237,.44); --faint:rgba(237,237,237,.24);
+  --accent:#7dd3a0;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg); color:var(--ink); display:flex; overflow:hidden;
+  font:12px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+}
+
+/* ── stage ─────────────────────────────────────────────────────── */
+#stage{flex:1;display:flex;flex-direction:column;min-width:0}
+#view{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  padding:28px;min-height:0;position:relative;
+}
+#view svg{max-width:100%;max-height:100%;overflow:visible}
+#view.grid{
+  background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);
+  background-size:32px 32px;
+}
+#transport{
+  flex:0 0 auto;display:flex;align-items:center;gap:12px;
+  padding:10px 16px;border-top:1px solid var(--line);
+}
+#transport input[type=range]{flex:1}
+#tlabel{font:10px/1 var(--mono);color:var(--dim);min-width:74px;text-align:right}
+
+/* ── panel ─────────────────────────────────────────────────────── */
+#panel{
+  flex:0 0 322px;background:var(--panel);border-left:1px solid var(--line);
+  overflow-y:auto;overscroll-behavior:contain;
+}
+.sec{border-bottom:1px solid var(--line)}
+.sec>h3{
+  margin:0;padding:12px 14px;cursor:pointer;user-select:none;
+  font-size:9.5px;font-weight:800;letter-spacing:.17em;text-transform:uppercase;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.sec>h3::after{content:"+";color:var(--faint);font-weight:400;font-size:13px}
+.sec.open>h3::after{content:"–"}
+.sec .body{display:none;padding:2px 14px 15px}
+.sec.open .body{display:block}
+
+.row{display:flex;align-items:center;gap:9px;margin:9px 0}
+.row label{flex:0 0 96px;color:var(--dim);font-size:10px;letter-spacing:.02em}
+.row input[type=range]{flex:1;min-width:0}
+.row .val{flex:0 0 40px;text-align:right;font:10px/1 var(--mono);color:var(--faint)}
+.row select,.row input[type=text],.row input[type=number]{
+  flex:1;min-width:0;background:#1c1c1c;color:var(--ink);
+  border:1px solid var(--line);border-radius:5px;padding:6px 8px;font-size:11px;
+}
+.row input[type=color]{
+  flex:0 0 34px;height:26px;padding:0;background:none;
+  border:1px solid var(--line);border-radius:5px;cursor:pointer;
+}
+
+input[type=range]{-webkit-appearance:none;appearance:none;height:2px;background:rgba(255,255,255,.16);border-radius:2px}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+  background:var(--ink);cursor:pointer;
+}
+
+button{
+  background:#1c1c1c;color:var(--ink);border:1px solid var(--line);
+  border-radius:5px;padding:7px 11px;font-size:10px;font-weight:600;
+  letter-spacing:.06em;cursor:pointer;
+}
+button:hover{border-color:rgba(255,255,255,.28)}
+button.on{background:var(--accent);color:#0a0a0a;border-color:var(--accent)}
+.btns{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}
+.btns button{flex:1;min-width:62px}
+
+.note{color:var(--faint);font-size:9.5px;line-height:1.5;margin:8px 0 0}
+.tag{
+  display:inline-block;font:9px/1 var(--mono);color:var(--dim);
+  border:1px solid var(--line);border-radius:99px;padding:4px 8px;margin:2px 3px 2px 0;
+}
+#drop{
+  border:1px dashed rgba(255,255,255,.2);border-radius:7px;padding:16px 12px;
+  text-align:center;color:var(--dim);font-size:10.5px;cursor:pointer;margin:4px 0 2px;
+}
+#drop.hot{border-color:var(--accent);color:var(--accent)}
+#out{
+  width:100%;height:110px;background:#0d0d0d;color:var(--dim);
+  border:1px solid var(--line);border-radius:5px;padding:8px;
+  font:9.5px/1.4 var(--mono);resize:vertical;
+}
+
+/* rig overlay */
+.bone{stroke:var(--accent);stroke-width:1.4;stroke-opacity:.55;fill:none;vector-effect:non-scaling-stroke}
+.joint{fill:#0a0a0a;stroke:var(--accent);stroke-width:1.4;cursor:grab;vector-effect:non-scaling-stroke}
+.joint.root{fill:var(--accent)}
+.joint:hover{stroke:#fff}
+.jlabel{fill:var(--faint);font:7px var(--mono);pointer-events:none}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="view" class="grid"></div>
+  <div id="transport">
+    <button id="play">Pause</button>
+    <input type="range" id="scrub" min="0" max="1000" value="0">
+    <span id="tlabel">0.00 / 1.05s</span>
+  </div>
+</div>
+
+<div id="panel"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   CHARACTER ANIMATOR
+
+   Import a shape, drop a named skeleton on it, pick a looping action.
+
+   The engine is the logo tuner's, one layer up: everything still comes
+   down to an array of outline points emitted as `d:path()` keyframes,
+   which is why the look controls transfer. What is new is the rig
+   between the artwork and those points.
+
+   Two decisions worth knowing, because everything else follows from
+   them:
+
+   1. The skeleton is NAMED and humanoid. An action library is only
+      possible if "walk" can find a knee, so joints are not arbitrary
+      points — they are 16 known joints you drag into place. The rig is
+      auto-fitted to the silhouette first, so placing it is correction,
+      not construction.
+
+   2. The silhouette is SKINNED, not cut into parts. Each outline point
+      is weighted to the bones nearest it and moved by their blended
+      transforms. A bending elbow keeps continuous skin, there are no
+      seams to hide, and the result is still one point array — so the
+      exporter, and the whole look layer, work unchanged.
+   ═══════════════════════════════════════════════════════════════════ */
+
+var SVGNS = 'http://www.w3.org/2000/svg';
+var $ = function(s){ return document.querySelector(s); };
+var clamp = function(v,a,b){ return v<a?a:v>b?b:v; };
+var r1 = function(v){ return Math.round(v*10)/10; };
+
+/* ── the skeleton ──────────────────────────────────────────────────
+   name, parent, sideways offset, and height down the figure. Both
+   offsets are fractions of the figure's HEIGHT, not of its bounding
+   box — measuring across the box puts the legs wherever the arms
+   happen to be, because it is the arms that decide how wide the box
+   is. A figure with its arms out would get its knees placed halfway to
+   its elbows. Human proportions are height-relative, so these are too,
+   and auto-fit lands on the limbs whatever the pose of the artwork.
+
+   A bone is the segment from a joint to its parent, so the bone that
+   moves when you rotate `thighL` is the one running down to `kneeL`.
+   That is why rotating thighL swings the thigh and rotating kneeL
+   bends the knee — the action curves read the way they are named. It
+   is also why the feet need toes: without a joint below the ankle
+   there is no bone for an ankle rotation to move, and a walk without
+   ankles slides. */
+var SKEL = [
+  ['hips',      null,         0.000, 0.470],
+  ['chest',     'hips',       0.000, 0.280],
+  ['neck',      'chest',      0.000, 0.180],
+  ['head',      'neck',       0.000, 0.070],
+  ['shoulderL', 'chest',     -0.105, 0.205],
+  ['elbowL',    'shoulderL', -0.155, 0.345],
+  ['handL',     'elbowL',    -0.200, 0.480],
+  ['shoulderR', 'chest',      0.105, 0.205],
+  ['elbowR',    'shoulderR',  0.155, 0.345],
+  ['handR',     'elbowR',     0.200, 0.480],
+  ['thighL',    'hips',      -0.055, 0.490],
+  ['kneeL',     'thighL',    -0.062, 0.720],
+  ['footL',     'kneeL',     -0.068, 0.955],
+  ['toeL',      'footL',     -0.098, 0.995],
+  ['thighR',    'hips',       0.055, 0.490],
+  ['kneeR',     'thighR',     0.062, 0.720],
+  ['footR',     'kneeR',      0.068, 0.955],
+  ['toeR',      'footR',      0.098, 0.995]
+];
+var PAR = {}, ORDER = [];
+SKEL.forEach(function(j){ PAR[j[0]] = j[1]; ORDER.push(j[0]); });
+/* Bones, as child-joint names. The root has no bone above it. */
+var BONES = ORDER.filter(function(n){ return PAR[n] !== null; });
+
+/* ── state ───────────────────────────────────────────────────────── */
+var S = {
+  pts: [],          // silhouette outline in rest pose
+  vb: [0,0,600,600],
+  joints: {},       // name -> {x,y} rest positions
+  weights: [],      // per outline point: [{b:boneName, w:number}, ...]
+  face: [],         // {kind,x,y,s}
+  playing: true,
+  t: 0,             // 0..1 through the cycle
+  tool: null,       // face placement tool, or null
+  drag: null
+};
+
+var P = {
+  // character
+  threshold: 128, detail: 200, smooth: 2,
+  // rig
+  showRig: true, stiffness: 3.6,
+  // action
+  action: 'march', speed: 1, amount: 1, bounce: 1, lean: 0,
+  blink: true, blinkRate: 4, smile: 0.35,
+  // look
+  fill: '#ededed', stroke: '#ededed', strokeW: 0, rough: 0,
+  fps: 0, squash: 0.35,
+  // export
+  frames: 24
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   1. TRACING — any picture becomes an outline
+
+   Threshold to a binary mask, keep the largest connected blob (so a
+   signature or a stray speck doesn't become the character), walk its
+   boundary, then simplify and resample to a fixed point count.
+
+   The fixed count is what makes everything downstream cheap: skinning
+   weights are computed once against it, and every frame is the same
+   array deformed, so a keyframe is always the same length.
+   ═══════════════════════════════════════════════════════════════════ */
+
+function traceCanvas(cv, thresh){
+  var w = cv.width, h = cv.height;
+  var d = cv.getContext('2d').getImageData(0,0,w,h).data;
+
+  // Solid where the pixel is opaque enough and dark enough. Art on a
+  // transparent ground is judged on alpha alone; art on white needs the
+  // luminance test as well.
+  var mask = new Uint8Array(w*h), anyAlpha = false;
+  for(var i=0;i<w*h;i++){ if(d[i*4+3] < 250){ anyAlpha = true; break; } }
+  for(var i=0;i<w*h;i++){
+    var a = d[i*4+3];
+    if(anyAlpha){ mask[i] = a > 128 ? 1 : 0; }
+    else {
+      var l = 0.299*d[i*4] + 0.587*d[i*4+1] + 0.114*d[i*4+2];
+      mask[i] = l < thresh ? 1 : 0;
+    }
+  }
+
+  // Largest connected component, iterative flood fill (a recursive one
+  // blows the stack on a full-frame character).
+  var lab = new Int32Array(w*h).fill(-1), best = -1, bestN = 0, id = 0;
+  var stack = new Int32Array(w*h), sizes = [];
+  for(var s=0;s<w*h;s++){
+    if(!mask[s] || lab[s] !== -1) continue;
+    var sp = 0, n = 0; stack[sp++] = s; lab[s] = id;
+    while(sp){
+      var p = stack[--sp]; n++;
+      var px = p % w, py = (p / w) | 0;
+      if(px>0   && mask[p-1] && lab[p-1]===-1){ lab[p-1]=id; stack[sp++]=p-1; }
+      if(px<w-1 && mask[p+1] && lab[p+1]===-1){ lab[p+1]=id; stack[sp++]=p+1; }
+      if(py>0   && mask[p-w] && lab[p-w]===-1){ lab[p-w]=id; stack[sp++]=p-w; }
+      if(py<h-1 && mask[p+w] && lab[p+w]===-1){ lab[p+w]=id; stack[sp++]=p+w; }
+    }
+    sizes.push(n);
+    if(n > bestN){ bestN = n; best = id; }
+    id++;
+  }
+  if(best < 0) return null;
+
+  /* Only the biggest blob becomes the character, so a stray speck or a
+     signature can't. The cost is that a limb drawn clear of the body is
+     dropped the same way — so anything substantial that got left behind
+     is counted and reported rather than disappearing quietly. */
+  var orphans = sizes.filter(function(n){ return n !== bestN && n > bestN*0.02; }).length;
+
+  var solid = function(x,y){
+    return x>=0 && y>=0 && x<w && y<h && lab[y*w+x] === best;
+  };
+
+  /* Chain the boundary out of pixel edges rather than walking pixel to
+     pixel.
+
+     A neighbourhood walk has to guess which way to turn, and the guess
+     goes wrong on anything thin — an arm two pixels wide gets stepped
+     straight past, and the figure comes back with no limbs and no error
+     to show for it. Every edge between a solid pixel and an empty one
+     is unambiguously on the boundary, so collecting those and joining
+     them end to end has nothing to get wrong. Wound consistently, they
+     chain into closed loops on their own. */
+  var out = new Map();
+  var add = function(x0,y0,x1,y1){
+    var k = x0 + ',' + y0;
+    var l = out.get(k);
+    if(l) l.push([x1,y1]); else out.set(k, [[x1,y1]]);
+  };
+  for(var y=0;y<h;y++) for(var x=0;x<w;x++){
+    if(!solid(x,y)) continue;
+    if(!solid(x,   y-1)) add(x,   y,   x+1, y  );
+    if(!solid(x+1, y  )) add(x+1, y,   x+1, y+1);
+    if(!solid(x,   y+1)) add(x+1, y+1, x,   y+1);
+    if(!solid(x-1, y  )) add(x,   y+1, x,   y  );
+  }
+
+  // Follow the chains. Holes come back as their own loops; the figure's
+  // outline is the longest, which is the one wanted.
+  var best2 = null;
+  out.forEach(function(list, k){
+    while(list.length){
+      var s = k.split(',');
+      var sxv = +s[0], syv = +s[1];
+      var loop = [[sxv, syv]], cx = sxv, cy = syv, guard = 4*w*h;
+      while(guard-- > 0){
+        var nxt = out.get(cx + ',' + cy);
+        if(!nxt || !nxt.length) break;
+        var n = nxt.shift();
+        loop.push(n); cx = n[0]; cy = n[1];
+        if(cx === sxv && cy === syv) break;
+      }
+      if(!best2 || loop.length > best2.length) best2 = loop;
+    }
+  });
+  return { loop: best2, orphans: orphans };
+}
+
+/**
+ * Ramer–Douglas–Peucker on a CLOSED loop.
+ *
+ * Run straight down a closed contour it collapses to nothing: the first
+ * and last point are the same, so the chord between them has no
+ * direction and every point measures zero distance from it. The loop is
+ * cut at its two furthest-apart points first and simplified as two open
+ * arcs, which is well defined.
+ */
+function simplify(pts, eps){
+  if(pts.length < 4) return pts.slice();
+  // Drop a repeated closing point, then cut opposite the start.
+  var p = pts.slice();
+  var f = p[0], l = p[p.length-1];
+  if(Math.hypot(f[0]-l[0], f[1]-l[1]) < 1e-6) p.pop();
+  var far = 0, fd = -1;
+  for(var i=1;i<p.length;i++){
+    var d = Math.hypot(p[i][0]-p[0][0], p[i][1]-p[0][1]);
+    if(d > fd){ fd = d; far = i; }
+  }
+  return rdp(p.slice(0, far+1), eps).concat(rdp(p.slice(far), eps).slice(1, -1));
+}
+
+/** RDP on an open polyline, iterative — recursion overflows on a big trace. */
+function rdp(pts, eps){
+  if(pts.length < 3) return pts.slice();
+  var keep = new Uint8Array(pts.length); keep[0]=1; keep[pts.length-1]=1;
+  var work = [[0, pts.length-1]];
+  while(work.length){
+    var seg = work.pop(), a = seg[0], b = seg[1];
+    if(b - a < 2) continue;
+    var ax=pts[a][0], ay=pts[a][1], bx=pts[b][0], by=pts[b][1];
+    var dx=bx-ax, dy=by-ay, L=Math.hypot(dx,dy), far=-1, fi=-1;
+    for(var i=a+1;i<b;i++){
+      // Perpendicular distance to the chord, or to the point itself
+      // when the chord has collapsed.
+      var dd = L > 1e-9
+        ? Math.abs(dy*(pts[i][0]-ax) - dx*(pts[i][1]-ay)) / L
+        : Math.hypot(pts[i][0]-ax, pts[i][1]-ay);
+      if(dd > far){ far = dd; fi = i; }
+    }
+    if(far > eps && fi > 0){ keep[fi]=1; work.push([a,fi],[fi,b]); }
+  }
+  return pts.filter(function(_,i){ return keep[i]; });
+}
+
+/** Resample a closed polyline to exactly n evenly-spaced points. */
+function resample(pts, n){
+  var m = pts.length, seg = [], total = 0;
+  for(var i=0;i<m;i++){
+    var a=pts[i], b=pts[(i+1)%m], L=Math.hypot(b[0]-a[0], b[1]-a[1]);
+    seg.push(L); total += L;
+  }
+  if(!total) return pts.slice();
+  var out = [], step = total/n, dist = 0, i2 = 0, acc = 0;
+  for(var k=0;k<n;k++){
+    var target = k*step;
+    while(acc + seg[i2] < target && i2 < m-1){ acc += seg[i2]; i2++; }
+    var t = seg[i2] ? (target-acc)/seg[i2] : 0;
+    var a=pts[i2], b=pts[(i2+1)%m];
+    out.push([a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t]);
+  }
+  return out;
+}
+
+/** Neighbour averaging on a closed loop — takes the pixel stair-step off. */
+function smoothLoop(pts, passes){
+  var p = pts.map(function(q){ return [q[0],q[1]]; });
+  for(var k=0;k<passes;k++){
+    var q = [];
+    for(var i=0;i<p.length;i++){
+      var a=p[(i-1+p.length)%p.length], b=p[i], c=p[(i+1)%p.length];
+      q.push([(a[0]+2*b[0]+c[0])/4, (a[1]+2*b[1]+c[1])/4]);
+    }
+    p = q;
+  }
+  return p;
+}
+
+/** Fit the outline into a 600-wide viewBox, so rigs are comparable. */
+function normalise(pts){
+  var xs = pts.map(function(p){return p[0];}), ys = pts.map(function(p){return p[1];});
+  var x0=Math.min.apply(null,xs), x1=Math.max.apply(null,xs);
+  var y0=Math.min.apply(null,ys), y1=Math.max.apply(null,ys);
+  var w=x1-x0, h=y1-y0, k=460/Math.max(w,h);
+  return pts.map(function(p){
+    return [(p[0]-x0)*k + (600-w*k)/2, (p[1]-y0)*k + (600-h*k)/2];
+  });
+}
+
+function ingestCanvas(cv){
+  var t = traceCanvas(cv, P.threshold);
+  if(!t || !t.loop || t.loop.length < 12){
+    status('Nothing solid enough to trace — try the Threshold slider.'); return;
+  }
+  S.pts = normalise(smoothLoop(resample(simplify(t.loop, 1.1), P.detail), P.smooth));
+  autoFit();
+  bindSkin();
+  draw();
+  status('Traced ' + S.pts.length + ' points.' + (t.orphans
+    ? '\n\n' + t.orphans + ' separate shape' + (t.orphans>1?'s were':' was') +
+      ' left out — only the largest becomes the character. If a limb has ' +
+      'gone missing it is drawn clear of the body; join it up and re-trace.'
+    : ''));
+}
+
+function loadImage(src){
+  var img = new Image();
+  img.onload = function(){
+    var k = 900/Math.max(img.width, img.height);
+    var cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(img.width*k));
+    cv.height = Math.max(1, Math.round(img.height*k));
+    var g = cv.getContext('2d');
+    g.drawImage(img, 0, 0, cv.width, cv.height);
+    ingestCanvas(cv);
+  };
+  img.onerror = function(){ status('That file would not decode as an image.'); };
+  img.src = src;
+}
+
+/**
+ * The figure you get before importing anything.
+ *
+ * Drawn to the same proportions the skeleton template assumes, so the
+ * auto-fit lands on it exactly and the tool is usable the moment it
+ * opens. It is drawn to a canvas and put through the importer's own
+ * tracer rather than supplied as points — what you see on load is a
+ * genuine test of that pipeline, not a special case around it.
+ */
+function defaultFigure(){
+  var cv = document.createElement('canvas');
+  cv.width = 600; cv.height = 600;
+  var g = cv.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0,0,600,600);
+  g.strokeStyle = '#000'; g.fillStyle = '#000';
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  var line = function(a,b,w){
+    g.lineWidth = w; g.beginPath(); g.moveTo(a[0],a[1]); g.lineTo(b[0],b[1]); g.stroke();
+  };
+  // Positions are SKEL's own fractions, resolved against a figure
+  // standing from y=50 to y=580.
+  var Y = 50, H = 530, cx = 300;
+  var J = {};
+  SKEL.forEach(function(j){ J[j[0]] = [cx + H*j[2], Y + H*j[3]]; });
+
+  line(J.hips, J.chest, 92);                        // torso
+  line(J.hips, [cx, Y+H*0.53], 88);                 // pelvis
+  line(J.shoulderL, J.shoulderR, 54);               // shoulders
+  line(J.chest, J.neck, 48);                        // neck
+  g.beginPath(); g.arc(J.head[0], J.head[1], 37, 0, Math.PI*2); g.fill();
+  ['L','R'].forEach(function(s){
+    line(J['shoulder'+s], J['elbow'+s], 34);
+    line(J['elbow'+s],    J['hand'+s],  28);
+    line(J['thigh'+s],    J['knee'+s],  48);
+    line(J['knee'+s],     J['foot'+s],  38);
+    line(J['foot'+s],     J['toe'+s],   26);
+  });
+  return cv;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   2. THE RIG — auto-fit, forward kinematics, skinning
+   ═══════════════════════════════════════════════════════════════════ */
+
+/**
+ * Drop the template on the silhouette.
+ *
+ * Height sets the scale and the horizontal centre of the box sets the
+ * midline; the box's width is deliberately not used (see SKEL).
+ */
+function autoFit(){
+  var xs = S.pts.map(function(p){return p[0];}), ys = S.pts.map(function(p){return p[1];});
+  var x0=Math.min.apply(null,xs), x1=Math.max.apply(null,xs);
+  var y0=Math.min.apply(null,ys), y1=Math.max.apply(null,ys);
+  var H = (y1-y0) || 1, cx = (x0+x1)/2;
+  SKEL.forEach(function(j){
+    S.joints[j[0]] = { x: cx + H*j[2], y: y0 + H*j[3] };
+  });
+}
+
+function segDist(px,py,ax,ay,bx,by){
+  var dx=bx-ax, dy=by-ay, L=dx*dx+dy*dy;
+  var t = L>0 ? ((px-ax)*dx + (py-ay)*dy)/L : 0;
+  t = t<0?0:t>1?1:t;
+  return Math.hypot(px-(ax+t*dx), py-(ay+t*dy));
+}
+
+/**
+ * Bind each outline point to the bones nearest it.
+ *
+ * Inverse distance raised to a power, keeping only the strongest three.
+ * The power is the Stiffness slider and it matters more than it looks:
+ * low, and a raised arm drags the ribs with it; high, and the skin
+ * creases sharply at the shoulder. Three bones is the useful ceiling —
+ * beyond that distant bones add wobble, not smoothness.
+ */
+function bindSkin(){
+  var pow = P.stiffness;
+  S.weights = S.pts.map(function(p){
+    var all = BONES.map(function(b){
+      var A = S.joints[PAR[b]], B = S.joints[b];
+      return { b:b, d: segDist(p[0],p[1],A.x,A.y,B.x,B.y) };
+    });
+    all.sort(function(a,b){ return a.d - b.d; });
+
+    /* Influence is judged RELATIVE to the closest bone, not in absolute
+       distance. Inverse distance alone still leaves a far bone with a
+       few percent of a vote, and a few percent of a 120-degree wave is
+       a visible bite out of the head — the arm passes near the skull,
+       so the skull's points had been quietly listening to it. Measuring
+       against the nearest bone says what actually matters: this point
+       belongs to the limb it is on, not to whatever swings past.
+
+       The falloff is smoothed rather than a cutoff. Dropping a bone the
+       moment it crosses a threshold puts a step in the weights, and a
+       step in the weights is a crease in the skin. */
+    var d0 = all[0].d || 1e-6;
+    var top = all.slice(0,3).map(function(x){
+      var f = clamp((2.4 - x.d/d0)/0.9, 0, 1);
+      f = f*f*(3 - 2*f);
+      return { b:x.b, w: f / (Math.pow(x.d, pow) + 1e-6) };
+    }).filter(function(x){ return x.w > 0; });
+
+    var sum = top.reduce(function(s,x){ return s + x.w; }, 0) || 1;
+    return top.map(function(x){ return { b:x.b, w:x.w/sum }; });
+  });
+}
+
+/**
+ * Forward kinematics.
+ *
+ * `ang` is a delta from the rest pose in degrees, per joint. A joint's
+ * accumulated rotation includes its own angle, and a child's offset is
+ * rotated by its PARENT's accumulation — which is exactly what makes a
+ * rotation at the elbow move the hand but leave the shoulder alone.
+ */
+function pose(ang, dx, dy){
+  var Q = {}, A = {};
+  for(var i=0;i<ORDER.length;i++){
+    var n = ORDER[i], p = PAR[n], th = (ang[n]||0) * Math.PI/180;
+    if(p === null){
+      Q[n] = { x: S.joints[n].x + (dx||0), y: S.joints[n].y + (dy||0) };
+      A[n] = th;
+    } else {
+      var ap = A[p], qp = Q[p];
+      var ox = S.joints[n].x - S.joints[p].x, oy = S.joints[n].y - S.joints[p].y;
+      var c = Math.cos(ap), s = Math.sin(ap);
+      Q[n] = { x: qp.x + ox*c - oy*s, y: qp.y + ox*s + oy*c };
+      A[n] = ap + th;
+    }
+  }
+  return { Q:Q, A:A };
+}
+
+/** Move a point by one bone's rest→posed transform. */
+function boneXf(b, x, y, Q, A){
+  var p = PAR[b], R = S.joints[p], a = A[p], q = Q[p];
+  var dx = x - R.x, dy = y - R.y, c = Math.cos(a), s = Math.sin(a);
+  return [ q.x + dx*c - dy*s, q.y + dx*s + dy*c ];
+}
+
+/** Linear blend skinning: every point, by its weighted bones. */
+function skin(Q, A){
+  var out = new Array(S.pts.length);
+  for(var i=0;i<S.pts.length;i++){
+    var w = S.weights[i], x = 0, y = 0;
+    for(var k=0;k<w.length;k++){
+      var t = boneXf(w[k].b, S.pts[i][0], S.pts[i][1], Q, A);
+      x += w[k].w * t[0]; y += w[k].w * t[1];
+    }
+    out[i] = [x,y];
+  }
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   3. ACTIONS — looping curves, per joint
+
+   Each action is a table of keyframes per joint over a normalised
+   cycle, interpolated with a wrapping Catmull-Rom. Wrapping is the
+   whole point: there is no first or last key, so the curve through the
+   loop point is as smooth as any other, and no action can seam.
+
+   Curves are authored once for a limb and applied to both sides with a
+   half-cycle phase shift, which is what a walk actually is.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/** Catmull-Rom through the keys, wrapping at both ends. */
+function evalCurve(kf, t){
+  var n = kf.length;
+  if(!n) return 0;
+  if(n === 1) return kf[0][1];
+  t = t - Math.floor(t);
+  var i = 0;
+  while(i < n-1 && kf[i+1][0] <= t) i++;
+  var t0 = kf[i][0], t1 = (i === n-1) ? 1 : kf[i+1][0];
+  var span = t1 - t0 || 1, u = clamp((t - t0)/span, 0, 1);
+  var v = function(k){ return kf[(k+n)%n][1]; };
+  var p0 = v(i-1), p1 = v(i), p2 = v(i+1), p3 = v(i+2);
+  var u2 = u*u, u3 = u2*u;
+  return 0.5*((2*p1) + (-p0+p2)*u + (2*p0-5*p1+4*p2-p3)*u2 + (-p0+3*p1-3*p2+p3)*u3);
+}
+
+/** Mirror a limb curve to the other side by half a cycle. */
+function phased(kf, shift){
+  return kf.map(function(k){
+    var t = k[0] + shift;
+    return [t - Math.floor(t), k[1]];
+  }).sort(function(a,b){ return a[0]-b[0]; });
+}
+
+var LEG_THIGH = [[0,26],[0.25,6],[0.5,-22],[0.75,4],[0.9,18]];
+var LEG_KNEE  = [[0,-6],[0.18,-13],[0.45,-14],[0.6,-52],[0.75,-44],[0.88,-16]];
+var LEG_FOOT  = [[0,12],[0.2,-4],[0.45,-16],[0.58,10],[0.8,16],[0.92,14]];
+var ARM_SHLDR = [[0,-20],[0.25,-2],[0.5,18],[0.75,0]];
+var ARM_ELBOW = [[0,-16],[0.3,-26],[0.6,-12],[0.85,-22]];
+
+var ACTIONS = {
+  idle: {
+    dur: 2.6,
+    curves: {
+      chest:     [[0,0],[0.5,1.1],[1,0]],
+      neck:      [[0,0.6],[0.35,-0.8],[0.75,0.9]],
+      head:      [[0,-1.2],[0.5,1.4]],
+      shoulderL: [[0,-3],[0.5,-6]],  shoulderR: [[0,3],[0.5,6]],
+      elbowL:    [[0,-8],[0.5,-13]], elbowR:    [[0,-8],[0.5,-13]]
+    },
+    bob: [[0,0],[0.5,3.2],[1,0]], bobFreq: 1
+  },
+  walk: {
+    dur: 1.05,
+    curves: {
+      thighL: LEG_THIGH,           kneeL: LEG_KNEE,           footL: LEG_FOOT,
+      thighR: phased(LEG_THIGH,.5),kneeR: phased(LEG_KNEE,.5),footR: phased(LEG_FOOT,.5),
+      shoulderL: ARM_SHLDR,             elbowL: ARM_ELBOW,
+      shoulderR: phased(ARM_SHLDR,.5),  elbowR: phased(ARM_ELBOW,.5),
+      chest: [[0,2],[0.5,-2]],
+      neck:  [[0,-1.5],[0.5,1.5]],
+      hips:  [[0,-1.5],[0.5,1.5]]
+    },
+    bob: [[0,0],[0.5,-7],[1,0]], bobFreq: 2
+  },
+  /* A walk for front-facing artwork.
+     A bone rig turns limbs in the plane of the picture, so a walk's
+     stride — which is depth — can only come out as a sideways splay on
+     a figure drawn face-on. This trades the stride for what does read
+     from the front: the knee lifting, the foot leaving the ground, and
+     weight shifting between the hips. */
+  march: {
+    dur: 1.0,
+    curves: {
+      thighL:[[0,4],[0.25,10],[0.5,-2],[0.75,-4]],
+      kneeL: [[0,-4],[0.2,-14],[0.42,-56],[0.6,-30],[0.8,-6]],
+      footL: [[0,2],[0.25,16],[0.5,10],[0.75,0]],
+      thighR:[[0,-2],[0.25,-4],[0.5,4],[0.75,10]],
+      kneeR: [[0,-40],[0.15,-8],[0.5,-4],[0.72,-56],[0.9,-24]],
+      footR: [[0,12],[0.25,0],[0.5,2],[0.75,16]],
+      hips:  [[0,-2.5],[0.5,2.5]],
+      chest: [[0,2],[0.5,-2]],
+      neck:  [[0,-1],[0.5,1]],
+      shoulderL:[[0,-14],[0.5,8]], shoulderR:[[0,8],[0.5,-14]],
+      elbowL:[[0,-20],[0.5,-30]],  elbowR:[[0,-30],[0.5,-20]]
+    },
+    bob: [[0,0],[0.5,-6],[1,0]], bobFreq: 2
+  },
+  wave: {
+    dur: 1.35,
+    curves: {
+      // The waving arm is held up and the forearm does the work, which
+      // is what reads as a wave rather than a whole-arm swing.
+      shoulderR: [[0,-118],[0.5,-126],[1,-118]],
+      elbowR:    [[0,-26],[0.25,22],[0.5,-26],[0.75,22]],
+      handR:     [[0,-8],[0.25,10],[0.5,-8],[0.75,10]],
+      shoulderL: [[0,-4],[0.5,-8]],
+      elbowL:    [[0,-12],[0.5,-18]],
+      neck:      [[0,3],[0.5,-3]],
+      head:      [[0,-4],[0.5,2]],
+      chest:     [[0,-2],[0.5,1]]
+    },
+    bob: [[0,0],[0.5,1.6],[1,0]], bobFreq: 1
+  },
+  jump: {
+    dur: 1.15,
+    curves: {
+      thighL:[[0,0],[0.2,42],[0.45,-14],[0.7,-4],[0.9,34]],
+      thighR:[[0,0],[0.2,42],[0.45,-14],[0.7,-4],[0.9,34]],
+      kneeL: [[0,-8],[0.2,-72],[0.45,-6],[0.72,-14],[0.9,-64]],
+      kneeR: [[0,-8],[0.2,-72],[0.45,-6],[0.72,-14],[0.9,-64]],
+      footL: [[0,6],[0.2,26],[0.45,-18],[0.75,8],[0.9,22]],
+      footR: [[0,6],[0.2,26],[0.45,-18],[0.75,8],[0.9,22]],
+      shoulderL:[[0,-8],[0.2,26],[0.45,-64],[0.75,-10]],
+      shoulderR:[[0,8],[0.2,-26],[0.45,64],[0.75,10]],
+      elbowL:[[0,-14],[0.45,-30],[0.8,-16]],
+      elbowR:[[0,-14],[0.45,-30],[0.8,-16]],
+      chest:[[0,0],[0.2,8],[0.45,-6],[0.8,2]]
+    },
+    bob: [[0,0],[0.2,16],[0.46,-84],[0.72,4],[0.9,14]], bobFreq: 1
+  },
+  dance: {
+    dur: 1.6,
+    curves: {
+      hips:[[0,-7],[0.25,0],[0.5,7],[0.75,0]],
+      chest:[[0,6],[0.25,0],[0.5,-6],[0.75,0]],
+      neck:[[0,-4],[0.5,4]],
+      head:[[0,5],[0.25,-3],[0.5,5],[0.75,-3]],
+      shoulderL:[[0,-52],[0.5,-14]], elbowL:[[0,-46],[0.5,-14]],
+      shoulderR:[[0,-14],[0.5,-52]], elbowR:[[0,-14],[0.5,-46]],
+      thighL:[[0,10],[0.5,-14]], kneeL:[[0,-14],[0.5,-34]],
+      thighR:[[0,-14],[0.5,10]], kneeR:[[0,-34],[0.5,-14]]
+    },
+    bob: [[0,0],[0.25,-6],[0.5,0],[0.75,-6]], bobFreq: 1
+  },
+  none: { dur: 2, curves: {}, bob: [[0,0]], bobFreq: 1 }
+};
+
+/** Every joint angle for a moment in the cycle, sliders applied. */
+function sample(t){
+  var A = ACTIONS[P.action] || ACTIONS.none, ang = {};
+  for(var k in A.curves) ang[k] = evalCurve(A.curves[k], t) * P.amount;
+  // Lean is a constant tilt at the root — a walk leaning forward reads
+  // as effort, leaning back as a strut.
+  ang.hips = (ang.hips || 0) + P.lean;
+  var bob = evalCurve(A.bob || [[0,0]], t * (A.bobFreq||1)) * P.bounce * P.amount;
+  return { ang: ang, dx: 0, dy: bob };
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   4. FACE — placed by hand, carried by the head
+
+   Face parts are their own small shapes rather than holes in the
+   silhouette, so they can act independently of it: a blink is the eyes
+   doing something the body isn't. They ride the head bone, which means
+   they inherit every head turn and body bounce for free.
+   ═══════════════════════════════════════════════════════════════════ */
+
+var FACE_KINDS = ['eye','nose','mouth','brow'];
+
+/**
+ * Blink: shut and open quickly, then wait. `rate` is blinks per cycle,
+ * and stays a whole number so the last blink finishes exactly as the
+ * loop comes round.
+ *
+ * The shut phase is held long enough to survive being sampled at the
+ * export frame rate. A blink is naturally fast enough to fall between
+ * two baked frames and never appear at all — the preview blinks, the
+ * export doesn't, and nothing looks broken enough to explain why. Two
+ * and a half frames is the floor; at low frame rates the blink slows to
+ * meet it rather than disappearing.
+ */
+function blinkAmount(t){
+  if(!P.blink) return 1;
+  var gap = 1 / Math.max(1, Math.round(P.blinkRate));
+  var u = (t % gap) / gap;
+  var shut = Math.max(0.16, (2.5 / Math.max(8, P.frames)) / gap);
+  if(u > shut) return 1;
+  return Math.abs(Math.cos((u/shut) * Math.PI));
+}
+
+function ellipsePath(cx, cy, rx, ry){
+  return 'M' + r1(cx-rx) + ',' + r1(cy) +
+         'a' + r1(rx) + ',' + r1(ry) + ' 0 1,0 ' + r1(rx*2) + ',0' +
+         'a' + r1(rx) + ',' + r1(ry) + ' 0 1,0 ' + r1(-rx*2) + ',0Z';
+}
+
+/** The mouth is one arc whose curvature is the smile. */
+function mouthPath(cx, cy, s, smile){
+  var w = s*1.5, bend = smile*s*1.5;
+  return 'M' + r1(cx-w) + ',' + r1(cy) +
+         'Q' + r1(cx) + ',' + r1(cy + bend) + ' ' + r1(cx+w) + ',' + r1(cy) +
+         'Q' + r1(cx) + ',' + r1(cy + bend*0.45) + ' ' + r1(cx-w) + ',' + r1(cy) + 'Z';
+}
+
+/** A face part, posed and shaped for this moment. */
+function facePath(el, Q, A, t){
+  var c = boneXf('head', el.x, el.y, Q, A);
+  var s = el.s;
+  if(el.kind === 'eye')   return ellipsePath(c[0], c[1], s, s*1.25*blinkAmount(t));
+  if(el.kind === 'brow')  return ellipsePath(c[0], c[1] - s*0.4, s*1.15, s*0.22);
+  if(el.kind === 'nose')  return ellipsePath(c[0], c[1], s*0.6, s*0.85);
+  return mouthPath(c[0], c[1], s, P.smile);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   5. DRAWING
+   ═══════════════════════════════════════════════════════════════════ */
+
+/** Closed Catmull-Rom through the points, as cubic beziers. */
+function toPath(p){
+  var n = p.length;
+  if(!n) return '';
+  var d = 'M' + r1(p[0][0]) + ',' + r1(p[0][1]);
+  for(var i=0;i<n;i++){
+    var p0=p[(i-1+n)%n], p1=p[i], p2=p[(i+1)%n], p3=p[(i+2)%n];
+    d += 'C' + r1(p1[0]+(p2[0]-p0[0])/6) + ',' + r1(p1[1]+(p2[1]-p0[1])/6) +
+         ' '  + r1(p2[0]-(p3[0]-p1[0])/6) + ',' + r1(p2[1]-(p3[1]-p1[1])/6) +
+         ' '  + r1(p2[0]) + ',' + r1(p2[1]);
+  }
+  return d + 'Z';
+}
+
+/**
+ * Squash and stretch, applied to the whole figure about the feet.
+ *
+ * Volume is conserved — the horizontal scale is the inverse of the
+ * vertical — because a figure that only squashes reads as being
+ * crushed rather than as having weight.
+ */
+function squashXf(t){
+  var A = ACTIONS[P.action] || ACTIONS.none;
+  var bob = evalCurve(A.bob || [[0,0]], t * (A.bobFreq||1));
+  var k = 1 - (bob/40) * P.squash * P.bounce;
+  return { sy: k, sx: 1/Math.max(0.2, k) };
+}
+
+/**
+ * The figure at a moment in the cycle.
+ *
+ * While a joint is being dragged the rest pose is drawn instead — you
+ * are placing joints on the artwork, and the artwork is only in its
+ * drawn position at rest. Posing during a drag would have you aiming a
+ * knee at a leg that has already swung out from under it.
+ */
+function frame(t){
+  var pz = S.drag ? { ang:{}, dx:0, dy:0 } : sample(t);
+  var pd = pose(pz.ang, pz.dx, pz.dy);
+  return { body: skin(pd.Q, pd.A), Q: pd.Q, A: pd.A };
+}
+
+function draw(){
+  var f = frame(S.t), sq = squashXf(S.t);
+  var footY = Math.max(S.joints.footL ? S.joints.footL.y : 560, 560);
+
+  var parts = ['<g transform="translate(300,' + r1(footY) + ') scale(' +
+    r1(sq.sx*100)/100 + ',' + r1(sq.sy*100)/100 + ') translate(-300,' + r1(-footY) + ')"' +
+    (P.rough > 0 ? ' filter="url(#rough)"' : '') + '>'];
+
+  var paint = 'fill="' + P.fill + '"' +
+    (P.strokeW > 0 ? ' stroke="' + P.stroke + '" stroke-width="' + P.strokeW + '"' : '');
+
+  parts.push('<path class="ch-body" ' + paint + ' d="' + toPath(f.body) + '"/>');
+  S.face.forEach(function(el, i){
+    var col = (el.kind === 'mouth' || el.kind === 'eye' || el.kind === 'brow') ? '#0a0a0a' : P.fill;
+    parts.push('<path class="ch-f' + i + '" fill="' + col + '" d="' +
+               facePath(el, f.Q, f.A, S.t) + '"/>');
+  });
+  parts.push('</g>');
+
+  if(P.showRig) parts.push(rigOverlay(f.Q));
+
+  var defs = P.rough > 0 ?
+    '<defs><filter id="rough" x="-25%" y="-25%" width="150%" height="150%">' +
+    '<feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="7" result="n"/>' +
+    '<feDisplacementMap in="SourceGraphic" in2="n" scale="' + P.rough +
+    '" xChannelSelector="R" yChannelSelector="G"/></filter></defs>' : '';
+
+  $('#view').innerHTML =
+    '<svg id="svg" viewBox="0 0 600 600" xmlns="' + SVGNS + '">' + defs + parts.join('') + '</svg>';
+
+  wireStage();
+  $('#scrub').value = Math.round(S.t*1000);
+  var dur = (ACTIONS[P.action] || ACTIONS.none).dur / P.speed;
+  $('#tlabel').textContent = (S.t*dur).toFixed(2) + ' / ' + dur.toFixed(2) + 's';
+}
+
+function rigOverlay(Q){
+  var g = ['<g class="rig">'];
+  BONES.forEach(function(b){
+    var a = Q[PAR[b]], c = Q[b];
+    g.push('<line class="bone" x1="'+r1(a.x)+'" y1="'+r1(a.y)+'" x2="'+r1(c.x)+'" y2="'+r1(c.y)+'"/>');
+  });
+  // Posed positions, so the joints stay on the bones they belong to.
+  // During a drag the pose is the rest pose, so they land exactly where
+  // the cursor puts them.
+  ORDER.forEach(function(n){
+    var p = Q[n];
+    g.push('<circle class="joint' + (PAR[n]===null?' root':'') + '" data-j="' + n +
+           '" cx="'+r1(p.x)+'" cy="'+r1(p.y)+'" r="6"/>');
+  });
+  return g.join('') + '</g>';
+}
+
+/* ── stage interaction: drag joints, place face parts ─────────────── */
+function svgPoint(e){
+  var svg = $('#svg'), pt = svg.createSVGPoint();
+  pt.x = e.clientX; pt.y = e.clientY;
+  var m = svg.getScreenCTM().inverse();
+  var q = pt.matrixTransform(m);
+  return [q.x, q.y];
+}
+
+function wireStage(){
+  var svg = $('#svg');
+  if(!svg) return;
+
+  svg.addEventListener('pointerdown', function(e){
+    var j = e.target.getAttribute && e.target.getAttribute('data-j');
+    if(j){
+      // Joints are dragged in the REST pose, so posing has to stop —
+      // otherwise you would be aiming at a moving target.
+      S.drag = j; S.playing = false; S.t = 0; syncPlay(); draw();
+      svg.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
+    if(S.tool){
+      var p = svgPoint(e);
+      S.face.push({ kind: S.tool, x: p[0], y: p[1], s: 14 });
+      renderPanel(); draw();
+    }
+  });
+
+  svg.addEventListener('pointermove', function(e){
+    if(!S.drag) return;
+    var p = svgPoint(e);
+    S.joints[S.drag] = { x: p[0], y: p[1] };
+    draw();
+  });
+
+  var end = function(){
+    if(!S.drag) return;
+    S.drag = null;
+    bindSkin();          // the skin follows the bones, so rebind on drop
+    draw();
+  };
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   6. EXPORT — a real loop
+
+   The loader export plays once and holds; this one has to repeat
+   forever, which is a different contract, not a setting. Frame 0 and
+   frame N are the same sample of a wrapping curve, so the seam is
+   arithmetic rather than something to nurse.
+   ═══════════════════════════════════════════════════════════════════ */
+
+function bake(){
+  var n = P.frames, shapes = { body: [] };
+  S.face.forEach(function(_, i){ shapes['f' + i] = []; });
+
+  for(var k=0;k<n;k++){
+    var t = k/n, f = frame(t);
+    shapes.body.push(toPath(f.body));
+    S.face.forEach(function(el, i){ shapes['f'+i].push(facePath(el, f.Q, f.A, t)); });
+  }
+  // Close the loop by repeating the first frame at 100%.
+  for(var key in shapes) shapes[key].push(shapes[key][0]);
+  return shapes;
+}
+
+function exportCSS(){
+  var shapes = bake(), n = P.frames;
+  var dur = ((ACTIONS[P.action]||ACTIONS.none).dur / P.speed).toFixed(2);
+  var timing = P.fps > 0 ? 'steps(1,end)' : 'linear';
+  var css = [], names = Object.keys(shapes);
+
+  names.forEach(function(key){
+    var kf = shapes[key].map(function(d, i){
+      return (Math.round(i/n*10000)/100) + '%{d:path("' + d + '")}';
+    }).join('');
+    css.push('@keyframes ch-' + key + '{' + kf + '}');
+  });
+  names.forEach(function(key){
+    css.push('.ch .ch-' + key + '{animation:ch-' + key + ' ' + dur +
+             's ' + timing + ' infinite}');
+  });
+
+  var svg = ['<svg class="ch" viewBox="0 0 600 600" xmlns="' + SVGNS + '">'];
+  svg.push('<path class="ch-body" fill="' + P.fill + '"' +
+           (P.strokeW>0 ? ' stroke="'+P.stroke+'" stroke-width="'+P.strokeW+'"' : '') +
+           ' d="' + shapes.body[0] + '"/>');
+  S.face.forEach(function(el, i){
+    var col = el.kind === 'nose' ? P.fill : '#0a0a0a';
+    svg.push('<path class="ch-f' + i + '" fill="' + col + '" d="' + shapes['f'+i][0] + '"/>');
+  });
+  svg.push('</svg>');
+
+  return { css: css.join('\n'), svg: svg.join('') };
+}
+
+function download(name, text, type){
+  var b = new Blob([text], { type: type || 'text/plain' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = name; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+}
+
+function exportHTML(){
+  var e = exportCSS();
+  return '<!doctype html><meta charset="utf-8"><title>' + P.action +
+    '</title><style>html,body{margin:0;height:100%;display:grid;place-items:center;' +
+    'background:#0a0a0a}svg{width:min(70vw,70vh)}\n' + e.css + '</style>\n' + e.svg;
+}
+
+function exportJSON(){
+  return JSON.stringify({
+    version: 1, action: P.action, frames: P.frames,
+    duration: (ACTIONS[P.action]||ACTIONS.none).dur / P.speed,
+    viewBox: [0,0,600,600],
+    joints: S.joints, face: S.face, params: P,
+    rest: S.pts.map(function(p){ return [r1(p[0]), r1(p[1])]; })
+  }, null, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   7. SAVED CHARACTERS
+
+   Saving matters more here than in a slider tool: a character is a
+   traced outline plus eighteen hand-placed joints plus a face, and
+   nobody wants to place those twice.
+
+   Where they go depends on how the tool was opened. Inside the site it
+   asks the page to store them, because a srcDoc iframe has an opaque
+   origin and its localStorage is a throwaway that empties on reload —
+   saves would appear to work and quietly vanish. Opened straight from
+   disk there is no page to ask, so localStorage is used, which there
+   is a real one.
+   ═══════════════════════════════════════════════════════════════════ */
+
+var BRIDGE = (function(){
+  var waiting = {}, seq = 0;
+  window.addEventListener('message', function(e){
+    var m = e.data;
+    if(!m || typeof m !== 'object' || m.chan !== 'xoxo-characters') return;
+    var fn = waiting[m.id];
+    if(fn){ delete waiting[m.id]; fn(m.payload); }
+  });
+  // A null resolution means nothing answered — no host, so fall back.
+  function ask(op, extra){
+    return new Promise(function(res){
+      if(window.parent === window) return res(null);
+      var id = ++seq;
+      waiting[id] = res;
+      var msg = { chan:'xoxo-characters', id:id, op:op };
+      for(var k in (extra||{})) msg[k] = extra[k];
+      window.parent.postMessage(msg, '*');
+      setTimeout(function(){ if(waiting[id]){ delete waiting[id]; res(null); } }, 4000);
+    });
+  }
+  return {
+    load: function(){ return ask('load'); },
+    save: function(p){ return ask('save', { presets:p }); }
+  };
+})();
+
+var LOCAL_KEY = 'xoxoCharacters';
+var STORE = {
+  load: function(){
+    return BRIDGE.load().then(function(p){
+      if(p) return p;
+      try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}'); }
+      catch(e){ return {}; }
+    });
+  },
+  save: function(p){
+    return BRIDGE.save(p).then(function(r){
+      if(r && r.ok) return 'saved';
+      try { localStorage.setItem(LOCAL_KEY, JSON.stringify(p)); return 'saved locally'; }
+      catch(e){ return 'could not be saved'; }
+    });
+  }
+};
+
+/* Everything is copied, in both directions.
+   Handing the live objects to a saved character makes the two the same
+   object: the next joint you drag silently rewrites the version you
+   saved to get back to, and a save you can edit by accident is worse
+   than no save at all. */
+var copy = function(v){ return JSON.parse(JSON.stringify(v)); };
+
+function snapshot(){
+  return {
+    saved: new Date().toISOString().slice(0,16).replace('T',' '),
+    pts: S.pts.map(function(p){ return [r1(p[0]), r1(p[1])]; }),
+    joints: copy(S.joints),
+    face: copy(S.face),
+    params: copy(P)
+  };
+}
+
+function restore(c){
+  S.pts = c.pts.map(function(p){ return [p[0], p[1]]; });
+  S.joints = copy(c.joints);
+  S.face = copy(c.face || []);
+  for(var k in (c.params||{})) if(k in P) P[k] = c.params[k];
+  S.lastCanvas = null;          // the outline is restored, not re-traced
+  bindSkin();
+  renderPanel();
+  draw();
+}
+
+function saveCharacter(name){
+  if(!name){ status('Give the character a name first.'); return; }
+  S.presets[name] = snapshot();
+  STORE.save(S.presets).then(function(how){
+    renderPanel();
+    status('"' + name + '" ' + how + '.');
+  });
+}
+
+function deleteCharacter(name){
+  delete S.presets[name];
+  STORE.save(S.presets).then(function(){ renderPanel(); });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   8. PANEL
+   ═══════════════════════════════════════════════════════════════════ */
+
+var OPEN = { Character:true, Rig:true, Face:false, Action:true, Look:false,
+             Saved:false, Export:false };
+
+function slider(label, key, min, max, step, fmt){
+  return { t:'slider', label:label, key:key, min:min, max:max, step:step, fmt:fmt };
+}
+
+function PANEL(){ return [
+  ['Character', [
+    { t:'drop' },
+    slider('Threshold', 'threshold', 8, 248, 1),
+    slider('Detail',    'detail',    60, 420, 10),
+    slider('Smoothing', 'smooth',    0, 8, 1),
+    { t:'btns', items:[
+      ['Re-trace', function(){ if(S.lastCanvas) ingestCanvas(S.lastCanvas); }],
+      ['Default figure', function(){ S.lastCanvas = defaultFigure(); ingestCanvas(S.lastCanvas); }]
+    ]},
+    { t:'note', text:'Any picture works — the largest solid shape in it becomes the character. Art on a transparent background is read from its alpha; art on white from its darkness, which is what Threshold moves.' }
+  ]],
+  ['Rig', [
+    { t:'toggle', label:'Show rig', key:'showRig' },
+    slider('Stiffness', 'stiffness', 1.2, 6, 0.1),
+    { t:'btns', items:[
+      ['Auto-fit', function(){ autoFit(); bindSkin(); draw(); }],
+      ['Rebind skin', function(){ bindSkin(); draw(); }]
+    ]},
+    { t:'note', text:'Drag any joint to place it. Playback stops while you drag so the figure holds still, and the skin rebinds when you let go. Stiffness is how tightly the outline follows one bone: too loose and a raised arm drags the ribs, too tight and the shoulder creases.' }
+  ]],
+  ['Face', [
+    { t:'facetools' },
+    { t:'facelist' },
+    { t:'note', text:'Pick a part, then click the character to place it. Face parts are carried by the head bone, so they follow every turn and bounce without being animated separately.' }
+  ]],
+  ['Action', [
+    { t:'select', label:'Action', key:'action',
+      options:['idle','walk','march','wave','jump','dance','none'] },
+    slider('Speed',  'speed',  0.2, 3, 0.05),
+    slider('Amount', 'amount', 0, 1.6, 0.05),
+    slider('Bounce', 'bounce', 0, 2.5, 0.05),
+    slider('Lean',   'lean',  -14, 14, 0.5),
+    { t:'gap' },
+    { t:'toggle', label:'Blink', key:'blink' },
+    slider('Blink rate', 'blinkRate', 1, 10, 1),
+    slider('Smile',      'smile',    -1, 1, 0.05),
+    { t:'note', text:'Every action loops. Face and body are separate on purpose — a character can smile while it walks, and blinking should carry on underneath whatever else is happening.' },
+    { t:'note', text:'Walk is for artwork drawn side-on: a stride is depth, and a bone rig only turns limbs in the plane of the picture, so face-on it comes out as a splay. March is the same idea rebuilt from what does read from the front — knees lifting and weight shifting. Wave, idle and dance work either way.' }
+  ]],
+  ['Look', [
+    { t:'color', label:'Fill',    key:'fill' },
+    { t:'color', label:'Outline', key:'stroke' },
+    slider('Outline',   'strokeW', 0, 14, 0.5),
+    slider('Roughness', 'rough',   0, 14, 0.5),
+    slider('Squash',    'squash',  0, 1.2, 0.05),
+    slider('Step (fps)','fps',     0, 24, 1),
+    { t:'note', text:'Step holds each frame instead of sliding between them — the stop-motion look. It applies to the export; the preview always plays smooth so you can judge the motion itself.' }
+  ]],
+  ['Saved', [
+    { t:'saverow' },
+    { t:'presetlist' },
+    { t:'note', text:'A saved character keeps its traced outline, every joint you placed, its face and all the settings — so loading one is ready to animate, not ready to rig.' }
+  ]],
+  ['Export', [
+    slider('Frames', 'frames', 8, 60, 1),
+    { t:'btns', items:[
+      ['SVG + CSS', function(){ download('character-' + P.action + '.html', exportHTML(), 'text/html'); }],
+      ['JSON',      function(){ download('character-' + P.action + '.json', exportJSON(), 'application/json'); }]
+    ]},
+    { t:'btns', items:[
+      ['Copy CSS', function(){
+        navigator.clipboard.writeText(exportCSS().css).then(function(){ status('CSS copied.'); });
+      }],
+      ['Preview size', function(){ status(sizeReport()); }]
+    ]},
+    { t:'out' },
+    { t:'note', text:'Frames is the whole cost: every frame carries a full outline. 24 is smooth for most actions, and stepping at 12 lets you halve it without the motion changing.' }
+  ]]
+];}
+
+function sizeReport(){
+  var e = exportCSS();
+  var kb = function(s){ return (new Blob([s]).size/1024).toFixed(1) + 'KB'; };
+  return P.frames + ' frames · CSS ' + kb(e.css) + ' · SVG ' + kb(e.svg);
+}
+
+function status(msg){ var o = $('#out'); if(o) o.value = msg; }
+
+function renderPanel(){
+  var html = PANEL().map(function(sec){
+    var name = sec[0], open = OPEN[name] ? ' open' : '';
+    var body = sec[1].map(function(it){ return control(it, name); }).join('');
+    return '<div class="sec' + open + '" data-sec="' + name + '">' +
+           '<h3>' + name + '</h3><div class="body">' + body + '</div></div>';
+  }).join('');
+  $('#panel').innerHTML = html;
+  wirePanel();
+}
+
+function control(it, sec){
+  if(it.t === 'slider'){
+    var v = P[it.key];
+    return '<div class="row"><label>' + it.label + '</label>' +
+      '<input type="range" data-k="' + it.key + '" min="' + it.min + '" max="' + it.max +
+      '" step="' + it.step + '" value="' + v + '">' +
+      '<span class="val" data-v="' + it.key + '">' + v + '</span></div>';
+  }
+  if(it.t === 'toggle'){
+    return '<div class="btns"><button data-toggle="' + it.key + '"' +
+      (P[it.key] ? ' class="on"' : '') + '>' + it.label + '</button></div>';
+  }
+  if(it.t === 'select'){
+    return '<div class="row"><label>' + it.label + '</label><select data-k="' + it.key + '">' +
+      it.options.map(function(o){
+        return '<option' + (P[it.key]===o ? ' selected' : '') + '>' + o + '</option>';
+      }).join('') + '</select></div>';
+  }
+  if(it.t === 'color'){
+    return '<div class="row"><label>' + it.label + '</label>' +
+      '<input type="color" data-k="' + it.key + '" value="' + P[it.key] + '"></div>';
+  }
+  if(it.t === 'btns'){
+    return '<div class="btns">' + it.items.map(function(b, i){
+      return '<button data-act="' + sec + ':' + i + '">' + b[0] + '</button>';
+    }).join('') + '</div>';
+  }
+  if(it.t === 'facetools'){
+    return '<div class="btns">' + FACE_KINDS.map(function(k){
+      return '<button data-face="' + k + '"' + (S.tool===k ? ' class="on"' : '') + '>' + k + '</button>';
+    }).join('') + '</div>';
+  }
+  if(it.t === 'facelist'){
+    if(!S.face.length) return '<p class="note">Nothing placed yet.</p>';
+    return S.face.map(function(el, i){
+      return '<div class="row"><label>' + el.kind + ' ' + (i+1) + '</label>' +
+        '<input type="range" data-fs="' + i + '" min="3" max="60" step="1" value="' + el.s + '">' +
+        '<button data-fd="' + i + '" style="flex:0 0 26px;padding:5px 0">×</button></div>';
+    }).join('');
+  }
+  if(it.t === 'saverow'){
+    return '<div class="row"><input type="text" id="cname" placeholder="Name this character">' +
+           '<button data-save style="flex:0 0 auto">Save</button></div>';
+  }
+  if(it.t === 'presetlist'){
+    var names = Object.keys(S.presets || {});
+    if(!names.length) return '<p class="note">Nothing saved yet.</p>';
+    return names.sort().map(function(n){
+      return '<div class="row"><label title="' + (S.presets[n].saved||'') + '">' + n + '</label>' +
+        '<button data-load="' + n + '">Load</button>' +
+        '<button data-del="' + n + '" style="flex:0 0 26px;padding:5px 0">×</button></div>';
+    }).join('');
+  }
+  if(it.t === 'drop')  return '<div id="drop">Drop a PNG, JPG or SVG — or click to choose</div>' +
+                              '<input type="file" id="file" accept="image/*,.svg" hidden>';
+  if(it.t === 'out')   return '<textarea id="out" readonly></textarea>';
+  if(it.t === 'note')  return '<p class="note">' + it.text + '</p>';
+  if(it.t === 'gap')   return '<div style="height:10px"></div>';
+  return '';
+}
+
+function wirePanel(){
+  var panel = $('#panel');
+
+  panel.querySelectorAll('.sec>h3').forEach(function(h){
+    h.onclick = function(){
+      var sec = h.parentNode.getAttribute('data-sec');
+      OPEN[sec] = !OPEN[sec];
+      h.parentNode.classList.toggle('open', OPEN[sec]);
+    };
+  });
+
+  panel.querySelectorAll('input[type=range][data-k]').forEach(function(el){
+    el.oninput = function(){
+      var k = el.getAttribute('data-k');
+      P[k] = parseFloat(el.value);
+      var v = panel.querySelector('[data-v="' + k + '"]'); if(v) v.textContent = el.value;
+      if(k === 'stiffness'){ bindSkin(); }
+      if(k === 'threshold' || k === 'detail' || k === 'smooth'){
+        if(S.lastCanvas) ingestCanvas(S.lastCanvas);
+      }
+      draw();
+    };
+  });
+
+  panel.querySelectorAll('select[data-k]').forEach(function(el){
+    el.onchange = function(){ P[el.getAttribute('data-k')] = el.value; S.t = 0; draw(); };
+  });
+  panel.querySelectorAll('input[type=color][data-k]').forEach(function(el){
+    el.oninput = function(){ P[el.getAttribute('data-k')] = el.value; draw(); };
+  });
+  panel.querySelectorAll('[data-toggle]').forEach(function(el){
+    el.onclick = function(){
+      var k = el.getAttribute('data-toggle');
+      P[k] = !P[k]; el.classList.toggle('on', P[k]); draw();
+    };
+  });
+  panel.querySelectorAll('[data-act]').forEach(function(el){
+    el.onclick = function(){
+      var parts = el.getAttribute('data-act').split(':');
+      PANEL().forEach(function(sec){
+        if(sec[0] !== parts[0]) return;
+        var n = 0;
+        sec[1].forEach(function(it){
+          if(it.t !== 'btns') return;
+          it.items.forEach(function(b, i){ if(n === 0 && i === +parts[1]) b[1](); });
+          n++;
+        });
+      });
+    };
+  });
+  panel.querySelectorAll('[data-face]').forEach(function(el){
+    el.onclick = function(){
+      var k = el.getAttribute('data-face');
+      S.tool = (S.tool === k) ? null : k;
+      renderPanel();
+    };
+  });
+  panel.querySelectorAll('[data-fs]').forEach(function(el){
+    el.oninput = function(){ S.face[+el.getAttribute('data-fs')].s = +el.value; draw(); };
+  });
+  panel.querySelectorAll('[data-fd]').forEach(function(el){
+    el.onclick = function(){ S.face.splice(+el.getAttribute('data-fd'), 1); renderPanel(); draw(); };
+  });
+
+  var saveBtn = panel.querySelector('[data-save]');
+  if(saveBtn) saveBtn.onclick = function(){
+    saveCharacter(($('#cname').value || '').trim());
+  };
+  panel.querySelectorAll('[data-load]').forEach(function(el){
+    el.onclick = function(){
+      var n = el.getAttribute('data-load');
+      restore(S.presets[n]);
+      status('Loaded "' + n + '".');
+    };
+  });
+  panel.querySelectorAll('[data-del]').forEach(function(el){
+    el.onclick = function(){ deleteCharacter(el.getAttribute('data-del')); };
+  });
+
+  var drop = $('#drop'), file = $('#file');
+  if(drop){
+    drop.onclick = function(){ file.click(); };
+    file.onchange = function(){ if(file.files[0]) readFile(file.files[0]); };
+    ['dragenter','dragover'].forEach(function(ev){
+      drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('hot'); });
+    });
+    ['dragleave','drop'].forEach(function(ev){
+      drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('hot'); });
+    });
+    drop.addEventListener('drop', function(e){
+      if(e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+    });
+  }
+}
+
+/* SVG is rasterised rather than parsed. The outline is resampled to a
+   fixed point count either way, so nothing is lost that survives to the
+   export, and one code path handles every format. */
+function readFile(f){
+  var fr = new FileReader();
+  fr.onload = function(){
+    var src = fr.result;
+    if(/\.svg$/i.test(f.name) || f.type === 'image/svg+xml'){
+      src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(src)));
+      var img = new Image();
+      img.onload = function(){
+        var cv = document.createElement('canvas');
+        cv.width = 900; cv.height = 900;
+        var g = cv.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0,0,900,900);
+        var k = Math.min(900/img.width, 900/img.height);
+        g.drawImage(img, (900-img.width*k)/2, (900-img.height*k)/2, img.width*k, img.height*k);
+        S.lastCanvas = cv; ingestCanvas(cv);
+      };
+      img.onerror = function(){ status('That SVG would not render — try exporting it as a PNG.'); };
+      img.src = src;
+      return;
+    }
+    var img2 = new Image();
+    img2.onload = function(){
+      var k = 900/Math.max(img2.width, img2.height);
+      var cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(img2.width*k));
+      cv.height = Math.max(1, Math.round(img2.height*k));
+      cv.getContext('2d').drawImage(img2, 0, 0, cv.width, cv.height);
+      S.lastCanvas = cv; ingestCanvas(cv);
+    };
+    img2.src = src;
+  };
+  if(/\.svg$/i.test(f.name) || f.type === 'image/svg+xml') fr.readAsText(f);
+  else fr.readAsDataURL(f);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   8. TRANSPORT
+   ═══════════════════════════════════════════════════════════════════ */
+
+function syncPlay(){ $('#play').textContent = S.playing ? 'Pause' : 'Play'; }
+
+var last = 0;
+function loop(now){
+  requestAnimationFrame(loop);
+  if(!last) last = now;
+  var dt = (now - last)/1000; last = now;
+  if(!S.playing || S.drag) return;
+  var dur = (ACTIONS[P.action] || ACTIONS.none).dur / P.speed;
+  S.t = (S.t + dt/dur) % 1;
+  draw();
+}
+
+function boot(){
+  S.presets = {};
+  renderPanel();
+  S.lastCanvas = defaultFigure();
+  ingestCanvas(S.lastCanvas);
+
+  // Saved characters arrive whenever they arrive; the default figure is
+  // already up, so nothing waits on the network.
+  STORE.load().then(function(p){
+    S.presets = p || {};
+    renderPanel();
+  });
+
+  $('#play').onclick = function(){ S.playing = !S.playing; syncPlay(); };
+  $('#scrub').oninput = function(){
+    S.playing = false; syncPlay();
+    S.t = +$('#scrub').value / 1000;
+    draw();
+  };
+  window.addEventListener('keydown', function(e){
+    if(e.key === ' '){ e.preventDefault(); S.playing = !S.playing; syncPlay(); }
+  });
+
+  syncPlay();
+  requestAnimationFrame(loop);
+}
+
+boot();
+</script>
+</body>
+</html>

@@ -65,16 +65,31 @@ export function middleware(request: NextRequest) {
     return NextResponse.rewrite(new URL('/mobile-lock', request.url))
   }
 
-  // ── Logo tuner ──────────────────────────────────────────────────
+  // ── Studio tools: the logo tuner and the character animator ──────
   // Exempt from the site passcode for the same reason the dailies portal
-  // is: it carries its own password (the dailies one), so the site gate
-  // would only be a second, redundant prompt. It is NOT exempt from the
-  // phone lock — that block runs above this one and catches phones
-  // first, which is right for a desktop tool.
+  // is: they carry their own password (the dailies one), so the site
+  // gate would only be a second, redundant prompt. They are NOT exempt
+  // from the phone lock — that block runs above this one and catches
+  // phones first, which is right for a desktop tool.
   //
-  // /api/logo-tool checks the dailies session itself before returning a
-  // byte; the page's gate only decides what to render.
-  if (pathname === '/logo' || pathname.startsWith('/api/logo-tool')) {
+  // The /api/*-tool routes check the dailies session themselves before
+  // returning a byte; the pages' gates only decide what to render.
+  //
+  // The -presets routes have to be exempt too, and for a reason that is
+  // easy to miss: the gate answers a blocked request with a REDIRECT to
+  // /gate, not an error. A fetch follows it and gets 200 and a page of
+  // HTML, so the tool sees a successful reply that will not parse and
+  // concludes there is nothing saved. Saving then appears to work and
+  // quietly goes nowhere. They check the same dailies session as the
+  // tools they belong to, so the passcode adds nothing but that trap.
+  if (
+    pathname === '/logo' ||
+    pathname === '/character' ||
+    pathname.startsWith('/api/logo-tool') ||
+    pathname.startsWith('/api/logo-presets') ||
+    pathname.startsWith('/api/character-tool') ||
+    pathname.startsWith('/api/character-presets')
+  ) {
     return NextResponse.next()
   }
 
