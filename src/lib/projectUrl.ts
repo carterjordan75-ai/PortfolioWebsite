@@ -41,22 +41,64 @@ export function brandSlug(p: UrlProject): string {
   return from
 }
 
+/**
+ * Brand addresses for a whole set, with collisions numbered.
+ *
+ * Two projects for the same client cannot both own /nike, so the second
+ * becomes /nike-2. Which one keeps the bare name is decided by sorting
+ * the colliding group by stored slug — NOT by their position in the
+ * list. Order varies by who is asking: the navigation knows only
+ * featured projects, the index knows all of them, and a number that
+ * depended on that would give one project different addresses on
+ * different pages.
+ */
+export function assignBrands(projects: UrlProject[]): Map<string, string> {
+  const groups = new Map<string, UrlProject[]>()
+  for (const p of projects) {
+    const b = brandSlug(p)
+    groups.set(b, [...(groups.get(b) || []), p])
+  }
+  const out = new Map<string, string>()
+  groups.forEach((members, brand) => {
+    if (members.length === 1) {
+      out.set(members[0].slug || '', brand)
+      return
+    }
+    members
+      .slice()
+      .sort((x, y) => (x.slug || '').localeCompare(y.slug || ''))
+      .forEach((p, i) => out.set(p.slug || '', i === 0 ? brand : brand + '-' + (i + 1)))
+  })
+  return out
+}
+
+/** This project's address within a known set. */
+export function brandIn(projects: UrlProject[], p: UrlProject): string {
+  return assignBrands(projects).get(p.slug || '') || brandSlug(p)
+}
+
 /** Where a link to this project should point. */
-export function projectHref(p: UrlProject): string {
-  return '/' + brandSlug(p)
+export function projectHref(p: UrlProject, projects?: UrlProject[]): string {
+  return '/' + (projects ? brandIn(projects, p) : brandSlug(p))
 }
 
 /**
- * Does this project answer to `seg`?
+ * Find the project a URL segment refers to.
  *
- * Both names are accepted, so every link that has ever been shared keeps
- * working — the old /work/<slug> form redirects here rather than dying,
- * and a slug typed straight into the bar still lands.
+ * Both names resolve — the brand it is advertised at, and the slug it is
+ * stored under — so every link ever shared keeps working and the page
+ * can rewrite the address afterwards. Numbered brands are matched here
+ * too, which is why resolving takes the whole set rather than one
+ * project at a time.
  */
-export function matchesSegment(p: UrlProject, seg: string): boolean {
-  if (!seg) return false
+export function resolveProject<T extends UrlProject>(projects: T[], seg: string): T | undefined {
+  if (!seg) return undefined
   const s = seg.toLowerCase()
-  return (p.slug || '').toLowerCase() === s || brandSlug(p).toLowerCase() === s
+  const brands = assignBrands(projects)
+  return (
+    projects.find(p => (brands.get(p.slug || '') || '').toLowerCase() === s) ||
+    projects.find(p => (p.slug || '').toLowerCase() === s)
+  )
 }
 
 /**

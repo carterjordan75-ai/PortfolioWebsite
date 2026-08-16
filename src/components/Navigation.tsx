@@ -641,7 +641,7 @@ export default function Navigation() {
                                   initial={{ opacity: 0, x: -8 }}
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ duration: 0.25, delay: 0.08 + i * 0.04, ease: [0.16, 1, 0.3, 1] }}
-                                  onClick={() => { setIndexHover(false); router.push(projectHref(p)) }}
+                                  onClick={() => { setIndexHover(false); router.push(projectHref(p, featuredProjects)) }}
                                   className="w-full text-left px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-[0.02em]"
                                   style={{
                                     color: dark ? '#fff' : '#000',

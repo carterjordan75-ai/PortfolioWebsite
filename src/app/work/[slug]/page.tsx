@@ -16,7 +16,7 @@ import ProjectMediaPanel, { type ProjectMediaItem } from '@/components/ProjectMe
 import ProjectLinks, { type ProjectLink } from '@/components/ProjectLinks'
 import PageLoader from '@/components/PageLoader'
 import { useEditMode } from '@/contexts/EditModeContext'
-import { matchesSegment, brandSlug } from '@/lib/projectUrl'
+import { resolveProject, brandIn } from '@/lib/projectUrl'
 
 // Client logo mapping
 const clientLogos: Record<string, { src: string; width: number; height: number }> = {
@@ -36,7 +36,7 @@ function classifyMedia(path: string): 'video' | 'image' {
 export default function ProjectPage({ params }: { params: { slug: string } }) {
   // Either name resolves: the brand it is advertised as, or the slug it
   // is stored under. See lib/projectUrl.
-  const codeProject = projects.find((p) => matchesSegment(p, params.slug))
+  const codeProject = resolveProject(projects, params.slug)
 
   const router = useRouter()
   const { dark, fg, fg60, borderThick } = useDarkMode()
@@ -54,6 +54,9 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   } | null>(null)
   const leftPanelRef = useRef<HTMLDivElement>(null)
   const [adminProject, setAdminProject] = useState<Record<string, unknown> | null>(null)
+  // The full project set, kept so a numbered brand can be worked out —
+  // /nike-2 is only meaningful next to the other Nike.
+  const [adminAll, setAdminAll] = useState<Array<Record<string, unknown> & { slug?: string; client?: string }>>([])
   const [adminLoading, setAdminLoading] = useState(!codeProject)
   // Whether the loader has finished its run. Kept separate from
   // adminLoading because the two answer different questions: one is "is
@@ -100,8 +103,11 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
     return fetch('/api/projects', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => {
-        const found = (data.projects || []).find((p: Record<string, unknown>) =>
-          matchesSegment(p as { slug?: string; client?: string }, params.slug))
+        const all = (data.projects || []) as Array<Record<string, unknown> & { slug?: string; client?: string }>
+        // Resolved against the whole set, because a numbered brand
+        // (/nike-2) only means anything relative to its siblings.
+        const found = resolveProject(all, params.slug)
+        setAdminAll(all)
         setAdminProject(found || null)
         if (found?.logoSize) setLogoScale(Number(found.logoSize))
         setAdminLoading(false)
@@ -261,10 +267,10 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
    */
   useEffect(() => {
     if (!project) return
-    const want = brandSlug(project as { slug?: string; client?: string })
+    const want = brandIn(adminAll.length ? adminAll : projects, project as { slug?: string; client?: string })
     if (!want || want === params.slug) return
     router.replace('/' + want)
-  }, [project, params.slug, router])
+  }, [project, params.slug, router, adminAll])
 
   // Cover the page while admin data is in flight.
   //

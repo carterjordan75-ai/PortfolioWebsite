@@ -282,7 +282,7 @@ function ArchivePageInner() {
             return (
               <div
                 key={project.slug}
-                onClick={() => handleFeaturedClick(projectHref(project))}
+                onClick={() => handleFeaturedClick(projectHref(project, allProjects))}
                 className="archive-row block md:grid grid-cols-[1.2fr_2fr_1fr_0.4fr] gap-4 px-6 md:px-10 py-[8px] cursor-pointer items-baseline"
                 style={{
                   borderBottom: `2px solid ${borderColor}`,
