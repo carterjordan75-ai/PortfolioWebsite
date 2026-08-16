@@ -49,11 +49,27 @@ const isGrey = (hex: string) => {
   return !!m && m[1].toLowerCase() === m[2].toLowerCase() && m[2].toLowerCase() === m[3].toLowerCase()
 }
 
-/** Whole viewBox units. The mark is 1000 wide, so this is sub-pixel. */
-const toInt = (t: string) => t.replace(/(-?\d+)\.\d+/g, '$1')
+/**
+ * One decimal place, which is exactly what the tuner emits — so this
+ * costs nothing against the source and only trims anything a transform
+ * has lengthened.
+ *
+ * It used to round to WHOLE units, justified as "the mark is 1000 wide,
+ * so this is sub-pixel". That holds for the outer silhouette and is
+ * badly wrong for the counters. A pupil is about 25 units across, so
+ * whole-unit rounding moved its points by up to 0.90 units — 3.6% of the
+ * pupil's radius — against a point spacing of only ~2.2 units. The
+ * outline stayed smooth and the pupils went visibly rough, which is
+ * exactly what it looked like.
+ *
+ * The lesson is in the units: judging a rounding error against the
+ * viewBox rather than against the smallest feature in it.
+ */
+const toDec = (t: string) =>
+  t.replace(/(-?\d+\.\d+)/g, m => String(Math.round(parseFloat(m) * 10) / 10))
 
 /**
- * Rounds PATH DATA and nothing else.
+ * Trims PATH DATA and nothing else.
  *
  * Run over the whole stylesheet this also rewrites cubic-bezier control
  * points, overshoot scales, stroke widths and keyframe percentages — the
@@ -62,8 +78,8 @@ const toInt = (t: string) => t.replace(/(-?\d+)\.\d+/g, '$1')
  */
 function roundPaths(css: string, svg: string) {
   return {
-    css: css.replace(/d:\s*path\("([^"]*)"\)/g, (_, d) => `d:path("${toInt(d)}")`),
-    svg: svg.replace(/\bd="([^"]*)"/g, (_, d) => `d="${toInt(d)}"`),
+    css: css.replace(/d:\s*path\("([^"]*)"\)/g, (_, d) => `d:path("${toDec(d)}")`),
+    svg: svg.replace(/\bd="([^"]*)"/g, (_, d) => `d="${toDec(d)}"`),
   }
 }
 
