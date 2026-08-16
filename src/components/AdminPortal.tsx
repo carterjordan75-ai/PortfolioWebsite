@@ -9,6 +9,7 @@ import {
   LOGO_SCALE_PAGE, type LogoScales,
 } from '@/lib/logoScale'
 import { clearLoaderPick } from '@/lib/loaderPool'
+import { clearSleepPool } from '@/lib/sleepPool'
 import { upload } from '@vercel/blob/client'
 import { useEditMode } from '@/contexts/EditModeContext'
 import { downloadAssetsZip } from '@/lib/downloadZip'
@@ -3490,7 +3491,7 @@ type LoaderIndexShape = {
   randomise: boolean
   pinnedId: string | null
   items: Array<{ id: string; name: string; enabled: boolean; duration: number; bytes: number;
-                 modes?: 'both' | 'light' | 'dark' }>
+                 modes?: 'both' | 'light' | 'dark'; kind?: 'loader' | 'sleep' }>
 }
 
 /**
@@ -3618,6 +3619,7 @@ function LoadersAdminPanel() {
   const [error, setError] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [pendingName, setPendingName] = useState('')
+  const [pendingKind, setPendingKind] = useState<'loader' | 'sleep'>('loader')
   const [busy, setBusy] = useState(false)
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [previewArt, setPreviewArt] = useState<LoaderArtShape | null>(null)
@@ -3648,7 +3650,7 @@ function LoadersAdminPanel() {
     setIndex(await res.json())
     // The visitor's pick is cached for their session; drop ours so the
     // next loader here reflects the change rather than the old roll.
-    clearLoaderPick()
+    clearLoaderPick(); clearSleepPool()
     return true
   }
 
@@ -3660,13 +3662,13 @@ function LoadersAdminPanel() {
       const res = await fetch('/api/loaders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: pendingName.trim(), html }),
+        body: JSON.stringify({ name: pendingName.trim(), html, kind: pendingKind }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
       setStatus(`Added — plays for ${(data.duration / 1000).toFixed(1)}s`)
       setPendingFile(null); setPendingName('')
-      clearLoaderPick()
+      clearLoaderPick(); clearSleepPool()
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -3681,7 +3683,7 @@ function LoadersAdminPanel() {
     if (!res.ok) { setError(`Delete failed (HTTP ${res.status})`); return }
     setIndex(await res.json())
     if (previewId === id) { setPreviewId(null); setPreviewArt(null) }
-    clearLoaderPick()
+    clearLoaderPick(); clearSleepPool()
   }
 
   const preview = async (id: string) => {
@@ -3726,6 +3728,23 @@ function LoadersAdminPanel() {
             placeholder="Name it"
             className="bg-white/5 border border-white/12 rounded-full px-3 py-1.5 text-white text-[10px] outline-none"
           />
+          {/* Chosen on the way in rather than fixed afterwards, so a
+              sleep mark never spends a moment in the loader pool — it
+              would be picked as a loading screen, loop forever, and the
+              page behind it would never be revealed. */}
+          <div className="inline-flex rounded-full border border-white/12 overflow-hidden shrink-0">
+            {([['loader', 'Loader'], ['sleep', 'Sleep']] as const).map(([val, label]) => (
+              <button
+                key={val}
+                onClick={() => setPendingKind(val)}
+                className={`px-3 py-1.5 text-[9px] uppercase tracking-[0.12em] font-bold transition-colors ${
+                  pendingKind === val ? 'bg-white text-black' : 'text-white/45 hover:text-white/80'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <button
             onClick={add}
             disabled={busy || !pendingFile || !pendingName.trim()}
@@ -3807,6 +3826,32 @@ function LoadersAdminPanel() {
                         title={val === 'both'
                           ? 'Can play in either theme'
                           : `Only plays in ${val} mode`}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                {/* What this mark is FOR. A loader covers a wait and
+                    stops when the page is ready; a sleep mark loops over
+                    the page until the mouse moves. Same artwork either
+                    way — only this decides which pool it is drawn from. */}
+                <div className="inline-flex rounded-full border border-white/12 overflow-hidden shrink-0">
+                  {([
+                    ['loader', 'Loader'],
+                    ['sleep', 'Sleep'],
+                  ] as const).map(([val, label]) => {
+                    const on = (item.kind || 'loader') === val
+                    return (
+                      <button
+                        key={val}
+                        onClick={() => patch({ items: [{ id: item.id, kind: val }] })}
+                        className={`px-2 py-1 text-[8px] uppercase tracking-[0.1em] font-bold transition-colors ${
+                          on ? 'bg-white text-black' : 'text-white/45 hover:text-white/80'
+                        }`}
+                        title={val === 'loader'
+                          ? 'Covers a page while it loads, then stops'
+                          : 'Loops over the page after 45s of no movement'}
                       >
                         {label}
                       </button>

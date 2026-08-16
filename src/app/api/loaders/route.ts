@@ -36,12 +36,26 @@ const artKey = (id: string) => `state/loader-art/${id}.json`
  */
 export type LoaderModes = 'both' | 'light' | 'dark'
 
+/**
+ * What a mark is for.
+ *
+ * 'loader' covers a wait: it plays once and holds its final frame, and
+ * the page appears when it finishes. 'sleep' is the opposite — it has no
+ * end to wait for, it loops until the viewer moves the mouse, and it is
+ * shown over the page rather than instead of it. Same artwork format and
+ * same pool machinery either way, so they live in one index and differ
+ * only here.
+ */
+export type LoaderKind = 'loader' | 'sleep'
+
 export type LoaderMeta = {
   id: string
   name: string
   enabled: boolean
   /** Absent on loaders added before this existed — treated as 'both'. */
   modes?: LoaderModes
+  /** Absent on everything added before sleep mode — treated as 'loader'. */
+  kind?: LoaderKind
   duration: number
   bytes: number
   createdAt: string
@@ -52,10 +66,16 @@ export type LoaderIndex = {
   randomise: boolean
   /** Used when randomise is off. Falls back to the first enabled one. */
   pinnedId: string | null
+  /**
+   * The same, for sleep marks. Separate because the two pools are chosen
+   * from independently — pinning a loader should not also decide which
+   * screensaver runs.
+   */
+  pinnedSleepId?: string | null
   items: LoaderMeta[]
 }
 
-const EMPTY: LoaderIndex = { randomise: true, pinnedId: null, items: [] }
+const EMPTY: LoaderIndex = { randomise: true, pinnedId: null, pinnedSleepId: null, items: [] }
 
 const readIndex = () => readVersionedJson<LoaderIndex>(INDEX_KEY, EMPTY)
 
@@ -88,17 +108,26 @@ export async function GET(request: NextRequest) {
   // An unknown or absent mode means "do not filter", so a caller that
   // has not been taught about this still gets a loader.
   const mode = request.nextUrl.searchParams.get('mode')
+  // Sleep marks and loading marks are different pools and must not leak
+  // into each other: a loader shown as a screensaver would stop after one
+  // play, and a sleep mark used as a loader would never finish and the
+  // page would never appear. An absent kind means 'loader', both on the
+  // request and on the stored item.
+  const wantKind: LoaderKind = request.nextUrl.searchParams.get('kind') === 'sleep'
+    ? 'sleep' : 'loader'
   const live = index.items.filter(i => {
     if (!i.enabled) return false
+    if ((i.kind || 'loader') !== wantKind) return false
     const m = i.modes || 'both'
     if (m === 'both' || mode !== 'light' && mode !== 'dark') return true
     return m === mode
   })
   if (!live.length) return NextResponse.json({ index, chosen: null, art: null }, NO_CACHE)
 
+  const pinned = wantKind === 'sleep' ? index.pinnedSleepId : index.pinnedId
   const chosen = index.randomise
     ? live[Math.floor(Math.random() * live.length)]
-    : live.find(i => i.id === index.pinnedId) || live[0]
+    : live.find(i => i.id === pinned) || live[0]
 
   const art = await readVersionedJson<LoaderArt | null>(artKey(chosen.id), null)
   return NextResponse.json({ index, chosen, art }, NO_CACHE)
@@ -106,7 +135,7 @@ export async function GET(request: NextRequest) {
 
 /** POST { name, html } — html is a loader exported from the tuner. */
 export async function POST(request: Request) {
-  let body: { name?: string; html?: string }
+  let body: { name?: string; html?: string; kind?: LoaderKind }
   try {
     body = await request.json()
   } catch {
@@ -115,6 +144,7 @@ export async function POST(request: Request) {
 
   const name = (body.name || '').trim()
   const html = body.html || ''
+  const kind: LoaderKind = body.kind === 'sleep' ? 'sleep' : 'loader'
   if (!name) return NextResponse.json({ error: 'Give it a name' }, { status: 400, ...NO_CACHE })
 
   let art: LoaderArt
@@ -135,6 +165,7 @@ export async function POST(request: Request) {
     id,
     name,
     enabled: true,
+    kind,
     duration: art.duration,
     bytes: art.css.length + art.svg.length,
     createdAt: new Date().toISOString(),
@@ -156,6 +187,7 @@ export async function PATCH(request: Request) {
   const index = await readIndex()
   if (typeof body.randomise === 'boolean') index.randomise = body.randomise
   if ('pinnedId' in body) index.pinnedId = body.pinnedId ?? null
+  if ('pinnedSleepId' in body) index.pinnedSleepId = body.pinnedSleepId ?? null
 
   for (const patch of body.items || []) {
     const item = index.items.find(i => i.id === patch.id)
@@ -164,6 +196,7 @@ export async function PATCH(request: Request) {
     if (typeof patch.enabled === 'boolean') item.enabled = patch.enabled
     if (patch.modes === 'both' || patch.modes === 'light' || patch.modes === 'dark')
       item.modes = patch.modes
+    if (patch.kind === 'loader' || patch.kind === 'sleep') item.kind = patch.kind
   }
 
   await writeVersionedJson(INDEX_KEY, index)
@@ -179,6 +212,7 @@ export async function DELETE(request: NextRequest) {
   const before = index.items.length
   index.items = index.items.filter(i => i.id !== id)
   if (index.pinnedId === id) index.pinnedId = null
+  if (index.pinnedSleepId === id) index.pinnedSleepId = null
   if (index.items.length === before) {
     return NextResponse.json({ error: 'Not found' }, { status: 404, ...NO_CACHE })
   }

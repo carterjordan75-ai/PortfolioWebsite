@@ -100,6 +100,16 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
 <div class="wrap">
  <div class="panel">
   <div class="row secbar"><button onclick="allSecs(true)">Expand all</button><button onclick="allSecs(false)">Collapse all</button></div>
+  <details open><summary>Sleep mode</summary>
+  <div class="row"><button id="slpOff" onclick="setSleep(0)">Loader</button>
+   <button id="slpOn" onclick="setSleep(1)">Sleep</button></div>
+  <div class="row"><label>Ambient drift <b id="vslpAmt"></b></label><input id="slpAmt" type="range" min="0" max="3" step=".05"></div>
+  <div class="row"><label>Loop length <b id="vslpDur"></b></label><input id="slpDur" type="range" min="2000" max="20000" step="500"></div>
+  <p class="note">A loader plays once and stops on its last frame — the page
+   is waiting on it. A sleep mark has nothing waiting, so everything repeats
+   for as long as it is up and a slow drift rides on top. Export it, then add
+   it in the admin panel as a Sleep mark.</p>
+  </details>
   <details open><summary>Preset</summary>
   <div class="row">
    <button onclick="preset('r9')">Round 9</button>
@@ -531,6 +541,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
  lgAlign:'centre',lgTex:0,startSpread:0,
  renderer:'svg',
+ sleep:0,slpAmt:1,slpDur:7000,
  d3d:0,d3blur:18,d3ang:135,d3elev:42,d3spec:.8,d3gam:.75,d3amb:.28,
  d3gloss:22,d3edge:1.2,tiltY:0,tiltX:0,persp:900,lgfOver:0,
  lgfill:1,lgfStyle:'rise',lgfWhen:0,lgfTime:0,lgSoft:0,lgScale:.5,lgvar:.5,
@@ -1610,6 +1621,37 @@ function scoreCSS(total){
    +'animation-delay:'+Math.round(total*0.6)+'ms}';
 }
 
+/**
+ * What turns a loader into a screensaver.
+ *
+ * A loader is built to END: it plays once, holds its last frame, and the
+ * page it was covering appears. Nothing is waiting on a sleep mark, so
+ * the two rules that make a loader correct are exactly the two that make
+ * a screensaver wrong — it has to repeat, and standing still is the one
+ * thing it must not do.
+ *
+ * So: every animation in the sheet repeats, and a slow rise-and-settle
+ * rides over the whole mark on top of whatever the letters are doing.
+ * The drift is written 0% and 100% identical, which is what lets it
+ * repeat without a seam; the entrance underneath it does cut when it
+ * wraps, which is why the loop length wants to be long enough that the
+ * cut reads as the animation starting again rather than as a stutter.
+ *
+ * !important is not decoration here. Every per-letter rule sets the
+ * `animation` shorthand, and a shorthand resets iteration-count to 1 —
+ * so a plain declaration at this specificity would lose to every one of
+ * them and silently do nothing.
+ */
+function sleepCSS(){
+ if(!P.sleep) return '';
+ var d=Math.max(2000,P.slpDur), a=P.slpAmt;
+ return '@keyframes xslp{'
+  +'0%{transform:translateY(0) scale(1)}'
+  +'50%{transform:translateY(-'+(a*1.3).toFixed(2)+'%) scale('+(1+a*.012).toFixed(4)+')}'
+  +'100%{transform:translateY(0) scale(1)}}'
+  +'.xl *{animation-iteration-count:infinite!important}'
+  +(a>0?'.xl{animation:xslp '+d+'ms ease-in-out infinite}':'');
+}
 function css(){
  var out='',o=order(),step={};o.forEach(function(b,n){step[b]=n});
  var back=(1-(P.over-1)*.55), total=P.dur+9*P.stag;
@@ -1754,7 +1796,7 @@ function css(){
  if((P.spinY||P.spinX)&&!holdProjected())
   out+='.xl{transform:perspective('+P.spinP+'px) rotateY('+P.spinY
    +'deg) rotateX('+P.spinX+'deg)}';
- return poster(out)+jitCSS();
+ return poster(out)+jitCSS()+sleepCSS();
 }
 
 // A strand is the same path, nudged sideways. Offsets alternate either
@@ -1941,17 +1983,31 @@ function svg(){
     +'<feComposite in="litc" in2="spc" operator="arithmetic" k1="0" k2="1" k3="1" k4="0"'
     +(P.dither>0?' result="shaded"/>':'/>')
     +(P.dither>0
-      // A pixel of signed noise on the output. Amplitude is around one
-      // 8-bit step, which is enough to break a contour and too little to
-      // read as grain.
-      ?'<feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="1" seed="'
+      // Signed noise on the output. This is the pass that actually breaks
+      // the contour banding: the lighting reads an 8-bit height map, so a
+      // gentle ramp crosses each level over several pixels and the light
+      // turns every level into a flat terrace. Dithering the height map
+      // (above) cannot fix that on its own — the blur that has to follow
+      // it, so the light does not read the noise as texture, averages the
+      // dither straight back out.
+      //
+      // baseFrequency is in user units, and the mark is 1000 wide shown
+      // around 340-520px. At 0.8 the noise had a period of 1.25 units,
+      // which lands at well under a device pixel: it averaged to a flat
+      // wash and left the terraces exactly as they were. 0.35 puts a
+      // period across roughly a pixel and a half, where it can actually
+      // straddle a contour.
+      ?'<feTurbulence type="fractalNoise" baseFrequency="0.35" numOctaves="1" seed="'
        +(P.seed*29)+'" result="on"/>'
-       // Desaturate the turbulence and keep its values — an explicit
-       // matrix here is easy to get wrong, and one that pins RGB to a
-       // constant adds a flat wash rather than noise.
-       +'<feColorMatrix in="on" type="saturate" values="0" result="ong"/>'
+       // Alpha pinned to 1, not carried through. feComposite works on
+       // premultiplied colour, so turbulence alpha averaging ~0.5 halved
+       // the noise and — because the k4 offset below does not get the
+       // same treatment — dragged the whole surface darker with it.
+       // Measured: as-is this cost 27% of mean luminance.
+       +'<feColorMatrix in="on" type="matrix" values="'
+       +'.33 .33 .33 0 0 .33 .33 .33 0 0 .33 .33 .33 0 0 0 0 0 0 1" result="ong"/>'
        +'<feComposite in="ong" in2="shaded" operator="arithmetic" k1="0" k2="'
-       +(P.dither*0.028).toFixed(4)+'" k3="1" k4="-'+(P.dither*0.014).toFixed(4)
+       +(P.dither*0.084).toFixed(4)+'" k3="1" k4="-'+(P.dither*0.042).toFixed(4)
        +'" result="dithered"/>'
        +'<feComposite in="dithered" in2="SourceAlpha" operator="in"/>'
       :'')
@@ -2463,6 +2519,12 @@ function setInk(m){P.inkMode=m;build()}
 function setTexMap(m){P.texMap=m;build()}
 function setTexType(m){P.texType=m;build()}
 function setRenderer(m){P.renderer=m;build();sch()}
+function setSleep(v){P.sleep=v?1:0;syncSleep();build();sch()}
+function syncSleep(){
+ var a=document.getElementById('slpOff'), b=document.getElementById('slpOn');
+ if(a) a.classList.toggle('on',!P.sleep);
+ if(b) b.classList.toggle('on',!!P.sleep);
+}
 // Light mode used to restyle only the panel, leaving the stage on the
 // artwork's own dark background — which looked like a baked-in black.
 function toggleLight(){
@@ -2600,22 +2662,22 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 // input listeners are attached from. Adding a control to the panel
 // without adding its key here produces a slider that moves and does
 // nothing, which is how the whole Layout group shipped dead.
-var KEYS=['lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
+var KEYS=['slpAmt','slpDur','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeBow','eyeShut','eyeSpeed','eyeGlint',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
-function sync(){KEYS.forEach(function(k){var e=document.getElementById(k);if(e)e.value=P[k]});
+function sync(){syncSleep();KEYS.forEach(function(k){var e=document.getElementById(k);if(e)e.value=P[k]});
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
 function labels(){
- var f={over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
+ var f={slpAmt:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
   lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  KEYS.forEach(function(k){var e=document.getElementById('v'+k);if(!e)return;
   e.textContent=(f[k]!==undefined?(+P[k]).toFixed(f[k]):P[k])
-   +(k==='dur'||k==='stag'||k==='orbstag'?'ms':(k==='aangle'||k==='aspin'||k==='orbtilt'||k==='orbtvary')?'deg':k==='wpos'?'%':'')});
+   +(k==='dur'||k==='stag'||k==='orbstag'||k==='slpDur'?'ms':(k==='aangle'||k==='aspin'||k==='orbtilt'||k==='orbtvary')?'deg':k==='wpos'?'%':'')});
 }
 function drawPicker(){var h='';Object.keys(MARKS).forEach(function(n){
  h+='<button class="'+(P.marks.indexOf(n)>=0?'on':'')+'" onclick="toggleMark(\''+n+'\')">'+n+'</button>'});
