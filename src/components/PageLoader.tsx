@@ -97,9 +97,14 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
    * stylesheet redefines every @keyframes in it and restarts the
    * animation from zero.
    */
-  const [art, setArt] = useState<LoaderArt | null>(null)
+  // Three states, not two: `undefined` is "not decided yet", `null` is
+  // "decided, and there is no loader to play". Collapsing those loses the
+  // difference between waiting for an answer and having one — and the
+  // handover below has to wait for the first while not waiting for ever
+  // on the second.
+  const [art, setArt] = useState<LoaderArt | null | undefined>(undefined)
   useEffect(() => {
-    setArt(current => current ?? currentLoader())
+    setArt(current => (current === undefined ? currentLoader() : current))
     // The run is timed from when the mark appears, not from when the
     // screen does — they are a frame apart and the rule is about the
     // animation completing, not the cover.
@@ -157,7 +162,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   // faster, but it put a half-played loader over a live page, which is
   // exactly what the rule forbids. It now waits for the full run.
   useEffect(() => {
-    if (!visible || !art || mode !== 'transition') return
+    if (!visible || art === undefined || mode !== 'transition') return
     const t = setTimeout(() => {
       if (!handedOver.current) {
         handedOver.current = true
@@ -178,7 +183,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   // animation simply stops partway — which is the rule this component
   // exists to keep.
   useEffect(() => {
-    if (mode !== 'data' || show || !visible || !art) return
+    if (mode !== 'data' || show || !visible || art === undefined) return
     const t = setTimeout(() => {
       if (!handedOver.current) {
         handedOver.current = true

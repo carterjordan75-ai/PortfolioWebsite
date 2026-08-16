@@ -17,8 +17,9 @@ export type LoaderArt = {
 }
 
 /**
- * The loader compiled into the bundle. Always available, needs no
- * network, and is what shows if the pool is empty or has not arrived.
+ * Kept only so the gate and the mobile lock — which show a finished mark
+ * as a brand lockup rather than as a loading animation — still have
+ * something to draw. Nothing on the loading path uses it.
  */
 export const BUILT_IN: LoaderArt = {
   css: XOXO_BRAND_CSS,
@@ -30,47 +31,33 @@ export const BUILT_IN: LoaderArt = {
 const CACHE_KEY = 'xoxoLoaderPick'
 
 /**
- * Which loader plays this visit.
- *
- * A loader that has to be fetched before it can be shown is a
- * contradiction, so nothing here blocks on the network: the built-in one
- * is returned immediately, and the pool is primed in the background for
- * the rest of the session. The practical effect is that the first paint
- * of a session uses the built-in and everything after uses the pick —
- * which is also why the pick is per session rather than per navigation.
- * Refreshing rerolls it.
- */
-/**
- * The pick, held once it is known.
- *
- * Only a REAL pick is cached. The built-in is a fallback for "the pick
- * has not arrived yet", and caching that was the bug: the store is
- * always empty on a fresh load, because priming fills it a moment
- * later, so the very first call locked the built-in in for the whole
- * page — and client-side navigation kept it, since the module does not
- * re-initialise. A loader added in the admin panel then took two full
- * reloads to appear, which reads as the panel doing nothing.
- *
- * What must not happen is the art changing identity DURING a run: the
- * mark is handed to dangerouslySetInnerHTML, and rewriting its
- * stylesheet redefines every @keyframes, which restarts every animation
- * from zero mid-flight. That is now held where it belongs — PageLoader
- * takes its art in lazy initial state, which React guarantees runs
- * once, rather than relying on this module never changing its answer.
+ * The pick, held once known, so the mark cannot change identity during a
+ * run — rewriting its stylesheet redefines every @keyframes and restarts
+ * the animation from zero.
  */
 let resolved: LoaderArt | null = null
 
-export function currentLoader(): LoaderArt {
-  if (typeof window === 'undefined') return BUILT_IN
+/**
+ * The pool's pick, or nothing.
+ *
+ * There is deliberately no fallback mark. The loaders that play are the
+ * ones in the admin panel and only those — a compiled-in default is a
+ * second, invisible place the site's look is decided from, and the one
+ * that used to live here shipped on every page whether it was wanted or
+ * not. With no pick yet, the loading screen shows its ground and no
+ * mark, which is quieter than showing the wrong one.
+ */
+export function currentLoader(): LoaderArt | null {
+  if (typeof window === 'undefined') return null
   if (resolved) return resolved
   try {
     const raw = localStorage.getItem(CACHE_KEY)
-    if (!raw) return BUILT_IN
+    if (!raw) return null
     const art = JSON.parse(raw) as LoaderArt
-    if (!art || !art.css || !art.svg) return BUILT_IN
+    if (!art || !art.css || !art.svg) return null
     return (resolved = art)
   } catch {
-    return BUILT_IN
+    return null
   }
 }
 
@@ -85,8 +72,8 @@ let primed = false
  * up without anyone clearing anything.
  *
  * localStorage rather than sessionStorage so a pick survives the tab
- * being closed — otherwise every new session starts on the built-in and
- * the pool is only ever seen by people who navigate twice.
+ * being closed — otherwise every new visit starts with no mark at all
+ * and the pool is only ever seen by people who navigate twice.
  */
 export async function primeLoaderPool(): Promise<void> {
   if (primed || typeof window === 'undefined') return
@@ -98,19 +85,19 @@ export async function primeLoaderPool(): Promise<void> {
     const data = (await res.json()) as { art: LoaderArt | null }
     if (!data.art?.css || !data.art?.svg) {
       // The pool is empty or everything in it is disabled — drop any
-      // stale pick so the built-in comes back rather than a loader the
-      // admin panel has already retired.
+      // stale pick, so a loader retired in the panel stops playing
+      // instead of lingering in whoever's browser already had it.
       try { localStorage.removeItem(CACHE_KEY) } catch { /* nothing to clear */ }
       return
     }
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify(data.art))
     } catch {
-      // Over quota. The built-in still works, so this is a miss, not a
-      // failure.
+      // Over quota. The screen still covers the page without a mark, so
+      // this is a miss rather than a failure.
     }
   } catch {
-    /* offline or the route is down: the built-in covers it */
+    /* offline or the route is down: the screen shows its ground */
   }
 }
 
@@ -130,5 +117,4 @@ export function clearLoaderPick() {
   resolved = null
   primed = false
   void primeLoaderPool()
-  resolved = null
 }
