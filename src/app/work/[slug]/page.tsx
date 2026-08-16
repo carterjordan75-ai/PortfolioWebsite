@@ -56,6 +56,12 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   // the data here", the other is "has the mark finished". Swapping the
   // page in on the first alone is what cut the animation off.
   const [loaderDone, setLoaderDone] = useState(false)
+  // Whether this visit ever had a load to cover at all. A project defined
+  // in code is already here on the first render, so no loader is ever
+  // shown — and waiting for one to finish waits for ever. That is exactly
+  // how every code-defined project page went blank: the gate below was
+  // holding out for a run that had no reason to happen.
+  const neededLoader = useRef(!codeProject)
   // Stable identity: PageLoader schedules its hand-off in an effect that
   // depends on this, and a fresh arrow every render would tear that
   // timer down and rebuild it on every render of a heavy page.
@@ -246,7 +252,7 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   // stopped. It now waits for the loader to say it has finished, which
   // is the same rule every other loader on the site keeps: play through
   // once, hold the last frame, then hand over.
-  if (adminLoading || !loaderDone) {
+  if (adminLoading || (neededLoader.current && !loaderDone)) {
     return (
       <div style={{ background: dark ? '#0a0a0a' : '#f5f5f0', minHeight: '100vh' }}>
         <PageLoader

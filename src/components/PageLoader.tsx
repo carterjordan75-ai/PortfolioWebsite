@@ -128,6 +128,21 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   const msLeftOfRun = () =>
     Math.max(0, (art?.duration ?? 0) - (Date.now() - startedAt.current))
 
+  /**
+   * A loader mounted with nothing to cover still owes its caller an
+   * answer: the run it would have played is already over.
+   *
+   * Without this, anything that gates its own render on onComplete waits
+   * for ever whenever the data happened to be there already — which is
+   * not an edge case, it is the fast path.
+   */
+  const announcedEmpty = useRef(false)
+  useEffect(() => {
+    if (show || visible || announcedEmpty.current) return
+    announcedEmpty.current = true
+    onComplete?.()
+  }, [show, visible, onComplete])
+
   // Any fresh `show` restarts the moment.
   useEffect(() => {
     if (show) {
