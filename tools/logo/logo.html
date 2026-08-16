@@ -165,6 +165,24 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   and a row to a band. Gap at 1 is the wordmark as drawn; Cell turn alternates
   direction letter to letter so a grid reads as tiles rather than a tilted block.</p>
   </details>
+  <details class="grp"><summary>Eyes</summary>
+  <div class="row"><label>Counters</label>
+   <button id="eyOff" onclick="setEyes(0)">Holes</button>
+   <button id="eyOn" onclick="setEyes(1)">Eyes</button></div>
+  <div class="row"><label>Look around <b id="veyeLook"></b></label><input id="eyeLook" type="range" min="0" max="1" step=".01"></div>
+  <div class="row"><label>Glances <b id="veyeDart"></b></label><input id="eyeDart" type="range" min="1" max="10" step="1"></div>
+  <div class="row"><label>Blinks <b id="veyeBlink"></b></label><input id="eyeBlink" type="range" min="0" max="6" step="1"></div>
+  <div class="row"><label>Pupil size <b id="veyeSize"></b></label><input id="eyeSize" type="range" min=".4" max="1.8" step=".01"></div>
+  <p class="note">The O's counters become eyes. They dart and hold rather than
+  drifting — a pupil that slides smoothly reads as drowsy, one that snaps and
+  then sits still reads as looking at something. Blinks shut fast and open
+  slower, the way a lid actually moves, and the two eyes are offset by a few
+  frames so the pair reads as a face rather than one object with two holes.</p>
+  <p class="note">Look around is capped by the letterform: the pupil stops well
+  short of the rim, because an O with a bite out of it stops being an O long
+  before it stops being an eye.</p>
+  </details>
+
   <details class="grp"><summary>Letters</summary>
    <details><summary>Squash & stretch</summary>
   <div class="row"><label>Target</label>
@@ -486,6 +504,7 @@ var LO=Math.min.apply(null,AREAS), HI=Math.max.apply(null,AREAS);
 var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 
 var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
+ eyes:0,eyeLook:.6,eyeDart:4,eyeBlink:2,eyeSize:1,
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
  lgAlign:'centre',lgTex:0,startSpread:0,
@@ -559,11 +578,40 @@ function scaleAbout(p,s){var cx=0,cy=0;p.forEach(function(q){cx+=q[0];cy+=q[1]})
  if(p.hole) o.hole=p.hole.map(function(q){return [cx+(q[0]-cx)*s,cy+(q[1]-cy)*s]});
  return o}
 function toD(p){var d=ring(p);
- // A counter is a second subpath on the same path. Winding is irrelevant
- // because the letterforms fill evenodd, so an inner ring always cuts a
- // hole rather than depending on which way round it was traced.
- if(p.hole) d+=ring(p.hole);
+ // A counter is normally a second subpath on the same path. Winding is
+ // irrelevant because the letterforms fill evenodd, so an inner ring
+ // always cuts a hole rather than depending on which way it was traced.
+ //
+ // As an eye it leaves the path entirely and becomes a shape in a mask,
+ // because a subpath cannot be moved on its own — it is welded to the
+ // outline's `d`, and animating a pupil that way would mean baking a
+ // fresh copy of the whole letterform for every frame of every glance.
+ if(p.hole && !EYES()) d+=ring(p.hole);
  return d}
+
+/** Eyes are on and there is something for them to look out of. */
+function EYES(){ return P.eyes>0 }
+
+/**
+ * The pupil's own geometry, read off the artwork rather than assumed:
+ * where the counter sits, how big it is, and how far it can travel
+ * before it would break through the ring around it.
+ */
+function eyeGeom(i){
+ var b=B[i]; if(!b.hp) return null;
+ var cx=0, cy=0;
+ b.hp.forEach(function(q){ cx+=q[0]; cy+=q[1] });
+ cx/=b.hp.length; cy/=b.hp.length;
+ var r=0; b.hp.forEach(function(q){ r+=Math.hypot(q[0]-cx,q[1]-cy) });
+ r/=b.hp.length;
+ // How far the pupil may travel: a share of the clear space between it
+ // and the rim, never all of it. Two thirds looks lively and still
+ // leaves the ring a comfortable margin at full tilt — half was timid,
+ // and all of it would let the pupil eat the letterform, at which point
+ // the O stops being an O long before it stops being an eye.
+ var room=(b.w/2 - r)*0.68;
+ return { cx:cx, cy:cy, r:r, room:room };
+}
 function ring(p){var n=p.length,d='M'+p[0][0].toFixed(1)+','+p[0][1].toFixed(1);
  for(var i=0;i<n;i++){var p0=p[(i-1+n)%n],p1=p[i],p2=p[(i+1)%n],p3=p[(i+2)%n];
   d+='C'+(p1[0]+(p2[0]-p0[0])/6).toFixed(1)+','+(p1[1]+(p2[1]-p0[1])/6).toFixed(1)
@@ -1190,6 +1238,90 @@ function jitCSS(){
  * outermost letters it crosses and overshoots each end, because a
  * strike stopping exactly on the letters looks measured, not drawn.
  */
+/**
+ * Eye motion.
+ *
+ * Eyes do not glide, they dart. A pupil that slides smoothly between
+ * points reads as drowsy or underwater; the thing that makes it read as
+ * looking is that it snaps to a place and then HOLDS, dead still, before
+ * snapping somewhere else. So the look track is nearly all hold, with
+ * the travel squeezed into about a tenth of each interval.
+ *
+ * Blinks are asymmetric — shut fast, open slower — which is how a real
+ * lid moves and is most of why a symmetric blink looks mechanical. The
+ * two eyes go together, offset by a few frames rather than locked: dead
+ * sync reads as one object with two holes, a small stagger reads as a
+ * face.
+ *
+ * Everything is seeded off the blob index, so the same settings always
+ * give the same performance. A loader that improvises differently on
+ * every visit cannot be art-directed.
+ */
+function eyeLookCSS(i, total){
+ var g=eyeGeom(i); if(!g) return '';
+ var darts=Math.max(1, Math.round(P.eyeDart));
+ var reach=g.room*P.eyeLook;
+ // ONE sequence for both eyes, not one each. Eyes are conjugate — they
+ // point at the same thing — and seeding per eye had them rolling
+ // independent glances, so at any moment one looked left while the other
+ // looked right. That does not read as two eyes, it reads as a fault.
+ // The per-eye number below is a nudge, not a direction: enough that the
+ // pair is not mathematically identical, far too little to diverge.
+ var seed=11, drift=(i%2?1:-1)*0.06;
+ var span=100/darts;            // one dart + hold, as a % of the run
+ var travel=Math.min(span*0.22, 3.2);   // the snap itself: brief
+ var kf='', prev=[0,0];
+ for(var k=0;k<=darts;k++){
+  // a point in a disc, not a square — corners of a square read as a
+  // pupil hitting invisible walls
+  var a=rnd(seed+k*13)*Math.PI*2, rr=Math.sqrt(rnd(seed+k*29))*reach;
+  var pos=(k===0||k===darts) ? [0,0]
+   : [Math.cos(a)*rr*(1+drift), Math.sin(a)*rr*(1-drift)];
+  var at=k*span;
+  if(k>0) kf+=(at-travel).toFixed(2)+'%{transform:translate('+prev[0].toFixed(1)+'px,'+prev[1].toFixed(1)+'px)}';
+  kf+=Math.min(100,at).toFixed(2)+'%{transform:translate('+pos[0].toFixed(1)+'px,'+pos[1].toFixed(1)+'px)}';
+  prev=pos;
+ }
+ return '@keyframes eyL'+i+'{'+kf+'}'
+  +'.eyL'+i+'{transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;'
+  +'animation:eyL'+i+' '+Math.round(total)+'ms steps(1,end) both}';
+}
+
+function eyeBlinkCSS(i, total){
+ var g=eyeGeom(i); if(!g) return '';
+ var sz=P.eyeSize;
+ var n=Math.max(0, Math.round(P.eyeBlink));
+ var base='scale('+sz.toFixed(3)+','+sz.toFixed(3)+')';
+ if(n<=0) return '.eyB'+i+'{transform-box:view-box;transform-origin:'
+   +g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;transform:'+base+'}';
+ // shut in ~90ms, hold shut a moment, open in ~150ms
+ var pct=function(ms){ return Math.max(0,Math.min(100,ms/total*100)) };
+ var lid=function(k){ return 'scale('+sz.toFixed(3)+','+(sz*k).toFixed(3)+')' };
+ var kf='0%{transform:'+base+'}', last=0;
+ for(var k=0;k<n;k++){
+  // spread across the run, nudged per eye so the pair is not in lockstep
+  var at=total*(0.26+0.62*(n===1?0.5:k/(n-1))) + (i%2?38:0);
+  var a=pct(at-90), b=pct(at), c=pct(at+40), d=pct(at+190);
+  if(a<=last) continue;
+  kf+=a.toFixed(2)+'%{transform:'+base+'}'
+    + b.toFixed(2)+'%{transform:'+lid(0.06)+'}'
+    + c.toFixed(2)+'%{transform:'+lid(0.06)+'}'
+    + d.toFixed(2)+'%{transform:'+base+'}';
+  last=d;
+ }
+ kf+='100%{transform:'+base+'}';
+ return '@keyframes eyB'+i+'{'+kf+'}'
+  +'.eyB'+i+'{transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;'
+  +'animation:eyB'+i+' '+Math.round(total)+'ms '+ease()+' both}';
+}
+
+function eyesCSS(total){
+ if(!EYES()) return '';
+ var out='';
+ B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,total)+eyeBlinkCSS(i,total) } });
+ return out;
+}
+
 function scorePath(){
   if(P.lscore<=0) return '';
   var rest=LCEN.map(function(c,li){ var o=lRest(li); return [c[0]+o[0], c[1]+o[1]] });
@@ -1259,6 +1391,7 @@ function css(){
  });
  out+=startCSS(step)+tiltCSS(step)+extrudeCSS(step)+jiggleCSS(step);
  out+=scoreCSS(SHT||P.dur);
+ out+=eyesCSS(SHT||P.dur);
 
  // One shared sweep: offset 1000 parks the dash just before the path
  // start, 0 lays the whole length down. Marks made of separate strokes
@@ -1607,6 +1740,20 @@ function svg(){
     batt+=' clip-path="url(#ip'+i+')"';
    }
    if(P.lgTex>0) batt+=' filter="url(#brushL)"';
+   // The pupil is cut out of the finished letter rather than drawn on
+   // top of it, so it stays a hole however the letter is painted — a
+   // gradient, a texture, an outline with no fill. Two nested groups:
+   // the outer one looks, the inner one blinks.
+   if(EYES()&&b2.hp){
+    var eg=eyeGeom(i);
+    defs+='<mask id="ey'+i+'" maskUnits="userSpaceOnUse" x="-600" y="-800" '
+     +'width="2200" height="2000">'
+     +'<rect x="-600" y="-800" width="2200" height="2000" fill="#fff"/>'
+     +'<g class="eyL'+i+'"><g class="eyB'+i+'">'
+     +'<path d="'+ring(b2.hp)+'" fill="#000"/>'
+     +'</g></g></mask>';
+    batt+=' mask="url(#ey'+i+')"';
+   }
    if(lp(i,'lgw')>0) for(var q=0;q<P.lgbris;q++){
     var t=strandXf(i,q,P.lgsp,lp(i,'lgvar'));
     lgs+='<g transform="translate('+t.dx.toFixed(2)+','+t.dy.toFixed(2)+') '
@@ -1900,6 +2047,9 @@ function build(){
  document.getElementById('stage').innerHTML=svg();
  document.getElementById('stage').style.background=P.bg;
  applyRate();
+ ['eyOff','eyOn'].forEach(function(id,n){
+  var b=document.getElementById(id);
+  if(b) b.classList.toggle('on', n===0 ? !P.eyes : !!P.eyes)});
  ['loStay','loLine'].forEach(function(id,n){
   var b=document.getElementById(id);
   if(b) b.classList.toggle('on', n===0 ? P.lsettle<0.5 : P.lsettle>=0.5)});
@@ -2015,6 +2165,8 @@ function setLayout(v){P.layout=v;build();sync()}
 /** Where the letters finish: held in the arrangement, or landing as the
     wordmark. The slider under it is the same thing part way. */
 function setSettle(v){P.lsettle=v;build();sync()}
+/** Counters as plain holes, or as eyes that look and blink. */
+function setEyes(v){P.eyes=v;build();sync()}
 function setTarget(t){P.target=t;build()}
 function setReveal(m){P.lgfStyle=m;build()}
 function setAlign(m){P.lgAlign=m;build()}
@@ -2161,6 +2313,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 // without adding its key here produces a slider that moves and does
 // nothing, which is how the whole Layout group shipped dead.
 var KEYS=['lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
+ 'eyeLook','eyeDart','eyeBlink','eyeSize',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
