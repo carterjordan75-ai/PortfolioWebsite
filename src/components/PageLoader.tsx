@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import XoxoBrandLoader from './XoxoBrandLoader'
 import { useDarkMode } from '@/contexts/DarkModeContext'
-import { currentLoader, primeLoaderPool } from '@/lib/loaderPool'
+import { currentLoader, primeLoaderPool, type LoaderArt } from '@/lib/loaderPool'
 import { scaled } from '@/lib/logoScale'
 
 interface PageLoaderProps {
@@ -78,15 +78,33 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   // black-on-white without either end having to know about the other.
   const ground = dark ? '#0a0a0a' : '#ffffff'
 
-  // Resolved once per mount, so the mark cannot swap mid-animation if the
-  // pool arrives while it is playing.
-  //
-  // Lazy initial state rather than useMemo: React may discard a memo and
-  // recompute it whenever it likes, and a recompute that returns a
-  // different loader rewrites the stylesheet, which redefines every
-  // @keyframes and restarts the animation from zero part way through.
-  // An initialiser is guaranteed to run once for the life of the mount.
-  const [art] = useState(currentLoader)
+  // When the current run started, so it can always be allowed to finish.
+  const startedAt = useRef(0)
+
+  /**
+   * Which mark plays, decided on the client and only once.
+   *
+   * It cannot be decided during render. This component is
+   * server-rendered, and on the server there is no localStorage to read
+   * the pool's pick out of — so render returns the built-in, hydration
+   * keeps the server's markup, and the pool never plays. That is the
+   * whole reason the admin panel's loaders appeared to do nothing: the
+   * pick was being fetched and stored correctly and then never looked
+   * at, because the only look happened somewhere it could not see.
+   *
+   * Set once, in an effect, so it also cannot swap mid-run — which is
+   * the other rule this component keeps. Rewriting the mark's
+   * stylesheet redefines every @keyframes in it and restarts the
+   * animation from zero.
+   */
+  const [art, setArt] = useState<LoaderArt | null>(null)
+  useEffect(() => {
+    setArt(current => current ?? currentLoader())
+    // The run is timed from when the mark appears, not from when the
+    // screen does — they are a frame apart and the rule is about the
+    // animation completing, not the cover.
+    startedAt.current = Date.now()
+  }, [])
 
   // Fetch a pick for next time. Deliberately not awaited — a loader that
   // has to be downloaded before it can be shown is a contradiction — so
@@ -96,8 +114,6 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
     primeLoaderPool()
   }, [])
 
-  // When the current run started, so it can always be allowed to finish.
-  const startedAt = useRef(0)
 
   /**
    * THE RULE, and the only place it lives: a loader plays through once,
@@ -109,7 +125,8 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
    * mark has started, half way, or long after — resolves to the same
    * answer.
    */
-  const msLeftOfRun = () => Math.max(0, art.duration - (Date.now() - startedAt.current))
+  const msLeftOfRun = () =>
+    Math.max(0, (art?.duration ?? 0) - (Date.now() - startedAt.current))
 
   // Any fresh `show` restarts the moment.
   useEffect(() => {
@@ -125,7 +142,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   // faster, but it put a half-played loader over a live page, which is
   // exactly what the rule forbids. It now waits for the full run.
   useEffect(() => {
-    if (!visible || mode !== 'transition') return
+    if (!visible || !art || mode !== 'transition') return
     const t = setTimeout(() => {
       if (!handedOver.current) {
         handedOver.current = true
@@ -134,7 +151,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
       setVisible(false)
     }, msLeftOfRun() + SETTLE_MS)
     return () => clearTimeout(t)
-  }, [visible, mode, onComplete, art.duration])
+  }, [visible, mode, onComplete, art])
 
   // Data mode leaves when the parent says the data is in — but only once
   // the run is done. Data usually lands inside the animation, so this is
@@ -146,7 +163,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   // animation simply stops partway — which is the rule this component
   // exists to keep.
   useEffect(() => {
-    if (mode !== 'data' || show || !visible) return
+    if (mode !== 'data' || show || !visible || !art) return
     const t = setTimeout(() => {
       if (!handedOver.current) {
         handedOver.current = true
@@ -155,7 +172,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
       setVisible(false)
     }, msLeftOfRun() + SETTLE_MS)
     return () => clearTimeout(t)
-  }, [show, visible, mode, onComplete, art.duration])
+  }, [show, visible, mode, onComplete, art])
 
   return (
     <AnimatePresence>
@@ -175,11 +192,16 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
             justifyContent: 'center',
           }}
         >
-          {/* The component fills whatever box it is handed, so the size
-              decision lives here rather than inside it. */}
-          <div style={{ width: MARK_WIDTH }}>
-            <XoxoBrandLoader art={art} knockout={ground} />
-          </div>
+          {/* The ground paints from the very first frame — it is what
+              stops a half-built page showing — while the mark waits for
+              the effect that decides which loader it is. They are one
+              frame apart, and only the ground has to be there
+              instantly. */}
+          {art && (
+            <div style={{ width: MARK_WIDTH }}>
+              <XoxoBrandLoader art={art} knockout={ground} />
+            </div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>
