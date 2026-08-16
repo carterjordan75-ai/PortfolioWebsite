@@ -68,6 +68,22 @@ const MARK_WIDTH = scaled('min(34vw, 340px)', 'loader')
  */
 const SETTLE_MS = 90
 
+/**
+ * The longest the page will be held back, however long the mark runs.
+ *
+ * The rule above — never reveal part way through a run — was written
+ * when a loader was about 600ms. The tuner will now happily produce a
+ * two-and-a-half second one, and holding a ready page behind it every
+ * single navigation is a real cost that the rule never meant to buy.
+ *
+ * Capping the WAIT is not the same as cutting the animation. The exit is
+ * a 340ms fade and the mark keeps running underneath it the whole way
+ * out, so what you see is a loader dissolving mid-flourish rather than
+ * stopping — which is what the rule was actually protecting against. A
+ * mark shorter than this still plays right through and nothing changes.
+ */
+const MAX_HOLD_MS = 1600
+
 export default function PageLoader({ show, onComplete, mode = 'transition' }: PageLoaderProps) {
   const [visible, setVisible] = useState(show)
   const handedOver = useRef(false)
@@ -130,8 +146,14 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
    * mark has started, half way, or long after — resolves to the same
    * answer.
    */
-  const msLeftOfRun = () =>
-    Math.max(0, (art?.duration ?? 0) - (Date.now() - startedAt.current))
+  const msLeftOfRun = () => {
+    const elapsed = Date.now() - startedAt.current
+    const left = Math.max(0, (art?.duration ?? 0) - elapsed)
+    // Whichever comes first: the run finishing, or the cap. The cap is
+    // measured from the same clock, so a loader that has already been up
+    // for a while does not then get the full cap on top.
+    return Math.min(left, Math.max(0, MAX_HOLD_MS - elapsed))
+  }
 
   /**
    * A loader mounted with nothing to cover still owes its caller an

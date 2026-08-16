@@ -200,6 +200,8 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Lid curve <b id="veyeBow"></b></label><input id="eyeBow" type="range" min="-1" max="1.4" step=".01"></div>
   <div class="row"><label>Shut to <b id="veyeShut"></b></label><input id="eyeShut" type="range" min=".02" max=".4" step=".01"></div>
   <div class="row"><label>Blink speed <b id="veyeSpeed"></b></label><input id="eyeSpeed" type="range" min=".35" max="2.2" step=".05"></div>
+  <div class="row"><label>Glance overshoot <b id="veyeOver"></b></label><input id="eyeOver" type="range" min="1" max="1.6" step=".01"></div>
+  <div class="row"><label>Look back <b id="veyeHome"></b></label><input id="eyeHome" type="range" min="150" max="1200" step="10"></div>
   <div class="row"><label>Close <b id="veyeClose"></b></label><input id="eyeClose" type="range" min="120" max="900" step="10"></div>
   <div class="row"><label>Hold shut <b id="veyeHold"></b></label><input id="eyeHold" type="range" min="0" max="600" step="10"></div>
   <div class="row"><label>Reopen <b id="veyeOpen"></b></label><input id="eyeOpen" type="range" min="150" max="1600" step="10"></div>
@@ -556,6 +558,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyes:0,eyeLook:.6,eyeDart:4,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
  eyeBow:.55,eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
  eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
+ eyeOver:1.22,eyeHome:460,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -1446,24 +1449,55 @@ function eyeTrack(i){
  */
 function eyeLookCSS(i, total){
  var T=eyeTrack(i); if(!T) return '';
- var span=100/T.darts;
- var moveP=Math.min(span*0.44, 100*280/total);
+ var sp=Math.max(0.35,P.eyeSpeed);
+ // A tail reserved for coming home.
+ //
+ // Without it the last dart is placed at exactly 100% and then the
+ // closing keyframe — which has to put the eye back at centre, because
+ // the mark has to end as a clean O — lands on the same instant and
+ // overwrites it. So the final glance was cut off and the pupil slid
+ // home in whatever time was left, linearly, with none of the
+ // character every other glance gets. That is the "too sudden".
+ var homeP=Math.max(8, Math.min(46, 100*(P.eyeHome/sp)/total));
+ var live=100-homeP;
+ // The track's own last point is already the centre — it used to be what
+ // brought the eye home. That job belongs to the tail below now, so the
+ // real look positions are everything before it.
+ var n=Math.max(1, T.darts-1);
+ var span0=live/n;
+ var moveP=Math.min(span0*0.44, 100*280/total);
  var overP=moveP*0.58;
- var setP=Math.min(span*0.66, moveP+100*230/total);
+ var setP=Math.min(span0*0.66, moveP+100*230/total);
+ // A glance finishes settling AFTER the instant it is timed to, so the
+ // last one has to start early enough that its tail lands before the
+ // return begins. Without this the stops came out in the wrong order —
+ // a dart settling at 62% against a return starting at 59% — and the two
+ // fought over the same moment.
+ var span=(live-Math.max(0,setP-moveP))/n;
+ var ov=P.eyeOver;
  var at=function(v){ return Math.max(0,Math.min(100,v)) };
  var tr=function(x,y){ return 'transform:translate('+x.toFixed(1)+'px,'+y.toFixed(1)+'px)' };
  var kf='0%{'+tr(0,0)+'}', prev=[0,0];
- for(var k=1;k<=T.darts;k++){
+ for(var k=1;k<=n;k++){
   var pos=T.pts[k], t0=k*span;
   // two creep stops through the hold, so it is never parked
   var c1=[prev[0]+(rnd(T.seed+k*7)-0.5)*T.reach*0.09, prev[1]+(rnd(T.seed+k*17)-0.5)*T.reach*0.09];
   var c2=[c1[0]+(rnd(T.seed+k*23)-0.5)*T.reach*0.07, c1[1]+(rnd(T.seed+k*31)-0.5)*T.reach*0.07];
   kf+=at(t0-moveP-span*0.28).toFixed(2)+'%{'+tr(c1[0],c1[1])+';animation-timing-function:linear}';
   kf+=at(t0-moveP).toFixed(2)+'%{'+tr(c2[0],c2[1])+';animation-timing-function:cubic-bezier(.55,0,.7,.25)}';
-  kf+=at(t0-moveP+overP).toFixed(2)+'%{'+tr(pos[0]*1.16,pos[1]*1.16)+';animation-timing-function:cubic-bezier(.18,.72,.28,1)}';
+  kf+=at(t0-moveP+overP).toFixed(2)+'%{'+tr(pos[0]*ov,pos[1]*ov)+';animation-timing-function:cubic-bezier(.18,.72,.28,1)}';
   kf+=at(t0-moveP+setP).toFixed(2)+'%{'+tr(pos[0],pos[1])+';animation-timing-function:linear}';
   prev=pos;
  }
+ // Coming home is a glance like any other, and gets the same shape: a
+ // creep on the hold, a gathering start, a throw PAST centre, then the
+ // settle back onto it. Overshooting the middle is what makes it read as
+ // looking back rather than as a transform returning to zero — an eye
+ // that arrives exactly on target and stops has no mass.
+ var back=[-prev[0]*(ov-1)*1.4, -prev[1]*(ov-1)*1.4];
+ var hc=[prev[0]+(rnd(T.seed+91)-0.5)*T.reach*0.07, prev[1]+(rnd(T.seed+97)-0.5)*T.reach*0.07];
+ kf+=at(100-homeP).toFixed(2)+'%{'+tr(hc[0],hc[1])+';animation-timing-function:cubic-bezier(.55,0,.7,.25)}';
+ kf+=at(100-homeP*0.46).toFixed(2)+'%{'+tr(back[0],back[1])+';animation-timing-function:cubic-bezier(.18,.72,.28,1)}';
  kf+='100%{'+tr(0,0)+'}';
  return '@keyframes eyL'+i+'{'+kf+'}'
   +'.eyL'+i+'{transform-box:view-box;transform-origin:'+T.g.cx.toFixed(1)+'px '+T.g.cy.toFixed(1)+'px;'
@@ -2917,7 +2951,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 var KEYS=['slpAmt','slpDur','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeBow','eyeShut','eyeSpeed','eyeGlint',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
@@ -2925,13 +2959,14 @@ var KEYS=['slpAmt','slpDur','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lsc
 function sync(){syncSleep();drawGlints();KEYS.forEach(function(k){var e=document.getElementById(k);if(e)e.value=P[k]});
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
 function labels(){
- var f={slpAmt:2,eyeEase:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
+ var f={slpAmt:2,eyeEase:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
   lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  KEYS.forEach(function(k){var e=document.getElementById('v'+k);if(!e)return;
   e.textContent=(f[k]!==undefined?(+P[k]).toFixed(f[k]):P[k])
    +(k==='dur'||k==='stag'||k==='orbstag'||k==='slpDur'
-     ||k==='eyeClose'||k==='eyeHold'||k==='eyeOpen'||k==='eyeSettle'?'ms':(k==='aangle'||k==='aspin'||k==='orbtilt'||k==='orbtvary'
+     ||k==='eyeClose'||k==='eyeHold'||k==='eyeOpen'||k==='eyeSettle'
+     ||k==='eyeHome'?'ms':(k==='aangle'||k==='aspin'||k==='orbtilt'||k==='orbtvary'
      ||k==='rotX'||k==='rotO'||k==='slpRotX'||k==='slpRotO')?'deg':k==='wpos'?'%':'')});
 }
 function drawPicker(){var h='';Object.keys(MARKS).forEach(function(n){
