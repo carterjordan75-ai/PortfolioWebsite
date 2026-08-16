@@ -80,8 +80,13 @@ button:hover{background:var(--fg);color:var(--bg)}button.on{background:var(--fg)
 .sticky{position:sticky;top:16px}
 .stage{border:1px solid var(--line);border-radius:14px;background:var(--card);
 display:grid;place-items:center;height:390px;padding:56px 58px}
-.xl{display:block;width:100%;height:auto;overflow:visible;max-width:440px}
-.small .xl{max-width:150px}
+.xl{display:block;width:100%;height:auto;overflow:visible;max-width:440px;max-height:440px}
+/* Height is capped as well as width because the viewBox follows the
+   layout: a stack is four times taller than a row, and with only a
+   width cap the stage grew down the page and shoved the panel text
+   aside. Capping both makes the mark fit its box instead of the box
+   following the mark. */
+.small .xl{max-width:150px;max-height:150px}
 .xl .bl path{fill:currentColor;fill-rule:evenodd}
 .xl .mk,.xl .bw,.xl .arc path{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
 .out{margin-top:11px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;
@@ -991,7 +996,61 @@ function lOrder(){
       if(rnd(i*29+3)<P.lshuffle){ var t=o[i]; o[i]=o[j]; o[j]=t }
     }
   }
-  return o;
+  return nearestOfKind(o);
+}
+
+/**
+ * Send each letter to the nearest slot that wants its shape.
+ *
+ * The shuffle decides the ARRANGEMENT — which kind of letter stands in
+ * each position. It does not get to decide which of the two X's fills a
+ * given X slot, because the X's are identical: that choice is free, and
+ * taking it at random means one X crossing the whole wordmark while its
+ * twin sits next to the empty place. The result looks the same either
+ * way; the only difference is how far things travelled, and travel is
+ * the part you watch.
+ *
+ * So: read the arrangement the shuffle asked for, then fill it with
+ * whichever letter of the right kind is nearest. Kind is read off the
+ * artwork — a letter with a counter is an O, one without is an X — and
+ * the groups are tiny, so every matching is tried and the shortest wins.
+ */
+function nearestOfKind(order){
+ var kindOf=function(li){ return (B[LETTERS[li][0]] && B[LETTERS[li][0]].hp) ? 'O' : 'X' };
+ // what the shuffle asked for: slot -> the kind that should stand there
+ var wants=[];
+ LCEN.forEach(function(c,li){ wants[order[li]]=kindOf(li) });
+
+ var out=order.slice();
+ var kinds={};
+ LCEN.forEach(function(c,li){ (kinds[kindOf(li)]=kinds[kindOf(li)]||[]).push(li) });
+
+ Object.keys(kinds).forEach(function(k){
+  var letters=kinds[k];
+  var slots=[]; wants.forEach(function(w,s){ if(w===k) slots.push(s) });
+  if(letters.length!==slots.length || letters.length<2) {
+   letters.forEach(function(li,q){ if(slots[q]!==undefined) out[li]=slots[q] });
+   return;
+  }
+  var best=null, bestCost=Infinity;
+  (function perm(rest, acc){
+   if(!rest.length){
+    var cost=0;
+    for(var q=0;q<letters.length;q++){
+     var from=LCEN[letters[q]], to=LCEN[acc[q]];
+     cost+=Math.hypot(from[0]-to[0], from[1]-to[1]);
+    }
+    if(cost<bestCost){ bestCost=cost; best=acc.slice() }
+    return;
+   }
+   for(var q=0;q<rest.length;q++){
+    var nx=rest.slice(); nx.splice(q,1);
+    perm(nx, acc.concat(rest[q]));
+   }
+  })(slots, []);
+  letters.forEach(function(li,q){ out[li]=best[q] });
+ });
+ return out;
 }
 
 function lHome(li){
@@ -1261,30 +1320,39 @@ function eyeLookCSS(i, total){
  var g=eyeGeom(i); if(!g) return '';
  var darts=Math.max(1, Math.round(P.eyeDart));
  var reach=g.room*P.eyeLook;
- // ONE sequence for both eyes, not one each. Eyes are conjugate — they
- // point at the same thing — and seeding per eye had them rolling
- // independent glances, so at any moment one looked left while the other
- // looked right. That does not read as two eyes, it reads as a fault.
- // The per-eye number below is a nudge, not a direction: enough that the
- // pair is not mathematically identical, far too little to diverge.
  var seed=11, drift=(i%2?1:-1)*0.06;
- var span=100/darts;            // one dart + hold, as a % of the run
- var travel=Math.min(span*0.22, 3.2);   // the snap itself: brief
+ var span=100/darts;
  var kf='', prev=[0,0];
+ // Timed off the reference: a glance is ~250ms of travel with a clear
+ // overshoot, then it settles back over the next ~200ms, and between
+ // glances the pupil never actually stops — it creeps. Measured on the
+ // video the pupil ran 732 -> 754 (a slow creep), then 777 -> 793 in two
+ // frames (the dart), then came back to 762 and sat there breathing.
+ var moveP=Math.min(span*0.42, 100*260/total);   // travel
+ var overP=moveP*0.62;                            // where it overshoots
+ var setP=Math.min(span*0.62, moveP+100*200/total); // settled
+ function at(v){ return Math.max(0,Math.min(100,v)) }
+ function tr(x,y){ return 'transform:translate('+x.toFixed(1)+'px,'+y.toFixed(1)+'px)' }
  for(var k=0;k<=darts;k++){
-  // a point in a disc, not a square — corners of a square read as a
-  // pupil hitting invisible walls
   var a=rnd(seed+k*13)*Math.PI*2, rr=Math.sqrt(rnd(seed+k*29))*reach;
   var pos=(k===0||k===darts) ? [0,0]
    : [Math.cos(a)*rr*(1+drift), Math.sin(a)*rr*(1-drift)];
-  var at=k*span;
-  if(k>0) kf+=(at-travel).toFixed(2)+'%{transform:translate('+prev[0].toFixed(1)+'px,'+prev[1].toFixed(1)+'px)}';
-  kf+=Math.min(100,at).toFixed(2)+'%{transform:translate('+pos[0].toFixed(1)+'px,'+pos[1].toFixed(1)+'px)}';
+  var t0=k*span;
+  if(k===0){ kf+='0%{'+tr(0,0)+'}'; prev=[0,0]; continue }
+  // creep away from where it was sitting, so it is alive before it moves
+  var cx=prev[0]+(rnd(seed+k*7)-0.5)*reach*0.10;
+  var cy=prev[1]+(rnd(seed+k*17)-0.5)*reach*0.10;
+  kf+=at(t0-moveP).toFixed(2)+'%{'+tr(cx,cy)+';animation-timing-function:cubic-bezier(.5,0,.75,.2)}';
+  // past the target, then back onto it — the settle is what stops it
+  // reading as a teleport
+  kf+=at(t0-moveP+overP).toFixed(2)+'%{'+tr(pos[0]*1.13,pos[1]*1.13)+';animation-timing-function:cubic-bezier(.2,.7,.3,1)}';
+  kf+=at(t0-moveP+setP).toFixed(2)+'%{'+tr(pos[0],pos[1])+';animation-timing-function:linear}';
   prev=pos;
  }
+ kf+='100%{'+tr(0,0)+'}';
  return '@keyframes eyL'+i+'{'+kf+'}'
   +'.eyL'+i+'{transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;'
-  +'animation:eyL'+i+' '+Math.round(total)+'ms steps(1,end) both}';
+  +'animation:eyL'+i+' '+Math.round(total)+'ms linear both}';
 }
 
 function eyeBlinkCSS(i, total){
@@ -1294,25 +1362,28 @@ function eyeBlinkCSS(i, total){
  var base='scale('+sz.toFixed(3)+','+sz.toFixed(3)+')';
  if(n<=0) return '.eyB'+i+'{transform-box:view-box;transform-origin:'
    +g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;transform:'+base+'}';
- // shut in ~90ms, hold shut a moment, open in ~150ms
+ // Measured off the reference: ~200ms to close, ~80ms held shut, ~220ms
+ // to open. Slower and softer than a snap, and it does not shut to a
+ // hairline — there is still a sliver, which is what keeps the closed
+ // eye reading as an eye rather than as the hole simply vanishing.
  var pct=function(ms){ return Math.max(0,Math.min(100,ms/total*100)) };
  var lid=function(k){ return 'scale('+sz.toFixed(3)+','+(sz*k).toFixed(3)+')' };
  var kf='0%{transform:'+base+'}', last=0;
  for(var k=0;k<n;k++){
-  // spread across the run, nudged per eye so the pair is not in lockstep
-  var at=total*(0.26+0.62*(n===1?0.5:k/(n-1))) + (i%2?38:0);
-  var a=pct(at-90), b=pct(at), c=pct(at+40), d=pct(at+190);
+  var at=total*(0.24+0.60*(n===1?0.5:k/(n-1))) + (i%2?46:0);
+  var a=pct(at-200), b=pct(at-60), c=pct(at), d=pct(at+80), e=pct(at+300);
   if(a<=last) continue;
-  kf+=a.toFixed(2)+'%{transform:'+base+'}'
-    + b.toFixed(2)+'%{transform:'+lid(0.06)+'}'
-    + c.toFixed(2)+'%{transform:'+lid(0.06)+'}'
-    + d.toFixed(2)+'%{transform:'+base+'}';
-  last=d;
+  kf+=a.toFixed(2)+'%{transform:'+base+';animation-timing-function:cubic-bezier(.45,0,.9,.4)}'
+    + b.toFixed(2)+'%{transform:'+lid(0.34)+'}'
+    + c.toFixed(2)+'%{transform:'+lid(0.09)+'}'
+    + d.toFixed(2)+'%{transform:'+lid(0.09)+';animation-timing-function:cubic-bezier(.15,.7,.3,1)}'
+    + e.toFixed(2)+'%{transform:'+base+'}';
+  last=e;
  }
  kf+='100%{transform:'+base+'}';
  return '@keyframes eyB'+i+'{'+kf+'}'
   +'.eyB'+i+'{transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;'
-  +'animation:eyB'+i+' '+Math.round(total)+'ms '+ease()+' both}';
+  +'animation:eyB'+i+' '+Math.round(total)+'ms linear both}';
 }
 
 function eyesCSS(total){
