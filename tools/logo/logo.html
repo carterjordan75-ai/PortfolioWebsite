@@ -148,7 +148,11 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Scatter <b id="vlscat"></b></label><input id="lscat" type="range" min="0" max=".6" step=".01"></div>
   <div class="row"><label>Spread <b id="vlspread"></b></label><input id="lspread" type="range" min=".5" max="2.2" step=".01"></div>
   <div class="row"><label>Shuffle order <b id="vlshuffle"></b></label><input id="lshuffle" type="range" min="0" max="1" step=".01"></div>
-  <div class="row"><label>Settle to a line <b id="vlsettle"></b></label><input id="lsettle" type="range" min="0" max="1" step=".01"></div>
+  <div class="row"><label>Turn <b id="vlturn"></b></label><input id="lturn" type="range" min="-180" max="180" step="45"></div>
+  <div class="row"><label>Ends</label>
+   <button id="loStay" onclick="setSettle(0)">In the layout</button>
+   <button id="loLine" onclick="setSettle(1)">As a line</button></div>
+  <div class="row"><label>Settle <b id="vlsettle"></b></label><input id="lsettle" type="range" min="0" max="1" step=".01"></div>
   <div class="row"><label>Score line <b id="vlscore"></b></label><input id="lscore" type="range" min="0" max="1" step=".01"></div>
   <p class="note">Settle turns the arrangement into where the letters come FROM:
   at 1 they travel out of the grid and land as the wordmark. Spread scales how far
@@ -481,7 +485,7 @@ var AREAS=B.map(function(b){return b.w*b.h});
 var LO=Math.min.apply(null,AREAS), HI=Math.max.apply(null,AREAS);
 var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 
-var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,
+var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
  lgAlign:'centre',lgTex:0,startSpread:0,
@@ -959,6 +963,15 @@ function lHome(li){
   t=[MIDX+(LCEN[ci][0]-MIDX)*P.lgap*P.lspread, LCEN[ci][1]];
  }
  if(P.lscat){ t[0]+=(rnd(li*7+3)-.5)*S*P.lscat; t[1]+=(rnd(li*7+11)-.5)*S*P.lscat; }
+ // Turn the whole arrangement about its middle. Stepped at 45 because
+ // the useful angles for a block of four are the eighths — square,
+ // diamond, and the diagonals — and a free angle mostly finds the ones
+ // in between that read as a mistake.
+ if(P.lturn){
+  var a2=P.lturn*Math.PI/180, ca=Math.cos(a2), sa=Math.sin(a2);
+  var dx2=t[0]-MIDX, dy2=t[1]-MIDY;
+  t=[MIDX+dx2*ca-dy2*sa, MIDY+dx2*sa+dy2*ca];
+ }
  return [t[0]-LCEN[li][0], t[1]-LCEN[li][1]];
 }
 /** Half-size of a letter, for working out how much room a layout needs. */
@@ -1887,6 +1900,9 @@ function build(){
  document.getElementById('stage').innerHTML=svg();
  document.getElementById('stage').style.background=P.bg;
  applyRate();
+ ['loStay','loLine'].forEach(function(id,n){
+  var b=document.getElementById(id);
+  if(b) b.classList.toggle('on', n===0 ? P.lsettle<0.5 : P.lsettle>=0.5)});
  ['loR','loG','loS','loD'].forEach(function(id,n){
   var b=document.getElementById(id);
   if(b) b.classList.toggle('on',P.layout===['row','grid','stack','diagonal'][n])});
@@ -1996,6 +2012,9 @@ function applyRate(){document.querySelectorAll('#stage g,#stage path').forEach(f
 function play(){build()}
 function setRate(r){rate=r;applyRate()}
 function setLayout(v){P.layout=v;build();sync()}
+/** Where the letters finish: held in the arrangement, or landing as the
+    wordmark. The slider under it is the same thing part way. */
+function setSettle(v){P.lsettle=v;build();sync()}
 function setTarget(t){P.target=t;build()}
 function setReveal(m){P.lgfStyle=m;build()}
 function setAlign(m){P.lgAlign=m;build()}
@@ -2137,7 +2156,12 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
  if(!P.letters)P.letters=[null,null,null,null];
  sync();drawLetters();build();sch()}
 
-var KEYS=['over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
+// Every slider must be listed here or it is inert: this is what the
+// input listeners are attached from. Adding a control to the panel
+// without adding its key here produces a slider that moves and does
+// nothing, which is how the whole Layout group shipped dead.
+var KEYS=['lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
+ 'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
