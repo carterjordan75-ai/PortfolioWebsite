@@ -2039,6 +2039,13 @@ function MiscUploadPanel() {
   const [newMedium, setNewMedium] = useState<string[]>(['3D'])
   const [editIdx, setEditIdx] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  // Grid vs list, and which items point at something that is no longer
+  // there. Missing is checked on demand rather than on load — it is a
+  // request per item, and most of the time you are here to upload.
+  const [view, setView] = useState<'list' | 'grid'>('list')
+  const [missing, setMissing] = useState<Set<string>>(new Set())
+  const [checking, setChecking] = useState(false)
+  const [checked, setChecked] = useState(false)
   const miscFileRef = useRef<HTMLInputElement>(null)
   // Focused when an upload is attempted with no project name, so the
   // message and the field you need to fill are the same place.
@@ -2100,6 +2107,47 @@ function MiscUploadPanel() {
    *
    * Returns whether it saved, so callers can avoid reporting success.
    */
+  /**
+   * Ask storage which of these actually still exist.
+   *
+   * A row and the file under it are separate things: uploading to a
+   * featured project mirrors a row into Misc pointing at the SAME file,
+   * so deleting the media from the project takes the file and leaves the
+   * row behind, pointing at nothing. That is what a broken tile here is
+   * — not a lost record, a record whose subject is gone.
+   */
+  const checkMissing = async () => {
+    setChecking(true); setStatus(null)
+    const dead = new Set<string>()
+    await Promise.all(items.map(async it => {
+      if (!it.src) return
+      try {
+        const res = await fetch(it.src, { method: 'HEAD' })
+        if (!res.ok) dead.add(it.src)
+      } catch {
+        dead.add(it.src)
+      }
+    }))
+    setMissing(dead); setChecked(true); setChecking(false)
+    setStatus(dead.size
+      ? `${dead.size} of ${items.length} point at a file that is gone.`
+      : `All ${items.length} are present.`)
+  }
+
+  /** Remove every row whose file is gone, tombstoned so the mirror
+   *  cannot put them straight back. */
+  const deleteMissing = async () => {
+    const dead = items.filter(it => missing.has(it.src))
+    if (!dead.length) return
+    const kept = items.filter(it => !missing.has(it.src))
+    const ok = await saveItems(kept, dead.map(d => d.src))
+    if (ok) {
+      setMissing(new Set())
+      setStatus(`Removed ${dead.length}.`)
+      window.dispatchEvent(new Event('admin-saved'))
+    }
+  }
+
   const saveItems = async (updated: MiscItem[], tombstones: string[] = []): Promise<boolean> => {
     try {
       const res = await fetch('/api/misc', {
@@ -2534,6 +2582,89 @@ function MiscUploadPanel() {
             {items.length} pieces — click a row to select, shift+click for a range
           </p>
         </div>
+        {/* View + health. Grid is for seeing what is actually in here;
+            the check is for finding rows whose file has gone. */}
+        {items.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="inline-flex rounded-full border border-white/15 overflow-hidden">
+              {(['list', 'grid'] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`px-3 py-1.5 text-[8px] uppercase tracking-[0.12em] font-bold transition-colors ${
+                    view === v ? 'bg-white text-black' : 'text-white/60 hover:text-white/90'
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={checkMissing}
+              disabled={checking}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold text-white/70 border border-white/15 hover:border-white/30 hover:text-white/90 hover:bg-white/5 transition-all disabled:opacity-40 disabled:cursor-wait"
+              title="Ask storage which of these files still exist"
+            >
+              {checking ? `Checking ${items.length}…` : '⚑ Find missing media'}
+            </button>
+            {missing.size > 0 && (
+              <button
+                onClick={deleteMissing}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[8px] uppercase tracking-[0.12em] font-bold transition-all"
+                style={{ color: '#fca5a5', border: '1px solid rgba(248,113,113,0.4)', background: 'rgba(248,113,113,0.08)' }}
+                title="Remove those rows and tombstone them so the project mirror cannot re-add them"
+              >
+                ✕ Delete {missing.size} missing
+              </button>
+            )}
+            {checked && missing.size === 0 && (
+              <span className="text-emerald-400/70 text-[8px] uppercase tracking-[0.12em]">All present</span>
+            )}
+          </div>
+        )}
+
+        {/* Grid view — thumbnails, with anything whose file has gone
+            called out rather than shown as a silent black square. */}
+        {view === 'grid' && items.length > 0 && (
+          <div className="grid grid-cols-4 gap-2">
+            {items.map((it, i) => {
+              const gone = missing.has(it.src)
+              return (
+                <div
+                  key={it.src + i}
+                  className="relative rounded-md overflow-hidden aspect-square"
+                  style={{
+                    background: 'rgba(255,255,255,0.04)',
+                    border: gone ? '1px solid rgba(248,113,113,0.55)' : '1px solid rgba(255,255,255,0.08)',
+                  }}
+                  title={`${it.title || 'Untitled'} — ${it.src.split('/').pop()}`}
+                >
+                  {it.type === 'video' ? (
+                    <video src={it.src} muted playsInline preload="metadata"
+                      className="w-full h-full object-cover" style={{ opacity: gone ? 0.15 : 1 }} />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={it.src} alt={it.title || ''} loading="lazy"
+                      className="w-full h-full object-cover" style={{ opacity: gone ? 0.15 : 1 }} />
+                  )}
+                  {gone && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-1"
+                      style={{ background: 'rgba(120,20,20,0.35)' }}>
+                      <span className="text-[7px] uppercase tracking-[0.14em] font-bold" style={{ color: '#fca5a5' }}>
+                        File gone
+                      </span>
+                    </div>
+                  )}
+                  <div className="absolute bottom-0 inset-x-0 px-1.5 py-1 text-[7px] text-white/70 truncate"
+                    style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.75))' }}>
+                    {it.title || 'Untitled'}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         {items.length > 0 && selected.size === 0 && (
           <div className="flex items-center gap-2">
             <button
@@ -2875,7 +3006,7 @@ function MiscUploadPanel() {
         {loading && <p className="text-white/20 text-[9px] py-4 text-center">Loading...</p>}
         {!loading && items.length === 0 && <p className="text-white/15 text-[9px] py-4 text-center">No pieces yet. Upload above.</p>}
 
-        {items.map((item, i) => {
+        {view === 'list' && items.map((item, i) => {
           // When the user drags a row that's in the selection, the entire
           // selected group travels together. Compute which rows are "in
           // flight" so we can dim them all uniformly during the drag.
