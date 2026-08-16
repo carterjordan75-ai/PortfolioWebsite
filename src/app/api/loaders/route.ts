@@ -97,7 +97,14 @@ const readIndex = () => readVersionedJson<LoaderIndex>(INDEX_KEY, EMPTY)
  */
 async function readArt(id: string): Promise<LoaderArt | null> {
   const art = await readVersionedJson<LoaderArt | null>(artKey(id), null)
-  if (!art?.svg) return art
+  if (!art) return art
+  // One representation over the wire, not three. When the file itself is
+  // stored the css/svg rewrite is what the site no longer renders, and
+  // sending it anyway doubled the payload — enough that the client's
+  // localStorage cache blew its quota and silently kept nothing, so the
+  // loader stopped appearing at all. Found by the cache being empty.
+  if (art.html) return { ...art, css: '', svg: '' }
+  if (!art.svg) return art
   return { ...art, svg: upgradeShading(art.svg) }
 }
 
@@ -189,7 +196,7 @@ export async function POST(request: Request) {
     enabled: true,
     kind,
     duration: art.duration,
-    bytes: art.css.length + art.svg.length,
+    bytes: (art.html || '').length || art.css.length + art.svg.length,
     createdAt: new Date().toISOString(),
   })
   await writeVersionedJson(INDEX_KEY, index)

@@ -17,6 +17,8 @@ export type LoaderArt = {
    * else, which the sleep overlay has to force into looping itself.
    */
   loop?: boolean
+  /** The exported file, verbatim. Played as-is when present. */
+  html?: string
   /** Paints in one greyscale colour, so it follows the theme rather than
    *  carrying a colour of its own. */
   mono: boolean
@@ -60,7 +62,9 @@ export function currentLoader(): LoaderArt | null {
     const raw = localStorage.getItem(CACHE_KEY)
     if (!raw) return null
     const art = JSON.parse(raw) as LoaderArt
-    if (!art || !art.css || !art.svg) return null
+    // Either representation counts: the file itself, or the older
+    // css/svg rewrite for artwork saved before the file was kept.
+    if (!art || !(art.html || (art.css && art.svg))) return null
     return (resolved = art)
   } catch {
     return null
@@ -98,7 +102,7 @@ export async function primeLoaderPool(mode?: 'light' | 'dark'): Promise<void> {
     )
     if (!res.ok) return
     const data = (await res.json()) as { art: LoaderArt | null }
-    if (!data.art?.css || !data.art?.svg) {
+    if (!data.art?.html && !(data.art?.css && data.art?.svg)) {
       // The pool is empty or everything in it is disabled — drop any
       // stale pick, so a loader retired in the panel stops playing
       // instead of lingering in whoever's browser already had it.

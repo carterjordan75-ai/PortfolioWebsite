@@ -34,6 +34,16 @@ export type LoaderArt = {
    */
   loop?: boolean
   /**
+   * The exported file, kept exactly as it was downloaded.
+   *
+   * When this is present the site plays it verbatim in an iframe rather
+   * than rendering the css/svg pair below. Those are a REWRITE of this —
+   * rescoped, renamed, minified, re-rounded — and every visual bug in
+   * the loader so far has been the rewrite disagreeing with the file it
+   * came from. The fields are kept for artwork saved before this existed.
+   */
+  html?: string
+  /**
    * True when the mark paints in a single greyscale colour.
    *
    * Such a mark is not "white" or "black", it is "the ink" — it should
@@ -255,7 +265,12 @@ export function importLoaderHtml(html: string): LoaderArt {
   // Stored already repaired, so the read path finds nothing left to do.
   svg = upgradeShading(svg)
 
-  return { css, svg, duration: longestEnd(css), mono, loop: /--xoxo-sleep/.test(css) }
+  return {
+    css, svg, duration: longestEnd(css), mono,
+    loop: /--xoxo-sleep/.test(css),
+    // Verbatim. Not the rounded/rescoped derivatives above.
+    html,
+  }
 }
 
 /**
