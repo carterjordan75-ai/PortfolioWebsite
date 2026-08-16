@@ -391,7 +391,7 @@ export default function Navigation() {
                 alt="xoxo studio"
                 className="block w-auto"
                 style={{
-                  height: 'clamp(1.4rem, 3vw, 2.4rem)',
+                  height: 'clamp(1.26rem, 2.7vw, 2.16rem)',
                   filter: dark ? 'invert(1)' : 'none',
                 }}
               />
@@ -984,7 +984,7 @@ export default function Navigation() {
                   alt="XOXO"
                   className="block w-auto"
                   style={{
-                    height: 'clamp(2.4rem, 5.5vw, 3.6rem)',
+                    height: 'clamp(2.16rem, 4.95vw, 3.24rem)',
                     filter: 'invert(1)',
                   }}
                 />
