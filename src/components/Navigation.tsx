@@ -387,7 +387,7 @@ export default function Navigation() {
               {/* XOXO wordmark logo. Sized via height (clamp for responsive scale)
                   while keeping the original aspect ratio. Inverts to light fill on dark mode. */}
               <img
-                src="/assets/Logos/xoxo_Logo_001.png"
+                src="/assets/Logos/xoxo_Logo_005.svg"
                 alt="xoxo studio"
                 className="block w-auto"
                 style={{
@@ -980,7 +980,7 @@ export default function Navigation() {
                   for the dark popup background. */}
               <div className="flex flex-col items-center mb-5 mt-1">
                 <img
-                  src="/assets/Logos/xoxo_Logo_001.png"
+                  src="/assets/Logos/xoxo_Logo_005.svg"
                   alt="XOXO"
                   className="block w-auto"
                   style={{

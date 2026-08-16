@@ -15,7 +15,7 @@
 
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i
 
-const LOGO_URL = '/assets/Logos/xoxo_Logo_001.png'
+const LOGO_URL = '/assets/Logos/xoxo_Logo_005.svg'
 
 let cachedLogoImage: HTMLImageElement | null = null
 

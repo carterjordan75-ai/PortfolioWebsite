@@ -1,6 +1,6 @@
 'use client'
 
-import { XOXO_GLYPHS, XOXO_VIEWBOX } from '@/lib/xoxoGlyphs'
+import { XOXO_GLYPHS, XOXO_VIEWBOX, XOXO_FILL_RULE } from '@/lib/xoxoGlyphs'
 
 /**
  * Animated XOXO wordmark, four variants, for loading states.
@@ -71,9 +71,12 @@ export default function XoxoLoader({
         </defs>
       )}
       <g clipPath={variant === 'wipe' ? `url(#${clipId})` : undefined}>
+        {/* evenodd because the O's carry their counter as a second
+            subpath on the same path — without it they fill solid and
+            the wordmark reads as two blobs and two discs. */}
         {XOXO_GLYPHS.map((d, i) => (
           <g key={i} className={`xoxo-g xoxo-g${i}`}>
-            <path d={d} />
+            <path d={d} fillRule={XOXO_FILL_RULE as 'evenodd'} />
           </g>
         ))}
       </g>
