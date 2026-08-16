@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { notFound } from 'next/navigation'
+import { notFound, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { projects } from '@/data/projects'
 import PageTransition from '@/components/PageTransition'
@@ -16,6 +16,7 @@ import ProjectMediaPanel, { type ProjectMediaItem } from '@/components/ProjectMe
 import ProjectLinks, { type ProjectLink } from '@/components/ProjectLinks'
 import PageLoader from '@/components/PageLoader'
 import { useEditMode } from '@/contexts/EditModeContext'
+import { matchesSegment, brandSlug } from '@/lib/projectUrl'
 
 // Client logo mapping
 const clientLogos: Record<string, { src: string; width: number; height: number }> = {
@@ -33,8 +34,11 @@ function classifyMedia(path: string): 'video' | 'image' {
 }
 
 export default function ProjectPage({ params }: { params: { slug: string } }) {
-  const codeProject = projects.find((p) => p.slug === params.slug)
+  // Either name resolves: the brand it is advertised as, or the slug it
+  // is stored under. See lib/projectUrl.
+  const codeProject = projects.find((p) => matchesSegment(p, params.slug))
 
+  const router = useRouter()
   const { dark, fg, fg60, borderThick } = useDarkMode()
   const [showEmail, setShowEmail] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
@@ -96,7 +100,8 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
     return fetch('/api/projects', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => {
-        const found = (data.projects || []).find((p: Record<string, unknown>) => p.slug === params.slug)
+        const found = (data.projects || []).find((p: Record<string, unknown>) =>
+          matchesSegment(p as { slug?: string; client?: string }, params.slug))
         setAdminProject(found || null)
         if (found?.logoSize) setLogoScale(Number(found.logoSize))
         setAdminLoading(false)
@@ -107,6 +112,8 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   useEffect(() => {
     void fetchAdminProject()
   }, [fetchAdminProject])
+
+
 
   // After the EditToolbar finishes saving, re-fetch so EditableText's
   // `defaultValue` reflects the freshly-persisted brief/title/etc. Without
@@ -243,6 +250,21 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
     !!(lightboxItem as { bounce?: boolean }).bounce
   const { canvasRef: lightboxCanvasRef, reversing: lightboxReversing } =
     useBouncePlayback(lightboxVideoRef, lightboxBounces)
+
+  /**
+   * Normalise the address to the project's brand.
+   *
+   * Anything that resolves to this project — the old /work/<slug> form,
+   * a stored slug typed straight in, a link shared a year ago — lands
+   * here and then the bar reads /nike. One canonical address without
+   * having to find and rewrite every link that was ever made.
+   */
+  useEffect(() => {
+    if (!project) return
+    const want = brandSlug(project as { slug?: string; client?: string })
+    if (!want || want === params.slug) return
+    router.replace('/' + want)
+  }, [project, params.slug, router])
 
   // Cover the page while admin data is in flight.
   //

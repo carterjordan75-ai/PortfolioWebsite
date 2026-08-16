@@ -16,7 +16,9 @@ type HomeVideo = {
   year?: string | number
   label?: string  // legacy fallback
   // Slug of a featured project. When set, the video shows a pill
-  // linking through to /work/<slug>.
+  // linking through to that project. The link uses the stored slug;
+  // the project page rewrites the address to the brand once it knows
+  // which project it is.
   projectSlug?: string
   // One line under the title, set per video in the admin panel. Home
   // page only — the project page never reads it.
@@ -483,7 +485,7 @@ export default function Home() {
             {v.projectSlug && (
               <div className="absolute right-6 top-1/2 -translate-y-1/2 z-10">
                 <Link
-                  href={`/work/${v.projectSlug}`}
+                  href={`/${v.projectSlug}`}
                   // Sits back like the number rail does. The rail rests at
                   // 0.3 and only goes full while you're scrolling; a button
                   // can't be that faint and still invite a click, so it

@@ -1,5 +1,7 @@
 'use client'
 
+import { projectHref } from '@/lib/projectUrl'
+
 import { useState, useEffect, useMemo, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -93,8 +95,8 @@ function ArchivePageInner() {
       .catch(() => {})
   }, [])
 
-  const handleFeaturedClick = (slug: string) => {
-    setLoaderTarget(`/work/${slug}`)
+  const handleFeaturedClick = (target: string) => {
+    setLoaderTarget(target)
     setShowLoader(true)
   }
 
@@ -280,7 +282,7 @@ function ArchivePageInner() {
             return (
               <div
                 key={project.slug}
-                onClick={() => handleFeaturedClick(project.slug)}
+                onClick={() => handleFeaturedClick(projectHref(project))}
                 className="archive-row block md:grid grid-cols-[1.2fr_2fr_1fr_0.4fr] gap-4 px-6 md:px-10 py-[8px] cursor-pointer items-baseline"
                 style={{
                   borderBottom: `2px solid ${borderColor}`,
