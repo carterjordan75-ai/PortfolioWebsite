@@ -180,11 +180,21 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Pupil size <b id="veyeSize"></b></label><input id="eyeSize" type="range" min=".3" max="3.4" step=".01"></div>
   <div class="row"><label>Oval <b id="veyeOval"></b></label><input id="eyeOval" type="range" min=".45" max="2.2" step=".01"></div>
   <div class="row"><label>Dome <b id="veyeDome"></b></label><input id="eyeDome" type="range" min="0" max="1" step=".01"></div>
+  <div class="row"><label>Lid curve <b id="veyeBow"></b></label><input id="eyeBow" type="range" min="-1" max="1.4" step=".01"></div>
+  <div class="row"><label>Shut to <b id="veyeShut"></b></label><input id="eyeShut" type="range" min=".02" max=".4" step=".01"></div>
+  <div class="row"><label>Blink speed <b id="veyeSpeed"></b></label><input id="eyeSpeed" type="range" min=".35" max="2.2" step=".05"></div>
+  <div class="row"><label>Glint <b id="veyeGlint"></b></label><input id="eyeGlint" type="range" min="0" max="1" step=".01"></div>
   <p class="note">The O's counters become eyes. They dart and hold rather than
   drifting — a pupil that slides smoothly reads as drowsy, one that snaps and
   then sits still reads as looking at something. Blinks shut fast and open
   slower, the way a lid actually moves, and the two eyes are offset by a few
   frames so the pair reads as a face rather than one object with two holes.</p>
+  <p class="note">The lid closes by rebuilding the counter's own outline, not by
+  squashing it — a squash flattens to a line, a rebuilt path can bow. Lid curve
+  is how much it bows and which way; Shut to is how much sliver is left, because
+  a shut eye that closes to nothing reads as the hole vanishing. Blink speed
+  slows the whole gesture: it is deliberate going down and through the shut, then
+  accelerates open.</p>
   <p class="note">Dome is the fish-eye. A pupil is not a sticker sliding across a
   flat disc — it sits on a curved surface, so it foreshortens along the direction
   it travelled and reads fattest when facing you. Turning it off is what makes the
@@ -516,6 +526,7 @@ var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 
 var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
  eyes:0,eyeLook:.6,eyeDart:4,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
+ eyeBow:.55,eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
  lgAlign:'centre',lgTex:0,startSpread:0,
@@ -752,12 +763,27 @@ function dent(pts,e){
 // lands, and the dent is applied to that — a blob can be part way
 // through its entrance and still take a correct dent.
 var SHAPED={}, SHFR={}, SHT=0;
-function shapeCSS(step){
- var ev=dentEvents(), out='', arcEnd=0;
- SHAPED={};
+
+/**
+ * How long the whole run lasts.
+ *
+ * Read directly rather than through SHT, which is only filled in when
+ * shapeCSS runs — and shapeCSS runs AFTER the score and the eyes are
+ * written. They were reading last build's number, so the duration slider
+ * appeared to do nothing to them until some other change triggered a
+ * second pass.
+ */
+function totalRun(){
+ var arcEnd=0;
  for(var n=0;n<P.arcs;n++) arcEnd=Math.max(arcEnd,
   Math.round(120*P.orbtime+n*P.orbstag)+Math.round(P.dur*1.5*P.orbtime));
- var T=Math.max(P.dur+9*P.stag,arcEnd)+240;
+ return Math.max(P.dur+9*P.stag,arcEnd)+240;
+}
+
+function shapeCSS(step){
+ var ev=dentEvents(), out='';
+ SHAPED={};
+ var T=totalRun();
  SHFR={}; SHT=T;
  B.forEach(function(b,i){
   var merged=[];
@@ -1427,44 +1453,117 @@ function eyeDomeCSS(i, total){
  * It does not shut to nothing. A sliver is left, which is what keeps a
  * closed eye reading as an eye instead of the hole having vanished.
  */
+/**
+ * The lid, as a shape rather than a squash.
+ *
+ * Scaling the pupil down flattens it into a thin ellipse, which is why
+ * the closed eye read as a flat line. A real lid closes along a CURVE:
+ * the sliver that is left bows, thick in the middle and tapering to
+ * nothing at the corners. That cannot be done with a transform, so the
+ * counter's own path is rebuilt at each stage of the blink — the one
+ * place in this tool where paying for path keyframes is worth it,
+ * because it is the difference between an eye closing and a hole
+ * shrinking.
+ *
+ * k is how open it is: 1 fully, eyeShut at its narrowest. It never
+ * reaches zero — a sliver is what keeps a shut eye reading as an eye.
+ */
+function lidPath(i, k){
+ var b=B[i], g=eyeGeom(i); if(!b.hp||!g) return '';
+ var r=g.r||1, bow=P.eyeBow;
+ var pts=b.hp.map(function(q){
+  var dx=q[0]-g.cx, dy=q[1]-g.cy;
+  var u=dx/r;
+  // the bow: ends ride up as it closes, so the sliver curves instead of
+  // going flat. Centred on u^2 - 1/2 so the shape bends without also
+  // sliding down the letterform.
+  var bend=bow*r*(1-k)*(u*u-0.5);
+  return [g.cx+dx, g.cy+dy*k+bend];
+ });
+ return ring(pts);
+}
+
+/**
+ * Blink timing.
+ *
+ * Deliberate on the way down and through the shut, then accelerating
+ * open — the ramp asked for, and the opposite of the snap this used to
+ * do. Speed scales the whole gesture so it can be slowed further without
+ * touching the rest of the animation.
+ *
+ * Every track ends on the base shape at 100%, so however a sequence is
+ * cut the letterform it leaves behind is the one it started with.
+ */
 function eyeBlinkCSS(i, total){
- var g=eyeGeom(i); if(!g) return '';
- var sx=P.eyeSize/Math.sqrt(P.eyeOval), sy=P.eyeSize*Math.sqrt(P.eyeOval);
+ var g=eyeGeom(i); if(!g||!B[i].hp) return '';
  var n=Math.max(0, Math.round(P.eyeBlink));
- var open='transform:translate(0,0) scale('+sx.toFixed(3)+','+sy.toFixed(3)+')';
- if(n<=0) return '.eyB'+i+'{transform-box:view-box;transform-origin:'
-   +g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;'+open+'}';
+ var openD='d:path("'+lidPath(i,1)+'")';
+ if(n<=0) return '.eyP'+i+'{'+openD+'}';
+ var sp=Math.max(0.35, P.eyeSpeed);
  var pct=function(ms){ return Math.max(0,Math.min(100,ms/total*100)) };
- var lid=function(k){
-  // as it shuts it also drops, so the closure reads as a lid rather
-  // than as the pupil being pinched
-  var drop=g.r*sy*(1-k)*0.42;
-  return 'transform:translate(0,'+drop.toFixed(1)+'px) scale('
-   +(sx*(1+(1-k)*0.06)).toFixed(3)+','+(sy*k).toFixed(3)+')';
- };
- var kf='0%{'+open+'}', last=0;
+ var kf='0%{'+openD+'}', last=0;
  for(var k=0;k<n;k++){
   var t=total*(0.24+0.60*(n===1?0.5:k/(n-1))) + (i%2?46:0);
-  var a=pct(t-210), b=pct(t-95), c=pct(t), d=pct(t+80), e=pct(t+150), f=pct(t+320);
+  // ms offsets from the moment it is fully shut
+  var close=320/sp, shut=110/sp, open=380/sp;
+  var a=pct(t-close), b=pct(t-close*0.45), c=pct(t), d=pct(t+shut),
+      e=pct(t+shut+open*0.55), f=pct(t+shut+open);
   if(a<=last) continue;
-  kf+=a.toFixed(2)+'%{'+open+';animation-timing-function:cubic-bezier(.4,0,.75,.35)}'
-    + b.toFixed(2)+'%{'+lid(0.42)+';animation-timing-function:cubic-bezier(.5,0,.9,.6)}'
-    + c.toFixed(2)+'%{'+lid(0.07)+'}'
-    + d.toFixed(2)+'%{'+lid(0.07)+';animation-timing-function:cubic-bezier(.1,.6,.25,1)}'
-    + e.toFixed(2)+'%{'+lid(0.62)+';animation-timing-function:cubic-bezier(.2,.7,.3,1.4)}'
-    + f.toFixed(2)+'%{'+open+'}';
+  kf+= a.toFixed(2)+'%{'+openD+';animation-timing-function:cubic-bezier(.35,0,.65,.5)}'
+   +   b.toFixed(2)+'%{d:path("'+lidPath(i,0.46)+'");animation-timing-function:cubic-bezier(.45,0,.8,.7)}'
+   +   c.toFixed(2)+'%{d:path("'+lidPath(i,P.eyeShut)+'")}'
+   +   d.toFixed(2)+'%{d:path("'+lidPath(i,P.eyeShut)+'");animation-timing-function:cubic-bezier(.7,0,.85,.35)}'
+   +   e.toFixed(2)+'%{d:path("'+lidPath(i,0.40)+'");animation-timing-function:cubic-bezier(.5,.1,.4,1)}'
+   +   f.toFixed(2)+'%{'+openD+'}';
   last=f;
  }
- kf+='100%{'+open+'}';
- return '@keyframes eyB'+i+'{'+kf+'}'
+ kf+='100%{'+openD+'}';
+ return '@keyframes eyP'+i+'{'+kf+'}'
+  +'.eyP'+i+'{animation:eyP'+i+' '+Math.round(total)+'ms linear both}'
+  // size and oval are a plain transform on the group around it — they do
+  // not change over the run, so they have no business in the keyframes
   +'.eyB'+i+'{transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;'
-  +'animation:eyB'+i+' '+Math.round(total)+'ms linear both}';
+  +'transform:scale('+(P.eyeSize/Math.sqrt(P.eyeOval)).toFixed(3)+','
+  +(P.eyeSize*Math.sqrt(P.eyeOval)).toFixed(3)+')}';
+}
+
+/**
+ * The glint.
+ *
+ * A catchlight, which is most of what stops an eye reading as a hole.
+ * Inverted here like everything else in this mark: the counter is the
+ * background showing through, so the highlight is a small piece of INK
+ * left standing inside it — white in the mask means "not cut away".
+ * It shuts with the lid, because a reflection on a closed eye is a
+ * reflection on an eyelid.
+ */
+function eyeGlintCSS(i, total){
+ var g=eyeGeom(i); if(!g||P.eyeGlint<=0) return '';
+ var n=Math.max(0, Math.round(P.eyeBlink));
+ var full='transform:scale(1)', gone='transform:scale(0.01)';
+ var base='.eyG'+i+'{transform-box:view-box;transform-origin:'
+  +(g.cx-g.r*0.34).toFixed(1)+'px '+(g.cy-g.r*0.36).toFixed(1)+'px;';
+ if(n<=0) return base+full+'}';
+ var sp=Math.max(0.35,P.eyeSpeed);
+ var pct=function(ms){ return Math.max(0,Math.min(100,ms/total*100)) };
+ var kf='0%{'+full+'}', last=0;
+ for(var k=0;k<n;k++){
+  var t=total*(0.24+0.60*(n===1?0.5:k/(n-1))) + (i%2?46:0);
+  var close=320/sp, shut=110/sp, open=380/sp;
+  var a=pct(t-close*0.6), c=pct(t-close*0.12), d=pct(t+shut), f=pct(t+shut+open*0.7);
+  if(a<=last) continue;
+  kf+=a.toFixed(2)+'%{'+full+'}'+c.toFixed(2)+'%{'+gone+'}'
+    + d.toFixed(2)+'%{'+gone+'}'+f.toFixed(2)+'%{'+full+'}';
+  last=f;
+ }
+ kf+='100%{'+full+'}';
+ return '@keyframes eyG'+i+'{'+kf+'}'+base+'animation:eyG'+i+' '+Math.round(total)+'ms linear both}';
 }
 
 function eyesCSS(total){
  if(!EYES()) return '';
  var out='';
- B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,total)+eyeDomeCSS(i,total)+eyeBlinkCSS(i,total) } });
+ B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,total)+eyeDomeCSS(i,total)+eyeBlinkCSS(i,total)+eyeGlintCSS(i,total) } });
  return out;
 }
 
@@ -1536,8 +1635,8 @@ function css(){
    P.dur,li*P.stag*2.4+(o.delay||0),o.squash,o.stretch);
  });
  out+=startCSS(step)+tiltCSS(step)+extrudeCSS(step)+jiggleCSS(step);
- out+=scoreCSS(SHT||P.dur);
- out+=eyesCSS(SHT||P.dur);
+ out+=scoreCSS(totalRun());
+ out+=eyesCSS(totalRun());
 
  // One shared sweep: offset 1000 parks the dash just before the path
  // start, 0 lays the whole length down. Marks made of separate strokes
@@ -1896,7 +1995,16 @@ function svg(){
      +'width="2200" height="2000">'
      +'<rect x="-600" y="-800" width="2200" height="2000" fill="#fff"/>'
      +'<g class="eyL'+i+'"><g class="eyD'+i+'"><g class="eyB'+i+'">'
-     +'<path d="'+ring(b2.hp)+'" fill="#000"/>'
+     // black is cut away: this is the pupil, and its own path animates
+     // so the lid closes along a curve
+     +'<path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000"/>'
+     // white is kept: a piece of ink left standing inside the pupil,
+     // which reads as a catchlight
+     +(P.eyeGlint>0
+       ? '<g class="eyG'+i+'"><circle fill="#fff" cx="'+(eyeGeom(i).cx-eyeGeom(i).r*0.34).toFixed(1)
+         +'" cy="'+(eyeGeom(i).cy-eyeGeom(i).r*0.36).toFixed(1)
+         +'" r="'+(eyeGeom(i).r*0.30*P.eyeGlint).toFixed(1)+'"/></g>'
+       : '')
      +'</g></g></g></mask>';
     batt+=' mask="url(#ey'+i+')"';
    }
@@ -2460,6 +2568,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 // nothing, which is how the whole Layout group shipped dead.
 var KEYS=['lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
+ 'eyeBow','eyeShut','eyeSpeed','eyeGlint',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
