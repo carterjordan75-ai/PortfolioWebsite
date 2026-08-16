@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { readVersionedJson, writeVersionedJson } from '@/lib/blobStore'
-import { importLoaderHtml, type LoaderArt } from '@/lib/loaderImport'
+import { importLoaderHtml, upgradeShading, type LoaderArt } from '@/lib/loaderImport'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -79,6 +79,28 @@ const EMPTY: LoaderIndex = { randomise: true, pinnedId: null, pinnedSleepId: nul
 
 const readIndex = () => readVersionedJson<LoaderIndex>(INDEX_KEY, EMPTY)
 
+/**
+ * Read one loader's artwork, repairing the shading on the way out.
+ *
+ * Every loader saved before the dither fix has the broken filter baked
+ * into its SVG, and the alternative was asking for each one to be opened
+ * in the tuner and exported again. Doing it here means they are all
+ * correct from the next page load, with nothing to migrate and no button
+ * to remember to press.
+ *
+ * On read rather than as a one-off rewrite because a write pass over
+ * live artwork can half-finish, and this cannot: it is a pure function of
+ * the stored bytes, it is idempotent, and if it were ever wrong the fix
+ * would be to change it rather than to restore from a backup. New
+ * uploads are already repaired at import, so for those this finds
+ * nothing to do.
+ */
+async function readArt(id: string): Promise<LoaderArt | null> {
+  const art = await readVersionedJson<LoaderArt | null>(artKey(id), null)
+  if (!art?.svg) return art
+  return { ...art, svg: upgradeShading(art.svg) }
+}
+
 function newId() {
   return `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
 }
@@ -95,7 +117,7 @@ export async function GET(request: NextRequest) {
   const pick = request.nextUrl.searchParams.get('pick')
 
   if (id) {
-    const art = await readVersionedJson<LoaderArt | null>(artKey(id), null)
+    const art = await readArt(id)
     if (!art) return NextResponse.json({ error: 'Not found' }, { status: 404, ...NO_CACHE })
     return NextResponse.json(art, NO_CACHE)
   }
@@ -129,7 +151,7 @@ export async function GET(request: NextRequest) {
     ? live[Math.floor(Math.random() * live.length)]
     : live.find(i => i.id === pinned) || live[0]
 
-  const art = await readVersionedJson<LoaderArt | null>(artKey(chosen.id), null)
+  const art = await readArt(chosen.id)
   return NextResponse.json({ index, chosen, art }, NO_CACHE)
 }
 

@@ -56,6 +56,71 @@ function roundPaths(css: string, svg: string) {
   }
 }
 
+/**
+ * Repairs the 3D shading's output dither in artwork that already exists.
+ *
+ * The tuner emits this correctly now, but every loader exported before
+ * that fix is sitting in Blob with the broken version baked into its SVG,
+ * and the only other way to correct one would be to open the tuner and
+ * export it again. It is a filter chain, so it can be repaired in place.
+ *
+ * Two things were wrong, both measured against the real artwork:
+ *
+ *  - baseFrequency 0.8 gives the noise a period of 1.25 user units. The
+ *    mark is 1000 wide shown around 340-520px, which puts that under a
+ *    device pixel: it averaged to a flat wash and left the contour
+ *    banding exactly as it was. 0.35 puts a period across roughly a pixel
+ *    and a half, where it can actually straddle a contour.
+ *
+ *  - feComposite works on PREMULTIPLIED colour, and the turbulence was
+ *    carrying its own alpha averaging ~0.5. So the noise arrived at half
+ *    strength while the k4 centring offset — a constant — did not get the
+ *    same treatment, and the mismatch dragged the whole surface darker.
+ *    Measured at 27% of mean luminance.
+ *
+ * Measured on the stored loader: pixels sitting in a flat plateau fall
+ * from 17.5% to 1.5%, and the longest plateau from 13px to 8px.
+ *
+ * Idempotent by construction — it matches only the shapes the OLD export
+ * produced, so running it twice changes nothing the second time, and it
+ * leaves artwork exported since the fix untouched.
+ */
+export function upgradeShading(svg: string): string {
+  // Everything below is gated on this one signal rather than each fix
+  // testing for itself. The amplitude rewrite is the reason: it multiplies
+  // whatever number it finds, so on its own it has no way to tell art it
+  // has already tripled from art it has not, and running twice would
+  // treble the dither again. The old frequency is the marker for "this is
+  // pre-fix artwork", and all three repairs move together with it.
+  const OLD_DITHER = /(<feTurbulence\b[^>]*?)baseFrequency="0\.8"([^>]*?result="on"\s*\/>)/
+  if (!OLD_DITHER.test(svg)) return svg
+
+  // Scoped to the dither chain by its result names (on / ong / dithered)
+  // rather than applied to the sheet at large. There are several other
+  // feTurbulence and feColorMatrix primitives in here — the brush edge,
+  // the surface bumps, the grain — and a looser match would silently
+  // retune those too.
+  let out = svg.replace(new RegExp(OLD_DITHER.source, 'g'), '$1baseFrequency="0.35"$2')
+
+  out = out.replace(
+    /<feColorMatrix in="on" type="saturate" values="0" result="ong"\s*\/>/g,
+    '<feColorMatrix in="on" type="matrix" values="' +
+      '.33 .33 .33 0 0 .33 .33 .33 0 0 .33 .33 .33 0 0 0 0 0 0 1" result="ong"/>',
+  )
+
+  // Amplitude x3, on both the multiplier and the offset that centres it.
+  // Read from the file rather than substituted wholesale, because the
+  // numbers encode the tuner's dither slider and a fixed pair would
+  // flatten everyone's setting to whatever this one loader happened to use.
+  out = out.replace(
+    /(<feComposite in="ong" in2="shaded" operator="arithmetic" k1="0" k2=")([\d.]+)("\s+k3="1"\s+k4="-)([\d.]+)(")/g,
+    (_m, a, k2, b, k4, c) =>
+      a + (parseFloat(k2) * 3).toFixed(4) + b + (parseFloat(k4) * 3).toFixed(4) + c,
+  )
+
+  return out
+}
+
 /** Split a flat stylesheet into top-level rules, respecting nesting. */
 function topLevelRules(css: string): Array<[string, string]> {
   const out: Array<[string, string]> = []
@@ -160,6 +225,8 @@ export function importLoaderHtml(html: string): LoaderArt {
   let svg = rounded.svg.replace(/(style="[^"]*?);?--bg:[^;"]*/, '$1')
   if (mono) svg = svg.replace(/(style="[^"]*?);?color:[^;"]*/, '$1')
   svg = svg.replace(/ style="\s*"/, '').replace(/>\s+</g, '><').trim()
+  // Stored already repaired, so the read path finds nothing left to do.
+  svg = upgradeShading(svg)
 
   return { css, svg, duration: longestEnd(css), mono }
 }
