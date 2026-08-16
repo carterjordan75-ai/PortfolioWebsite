@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { applyLogoScales, readLogoScales, scaled, LOGO_SCALE_PAGE } from '@/lib/logoScale'
-import { projectHref } from '@/lib/projectUrl'
+import { projectHref, RESERVED } from '@/lib/projectUrl'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -149,7 +149,20 @@ export default function Navigation() {
   }, [])
   const isArchive = pathname === '/indexx'
   const isWork = pathname === '/'
-  const isProjectPage = pathname.startsWith('/work/') && pathname !== '/work'
+  // A project page is now /nike as well as the older /work/<slug>. This
+  // decides which header the page gets — the light one that sits on a
+  // pale page, or the blend-mode one meant for full-bleed video — so
+  // when it stopped recognising brand URLs the header fell to the wrong
+  // variant: the wordmark dropped to its text fallback and the dropdowns
+  // rendered in difference blend over a light page, which is what made
+  // them look transparent and broken.
+  //
+  // Any single segment that is not a real route is a project. RESERVED
+  // is the same list the router uses, so the two cannot drift.
+  const segs = pathname.split('/').filter(Boolean)
+  const isProjectPage =
+    (pathname.startsWith('/work/') && pathname !== '/work') ||
+    (segs.length === 1 && !RESERVED.has(segs[0]))
   const isExperiments = pathname === '/misc'
   const isLook = pathname === '/look'
   const isWhitePage = isArchive || isWork || isExperiments || isProjectPage || isLook
