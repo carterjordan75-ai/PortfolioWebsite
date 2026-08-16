@@ -62,6 +62,9 @@ export function currentLoader(): LoaderArt | null {
 }
 
 let primed = false
+/** Remembered so a re-prime after an admin change asks for the same
+ *  theme the page is actually in. */
+let currentMode: 'light' | 'dark' | undefined
 
 /**
  * Fetch a pick and store it.
@@ -75,12 +78,18 @@ let primed = false
  * being closed — otherwise every new visit starts with no mark at all
  * and the pool is only ever seen by people who navigate twice.
  */
-export async function primeLoaderPool(): Promise<void> {
+export async function primeLoaderPool(mode?: 'light' | 'dark'): Promise<void> {
   if (primed || typeof window === 'undefined') return
   primed = true
+  currentMode = mode ?? currentMode
 
   try {
-    const res = await fetch('/api/loaders?pick=1', { cache: 'no-store' })
+    // The mode goes with the request: a loader can be restricted to one
+    // theme, and only the browser knows which theme it is in.
+    const res = await fetch(
+      '/api/loaders?pick=1' + (mode ? '&mode=' + mode : ''),
+      { cache: 'no-store' },
+    )
     if (!res.ok) return
     const data = (await res.json()) as { art: LoaderArt | null }
     if (!data.art?.css || !data.art?.svg) {
@@ -116,5 +125,5 @@ export function clearLoaderPick() {
   }
   resolved = null
   primed = false
-  void primeLoaderPool()
+  void primeLoaderPool(currentMode)
 }

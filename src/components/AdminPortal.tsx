@@ -3489,7 +3489,8 @@ type LoaderArtShape = { css: string; svg: string; duration: number; mono: boolea
 type LoaderIndexShape = {
   randomise: boolean
   pinnedId: string | null
-  items: Array<{ id: string; name: string; enabled: boolean; duration: number; bytes: number }>
+  items: Array<{ id: string; name: string; enabled: boolean; duration: number; bytes: number;
+                 modes?: 'both' | 'light' | 'dark' }>
 }
 
 /**
@@ -3784,6 +3785,34 @@ function LoadersAdminPanel() {
                   }}
                   className="bg-transparent text-white text-[11px] outline-none flex-1 min-w-0 border-b border-transparent focus:border-white/20"
                 />
+                {/* Which themes this one may appear in. Both is the
+                    default and what a mono mark wants — it follows the
+                    theme by itself. This is for a loader carrying real
+                    colour, which can be built for black and look wrong
+                    on white. */}
+                <div className="inline-flex rounded-full border border-white/12 overflow-hidden shrink-0">
+                  {([
+                    ['both', 'Both'],
+                    ['light', 'Light'],
+                    ['dark', 'Dark'],
+                  ] as const).map(([val, label]) => {
+                    const on = (item.modes || 'both') === val
+                    return (
+                      <button
+                        key={val}
+                        onClick={() => patch({ items: [{ id: item.id, modes: val }] })}
+                        className={`px-2 py-1 text-[8px] uppercase tracking-[0.1em] font-bold transition-colors ${
+                          on ? 'bg-white text-black' : 'text-white/45 hover:text-white/80'
+                        }`}
+                        title={val === 'both'
+                          ? 'Can play in either theme'
+                          : `Only plays in ${val} mode`}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
                 <span className="text-white/25 text-[8px] tabular-nums whitespace-nowrap">
                   {(item.duration / 1000).toFixed(1)}s · {Math.round(item.bytes / 1024)}KB
                 </span>

@@ -116,8 +116,8 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   // whatever is already stored plays now and this decides what plays on
   // the next page load.
   useEffect(() => {
-    primeLoaderPool()
-  }, [])
+    primeLoaderPool(dark ? 'dark' : 'light')
+  }, [dark])
 
 
   /**

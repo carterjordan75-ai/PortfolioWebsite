@@ -27,10 +27,21 @@ const NO_CACHE = { headers: { 'Cache-Control': 'no-store, max-age=0' } }
 const INDEX_KEY = 'state/loaders.json'
 const artKey = (id: string) => `state/loader-art/${id}.json`
 
+/**
+ * Which colour modes a loader is allowed to appear in.
+ *
+ * 'both' is the default and what almost everything wants — a mono mark
+ * follows the theme on its own. It matters for a loader carrying actual
+ * colour, which can be built to sit on black and look wrong on white.
+ */
+export type LoaderModes = 'both' | 'light' | 'dark'
+
 export type LoaderMeta = {
   id: string
   name: string
   enabled: boolean
+  /** Absent on loaders added before this existed — treated as 'both'. */
+  modes?: LoaderModes
   duration: number
   bytes: number
   createdAt: string
@@ -72,7 +83,17 @@ export async function GET(request: NextRequest) {
   const index = await readIndex()
   if (!pick) return NextResponse.json(index, NO_CACHE)
 
-  const live = index.items.filter(i => i.enabled)
+  // The viewer's mode comes from the client, because the server has no
+  // way to know it — it is a browser preference, not a request property.
+  // An unknown or absent mode means "do not filter", so a caller that
+  // has not been taught about this still gets a loader.
+  const mode = request.nextUrl.searchParams.get('mode')
+  const live = index.items.filter(i => {
+    if (!i.enabled) return false
+    const m = i.modes || 'both'
+    if (m === 'both' || mode !== 'light' && mode !== 'dark') return true
+    return m === mode
+  })
   if (!live.length) return NextResponse.json({ index, chosen: null, art: null }, NO_CACHE)
 
   const chosen = index.randomise
@@ -141,6 +162,8 @@ export async function PATCH(request: Request) {
     if (!item) continue
     if (typeof patch.name === 'string' && patch.name.trim()) item.name = patch.name.trim()
     if (typeof patch.enabled === 'boolean') item.enabled = patch.enabled
+    if (patch.modes === 'both' || patch.modes === 'light' || patch.modes === 'dark')
+      item.modes = patch.modes
   }
 
   await writeVersionedJson(INDEX_KEY, index)
