@@ -105,6 +105,8 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
    <button id="slpOn" onclick="setSleep(1)">Sleep</button></div>
   <div class="row"><label>Ambient drift <b id="vslpAmt"></b></label><input id="slpAmt" type="range" min="0" max="3" step=".05"></div>
   <div class="row"><label>Loop length <b id="vslpDur"></b></label><input id="slpDur" type="range" min="2000" max="20000" step="500"></div>
+  <div class="row"><label>Spin X per loop <b id="vslpRotX"></b></label><input id="slpRotX" type="range" min="-360" max="360" step="15"></div>
+  <div class="row"><label>Spin O per loop <b id="vslpRotO"></b></label><input id="slpRotO" type="range" min="-360" max="360" step="15"></div>
   <p class="note">A loader plays once and stops on its last frame — the page
    is waiting on it. A sleep mark has nothing waiting, so everything repeats
    for as long as it is up and a slow drift rides on top. Export it, then add
@@ -164,6 +166,11 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Spread <b id="vlspread"></b></label><input id="lspread" type="range" min=".5" max="2.2" step=".01"></div>
   <div class="row"><label>Shuffle order <b id="vlshuffle"></b></label><input id="lshuffle" type="range" min="0" max="1" step=".01"></div>
   <div class="row"><label>Turn <b id="vlturn"></b></label><input id="lturn" type="range" min="-180" max="180" step="45"></div>
+  <div class="row"><label>Turn X <b id="vrotX"></b></label><input id="rotX" type="range" min="-180" max="180" step="15"></div>
+  <div class="row"><label>Turn O <b id="vrotO"></b></label><input id="rotO" type="range" min="-180" max="180" step="15"></div>
+  <p class="note">Turn moves the whole arrangement; Turn X and Turn O rotate the
+   letterforms themselves, separately, because an X reads as tilted at angles
+   where an O still reads as upright. The eyes stay level whatever these do.</p>
   <div class="row"><label>Ends</label>
    <button id="loStay" onclick="setSettle(0)">In the layout</button>
    <button id="loLine" onclick="setSettle(1)">As a line</button></div>
@@ -193,6 +200,17 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Lid curve <b id="veyeBow"></b></label><input id="eyeBow" type="range" min="-1" max="1.4" step=".01"></div>
   <div class="row"><label>Shut to <b id="veyeShut"></b></label><input id="eyeShut" type="range" min=".02" max=".4" step=".01"></div>
   <div class="row"><label>Blink speed <b id="veyeSpeed"></b></label><input id="eyeSpeed" type="range" min=".35" max="2.2" step=".05"></div>
+  <div class="row"><label>Close <b id="veyeClose"></b></label><input id="eyeClose" type="range" min="120" max="900" step="10"></div>
+  <div class="row"><label>Hold shut <b id="veyeHold"></b></label><input id="eyeHold" type="range" min="0" max="600" step="10"></div>
+  <div class="row"><label>Reopen <b id="veyeOpen"></b></label><input id="eyeOpen" type="range" min="150" max="1600" step="10"></div>
+  <div class="row"><label>Settle open <b id="veyeSettle"></b></label><input id="eyeSettle" type="range" min="0" max="900" step="10"></div>
+  <div class="row"><label>Landing ease <b id="veyeEase"></b></label><input id="eyeEase" type="range" min="0" max="1" step=".05"></div>
+  <p class="note">Close, hold and reopen are the blink itself; blink speed scales
+   all three. Settle is open time guaranteed before the run ends, so the mark
+   never finishes part way through a blink — the last blink is placed backwards
+   from there rather than at a fixed fraction of the run.</p>
+  <div class="row"><label>Glint shape</label></div>
+  <div class="row" id="glintpicker"></div>
   <div class="row"><label>Glint <b id="veyeGlint"></b></label><input id="eyeGlint" type="range" min="0" max="1" step=".01"></div>
   <p class="note">The O's counters become eyes. They dart and hold rather than
   drifting — a pupil that slides smoothly reads as drowsy, one that snaps and
@@ -537,11 +555,14 @@ var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
  eyes:0,eyeLook:.6,eyeDart:4,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
  eyeBow:.55,eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
+ eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
+ glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
  lgAlign:'centre',lgTex:0,startSpread:0,
  renderer:'svg',
- sleep:0,slpAmt:1,slpDur:7000,
+ sleep:0,slpAmt:1,slpDur:7000,slpRotX:0,slpRotO:0,
+ rotX:0,rotO:0,
  d3d:0,d3blur:18,d3ang:135,d3elev:42,d3spec:.8,d3gam:.75,d3amb:.28,
  d3gloss:22,d3edge:1.2,tiltY:0,tiltX:0,persp:900,lgfOver:0,
  lgfill:1,lgfStyle:'rise',lgfWhen:0,lgfTime:0,lgSoft:0,lgScale:.5,lgvar:.5,
@@ -1295,10 +1316,35 @@ function tiltCSS(step){
  return out;
 }
 
+/**
+ * Is this letter an O?
+ *
+ * Read off the artwork — a letter with a counter is an O — rather than
+ * from its position in the word. The wordmark happens to alternate, but
+ * anything that assumed that would break the moment the letters are
+ * shuffled or the mark is changed.
+ */
+function isO(li){
+ return (LETTERS[li]||[]).some(function(i){ return !!B[i].hp });
+}
+
+/**
+ * How far this letter is turned when it comes to rest, in degrees.
+ *
+ * Three things stack here: the alternating tilt that Rotate has always
+ * applied, plus a turn for the X's and a turn for the O's, which are
+ * separate because they are different shapes — an X reads as tilted at
+ * angles where an O still reads as upright, so one setting for both was
+ * always a compromise.
+ */
+function letterRot(li){
+ return P.lrot*(li%2?-1:1) + (isO(li)?P.rotO:P.rotX);
+}
+
 function startCSS(step){
  var out='';
  LCEN.forEach(function(c,li){
-  var st=lStart(li), ho=lHome(li), re=lRest(li), rot=P.lrot*(li%2?-1:1);
+  var st=lStart(li), ho=lHome(li), re=lRest(li), rot=letterRot(li);
   // Nothing to animate only when the letter neither travels nor turns.
   if(!st[0]&&!st[1]&&!ho[0]&&!ho[1]&&!re[0]&&!re[1]&&!rot) return;
   var dly=Math.min.apply(null,LETTERS[li].map(function(i){return step[i]*P.stag}))
@@ -1516,29 +1562,88 @@ function lidPath(i, k){
  * Every track ends on the base shape at 100%, so however a sequence is
  * cut the letterform it leaves behind is the one it started with.
  */
+/**
+ * When each blink happens, in ms from the start of the run.
+ *
+ * Budgeted BACKWARDS from the end, which is the whole point of it being
+ * a function. It used to place blinks at fixed fractions of the run —
+ * the last at 84% — and then add close, hold and reopen on top. Those
+ * ms are not a fraction of anything, so on the stored loader the final
+ * reopen finished 167ms after the run did and was simply clamped: the
+ * mark ended with the eye caught part way open, which is why a blink
+ * sometimes looked like it was cut off. Measured, not guessed.
+ *
+ * So the last blink is placed so its reopen lands a settle BEFORE the
+ * end, and the rest are spread back from there. The settle is the point:
+ * the run has to finish on a held, open O or the mark does not read as
+ * XOXO at the moment everything else arrives.
+ *
+ * Shared with the glint so the two cannot drift — they were two copies
+ * of the same arithmetic, and a change to one silently desynced the
+ * catchlight from the lid it is supposed to be hidden behind.
+ */
+function blinkTimes(i, total){
+ var n=Math.max(0, Math.round(P.eyeBlink));
+ if(n<=0) return [];
+ var sp=Math.max(0.35, P.eyeSpeed);
+ var close=P.eyeClose/sp, shut=P.eyeHold/sp, open=P.eyeOpen/sp, settle=P.eyeSettle/sp;
+ // Eyes are offset from each other so they do not blink in lockstep,
+ // which reads as a mechanism rather than a face.
+ var skew=(i%2?46:0);
+ var lead=total*0.10+skew;
+ var span=close+shut+open;
+
+ // Not enough room for the blinks asked for: compress them rather than
+ // drop any. The count is a deliberate choice and quietly returning
+ // fewer is the kind of thing you only notice by counting; a slightly
+ // quicker blink is not. Solved rather than iterated — with everything
+ // scaled by s the run needs
+ //   s*(close+shut+open+settle) + (n-1)*s*span
+ // so s falls out directly, and never stretches, only shrinks.
+ var need=close+shut+open+settle+(n-1)*span;
+ var room=Math.max(1, total-lead);
+ var s=Math.min(1, room/need);
+ close*=s; shut*=s; open*=s; settle*=s; span=close+shut+open;
+
+ var first=lead+close;
+ var last=total-shut-open-settle;
+ if(last<first) last=first;
+ var out=[];
+ for(var k=0;k<n;k++){
+  // One blink sits in the middle of the window; several spread across it.
+  var u=(n===1)?0.5:k/(n-1);
+  out.push({ t:first+(last-first)*u, close:close, shut:shut, open:open });
+ }
+ return out;
+}
+
 function eyeBlinkCSS(i, total){
  var g=eyeGeom(i); if(!g||!B[i].hp) return '';
- var n=Math.max(0, Math.round(P.eyeBlink));
  var openD='d:path("'+lidPath(i,1)+'")';
- if(n<=0) return '.eyP'+i+'{'+openD+'}';
- var sp=Math.max(0.35, P.eyeSpeed);
+ var times=blinkTimes(i,total);
+ if(!times.length) return '.eyP'+i+'{'+openD+'}';
  var pct=function(ms){ return Math.max(0,Math.min(100,ms/total*100)) };
+ // How softly it lands back open. The close is always a snap — that is
+ // what a blink is — but the return is where the shape has to settle
+ // into a clean O, and a linear finish reads as the animation being cut
+ // rather than as an eye opening.
+ var ez=Math.max(0,Math.min(1,P.eyeEase));
+ var land='cubic-bezier(0.2,'+(0.5+0.42*ez).toFixed(3)+',0.25,1)';
  var kf='0%{'+openD+'}', last=0;
- for(var k=0;k<n;k++){
-  var t=total*(0.24+0.60*(n===1?0.5:k/(n-1))) + (i%2?46:0);
-  // ms offsets from the moment it is fully shut
-  var close=320/sp, shut=110/sp, open=380/sp;
-  var a=pct(t-close), b=pct(t-close*0.45), c=pct(t), d=pct(t+shut),
-      e=pct(t+shut+open*0.55), f=pct(t+shut+open);
-  if(a<=last) continue;
+ times.forEach(function(T){
+  var a=pct(T.t-T.close), b=pct(T.t-T.close*0.45), c=pct(T.t), d=pct(T.t+T.shut),
+      e=pct(T.t+T.shut+T.open*0.55), f=pct(T.t+T.shut+T.open);
+  if(a<=last) return;
   kf+= a.toFixed(2)+'%{'+openD+';animation-timing-function:cubic-bezier(.35,0,.65,.5)}'
    +   b.toFixed(2)+'%{d:path("'+lidPath(i,0.46)+'");animation-timing-function:cubic-bezier(.45,0,.8,.7)}'
    +   c.toFixed(2)+'%{d:path("'+lidPath(i,P.eyeShut)+'")}'
+   // Slow out of the shut, then gathering pace — the ramp — and only
+   // then the eased landing above.
    +   d.toFixed(2)+'%{d:path("'+lidPath(i,P.eyeShut)+'");animation-timing-function:cubic-bezier(.7,0,.85,.35)}'
-   +   e.toFixed(2)+'%{d:path("'+lidPath(i,0.40)+'");animation-timing-function:cubic-bezier(.5,.1,.4,1)}'
+   +   e.toFixed(2)+'%{d:path("'+lidPath(i,0.40)+'");animation-timing-function:'+land+'}'
    +   f.toFixed(2)+'%{'+openD+'}';
   last=f;
- }
+ });
  kf+='100%{'+openD+'}';
  return '@keyframes eyP'+i+'{'+kf+'}'
   +'.eyP'+i+'{animation:eyP'+i+' '+Math.round(total)+'ms linear both}'
@@ -1547,6 +1652,62 @@ function eyeBlinkCSS(i, total){
   +'.eyB'+i+'{transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;'
   +'transform:scale('+(P.eyeSize/Math.sqrt(P.eyeOval)).toFixed(3)+','
   +(P.eyeSize*Math.sqrt(P.eyeOval)).toFixed(3)+')}';
+}
+
+/**
+ * The catchlight's shape.
+ *
+ * All of them are built around the same centre and radius so the size
+ * slider and the shut-with-the-lid transform keep working whichever is
+ * chosen — only the outline differs.
+ *
+ * Sized off the eye radius rather than in absolute units, so a glint
+ * stays in proportion when the eyes are scaled or made oval.
+ */
+function glintShape(i){
+ var g=eyeGeom(i); if(!g) return '';
+ var cx=g.cx-g.r*0.34, cy=g.cy-g.r*0.36, r=g.r*0.30*P.eyeGlint;
+ var f=' fill="#fff"';
+ if(P.glintShape==='dot')
+  return '<circle'+f+' cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+r.toFixed(1)+'"/>';
+ if(P.glintShape==='oval')
+  // Tipped along the direction light would run round a sphere, rather
+  // than sitting square — an upright ellipse reads as a printing error.
+  return '<ellipse'+f+' cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" rx="'+(r*1.35).toFixed(1)
+   +'" ry="'+(r*0.62).toFixed(1)+'" transform="rotate(-28 '+cx.toFixed(1)+' '+cy.toFixed(1)+')"/>';
+ if(P.glintShape==='pill')
+  return '<rect'+f+' x="'+(cx-r*1.25).toFixed(1)+'" y="'+(cy-r*0.46).toFixed(1)
+   +'" width="'+(r*2.5).toFixed(1)+'" height="'+(r*0.92).toFixed(1)
+   +'" rx="'+(r*0.46).toFixed(1)+'" transform="rotate(-28 '+cx.toFixed(1)+' '+cy.toFixed(1)+')"/>';
+ if(P.glintShape==='square')
+  return '<rect'+f+' x="'+(cx-r*0.82).toFixed(1)+'" y="'+(cy-r*0.82).toFixed(1)
+   +'" width="'+(r*1.64).toFixed(1)+'" height="'+(r*1.64).toFixed(1)
+   +'" rx="'+(r*0.22).toFixed(1)+'" transform="rotate(-18 '+cx.toFixed(1)+' '+cy.toFixed(1)+')"/>';
+ if(P.glintShape==='star'){
+  var pts=[];
+  for(var k=0;k<8;k++){
+   var a=k*Math.PI/4-Math.PI/2, rad=(k%2?r*0.34:r*1.45);
+   pts.push((cx+Math.cos(a)*rad).toFixed(1)+','+(cy+Math.sin(a)*rad).toFixed(1));
+  }
+  return '<polygon'+f+' points="'+pts.join(' ')+'"/>';
+ }
+ if(P.glintShape==='pair')
+  // The classic cartoon eye: a big highlight with a small one trailing
+  // it, which reads as a second, weaker light source.
+  return '<circle'+f+' cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+r.toFixed(1)+'"/>'
+   +'<circle'+f+' cx="'+(cx+r*1.5).toFixed(1)+'" cy="'+(cy+r*1.5).toFixed(1)
+   +'" r="'+(r*0.45).toFixed(1)+'"/>';
+ if(P.glintShape==='crescent')
+  // Two circles, the second cut back out — a rim of light round the top
+  // left rather than a blob sitting on it.
+  return '<path'+f+' fill-rule="evenodd" d="'
+   +'M'+(cx-r).toFixed(1)+','+cy.toFixed(1)
+   +'a'+r.toFixed(1)+','+r.toFixed(1)+' 0 1,0 '+(r*2).toFixed(1)+',0'
+   +'a'+r.toFixed(1)+','+r.toFixed(1)+' 0 1,0 -'+(r*2).toFixed(1)+',0z'
+   +'M'+(cx-r*0.55).toFixed(1)+','+(cy+r*0.30).toFixed(1)
+   +'a'+(r*0.82).toFixed(1)+','+(r*0.82).toFixed(1)+' 0 1,0 '+(r*1.64).toFixed(1)+',0'
+   +'a'+(r*0.82).toFixed(1)+','+(r*0.82).toFixed(1)+' 0 1,0 -'+(r*1.64).toFixed(1)+',0z"/>';
+ return '<circle'+f+' cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+r.toFixed(1)+'"/>';
 }
 
 /**
@@ -1565,27 +1726,91 @@ function eyeGlintCSS(i, total){
  var full='transform:scale(1)', gone='transform:scale(0.01)';
  var base='.eyG'+i+'{transform-box:view-box;transform-origin:'
   +(g.cx-g.r*0.34).toFixed(1)+'px '+(g.cy-g.r*0.36).toFixed(1)+'px;';
- if(n<=0) return base+full+'}';
- var sp=Math.max(0.35,P.eyeSpeed);
+ var times=blinkTimes(i,total);
+ if(!times.length) return base+full+'}';
  var pct=function(ms){ return Math.max(0,Math.min(100,ms/total*100)) };
  var kf='0%{'+full+'}', last=0;
- for(var k=0;k<n;k++){
-  var t=total*(0.24+0.60*(n===1?0.5:k/(n-1))) + (i%2?46:0);
-  var close=320/sp, shut=110/sp, open=380/sp;
-  var a=pct(t-close*0.6), c=pct(t-close*0.12), d=pct(t+shut), f=pct(t+shut+open*0.7);
-  if(a<=last) continue;
+ // The same schedule the lid uses, so the catchlight cannot go out of
+ // step with the thing it hides behind.
+ times.forEach(function(T){
+  var a=pct(T.t-T.close*0.6), c=pct(T.t-T.close*0.12), d=pct(T.t+T.shut),
+      f=pct(T.t+T.shut+T.open*0.7);
+  if(a<=last) return;
   kf+=a.toFixed(2)+'%{'+full+'}'+c.toFixed(2)+'%{'+gone+'}'
     + d.toFixed(2)+'%{'+gone+'}'+f.toFixed(2)+'%{'+full+'}';
   last=f;
- }
+ });
  kf+='100%{'+full+'}';
  return '@keyframes eyG'+i+'{'+kf+'}'+base+'animation:eyG'+i+' '+Math.round(total)+'ms linear both}';
 }
 
-function eyesCSS(total){
+/**
+ * Holds the eye upright while the letter around it turns.
+ *
+ * An eye that rotates with its O stops reading as an eye — a pupil and
+ * its catchlight are lit from somewhere, and light does not turn with
+ * the head. So whatever the letter is doing, this does the opposite.
+ *
+ * Two separate groups rather than one because the two rotations they
+ * cancel have nothing in common: the entrance turns once, eased, and
+ * stops; the ambient sleep spin goes round for ever at a constant rate.
+ * A single element cannot carry both — they are both `transform`, and
+ * the second animation in a shorthand simply wins.
+ *
+ * The counter-rotation has to be an animation and not a fixed angle:
+ * the letter arrives at its angle over the whole entrance, so a static
+ * counter would only line up on the last frame and the eye would visibly
+ * roll on its way there.
+ */
+function eyeUprightCSS(i, total, step){
+ var g=eyeGeom(i); if(!g) return '';
+ var li=LOF[i], out='';
+ var org='transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;';
+ var rot=letterRot(li);
+ if(rot){
+  // Exactly the delay startCSS gives the letter — a counter-rotation
+  // that starts at a different moment is worse than none.
+  var dly=Math.min.apply(null,LETTERS[li].map(function(k){return step[k]*P.stag}))
+   +((P.letters[li]||{}).delay||0);
+  out+='@keyframes eyR'+i+'{0%{transform:rotate(0deg)}100%{transform:rotate('
+   +(-rot*(1-P.lsettle)).toFixed(1)+'deg)}}'
+   +'.eyR'+i+'{'+org+'animation:eyR'+i+' '+P.dur+'ms '+ease()
+   +' both;animation-delay:'+dly+'ms}';
+ }
+ var spin=P.sleep?(isO(li)?P.slpRotO:P.slpRotX):0;
+ if(spin){
+  out+='@keyframes eyS'+i+'{0%{transform:rotate(0deg)}100%{transform:rotate('
+   +(-spin).toFixed(1)+'deg)}}'
+   +'.eyS'+i+'{'+org+'animation:eyS'+i+' '+Math.max(2000,P.slpDur)+'ms linear infinite}';
+ }
+ return out;
+}
+
+/**
+ * The ambient spin itself, on the letter.
+ *
+ * Sleep only. A mark that turns slowly for ever is a screensaver; the
+ * same thing on a loader would still be turning when the page arrived.
+ */
+function sleepSpinCSS(){
+ if(!P.sleep) return '';
+ var out='', d=Math.max(2000,P.slpDur);
+ LCEN.forEach(function(c,li){
+  var amt=isO(li)?P.slpRotO:P.slpRotX;
+  if(!amt) return;
+  out+='@keyframes slr'+li+'{0%{transform:rotate(0deg)}100%{transform:rotate('
+   +amt.toFixed(1)+'deg)}}'
+   +'.slr'+li+'{transform-box:view-box;transform-origin:'+c[0].toFixed(1)+'px '
+   +c[1].toFixed(1)+'px;animation:slr'+li+' '+d+'ms linear infinite}';
+ });
+ return out;
+}
+
+function eyesCSS(total, step){
  if(!EYES()) return '';
  var out='';
- B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,total)+eyeDomeCSS(i,total)+eyeBlinkCSS(i,total)+eyeGlintCSS(i,total) } });
+ B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,total)+eyeDomeCSS(i,total)
+  +eyeBlinkCSS(i,total)+eyeGlintCSS(i,total)+eyeUprightCSS(i,total,step) } });
  return out;
 }
 
@@ -1645,12 +1870,32 @@ function scoreCSS(total){
 function sleepCSS(){
  if(!P.sleep) return '';
  var d=Math.max(2000,P.slpDur), a=P.slpAmt;
- return '@keyframes xslp{'
+ // A flag the site reads. Without it the sleep overlay cannot tell a
+ // mark built to loop from a loader someone reassigned, and has to force
+ // looping on everything — which would drag the entrance back into the
+ // loop and undo the whole point of the rule above.
+ return '.xl{--xoxo-sleep:1}'
+  +'@keyframes xslp{'
   +'0%{transform:translateY(0) scale(1)}'
   +'50%{transform:translateY(-'+(a*1.3).toFixed(2)+'%) scale('+(1+a*.012).toFixed(4)+')}'
   +'100%{transform:translateY(0) scale(1)}}'
-  +'.xl *{animation-iteration-count:infinite!important}'
-  +(a>0?'.xl{animation:xslp '+d+'ms ease-in-out infinite}':'');
+  // Only the ambient parts repeat. The entrance arrives once and stays
+  // arrived — a mark that reassembles itself every few seconds is not
+  // resting, it is a loader stuck on replay. What keeps going is what a
+  // face does while it sits there: the eyes look about, dart and blink,
+  // the whole mark breathes, and anything given a spin keeps turning.
+  //
+  // Named per blob rather than swept with a wildcard, because the two
+  // eye groups that must NOT loop live in the same subtree: the
+  // counter-rotation that holds the eye level against the entrance has
+  // to hold, not rewind.
+  +(function(){
+    var sel=[];
+    B.forEach(function(b,i){ if(b.hp) sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i) });
+    return sel.length?sel.join(',')+'{animation-iteration-count:infinite}':'';
+   })()
+  +(a>0?'.xl{animation:xslp '+d+'ms ease-in-out infinite}':'')
+  +sleepSpinCSS();
 }
 function css(){
  var out='',o=order(),step={};o.forEach(function(b,n){step[b]=n});
@@ -1689,7 +1934,7 @@ function css(){
  });
  out+=startCSS(step)+tiltCSS(step)+extrudeCSS(step)+jiggleCSS(step);
  out+=scoreCSS(totalRun());
- out+=eyesCSS(totalRun());
+ out+=eyesCSS(totalRun(),step);
 
  // One shared sweep: offset 1000 parks the dash just before the path
  // start, 0 lays the whole length down. Marks made of separate strokes
@@ -2056,14 +2301,16 @@ function svg(){
     ex+='<g class="ex'+li+'_'+k+'">'+inner+'</g>';
    }
   }
-  var lho=lHome(li), lmoves=!!(stv[0]||stv[1]||lho[0]||lho[1]||P.lrot);
+  var lho=lHome(li), lmoves=!!(stv[0]||stv[1]||lho[0]||lho[1]||letterRot(li));
+  var slpSpin=P.sleep&&(isO(li)?P.slpRotO:P.slpRotX);
   var lo=(lmoves?'<g class="lt'+li+'">':'')
+   +(slpSpin?'<g class="slr'+li+'">':'')
    +(wantJ?'<g class="jg'+li+'">':'')+ex
    +(wantT?'<g class="tl'+li+'">':'')
    +(wantS?'<g class="ls'+li+'">':'')
    +(P.target==='letter'?'<g class="sqL'+li+'">':'');
   var lc=(P.target==='letter'?'</g>':'')+(wantS?'</g>':'')+(wantT?'</g>':'')
-   +(wantJ?'</g>':'')+(lmoves?'</g>':'');
+   +(wantJ?'</g>':'')+(slpSpin?'</g>':'')+(lmoves?'</g>':'');
   body+=lo;
   L.forEach(function(i){
    var so=P.target==='shape'?'<g class="sqS'+i+'">':'', sc2=P.target==='shape'?'</g>':'';
@@ -2084,18 +2331,15 @@ function svg(){
     defs+='<mask id="ey'+i+'" maskUnits="userSpaceOnUse" x="-600" y="-800" '
      +'width="2200" height="2000">'
      +'<rect x="-600" y="-800" width="2200" height="2000" fill="#fff"/>'
+     +'<g class="eyR'+i+'"><g class="eyS'+i+'">'
      +'<g class="eyL'+i+'"><g class="eyD'+i+'"><g class="eyB'+i+'">'
      // black is cut away: this is the pupil, and its own path animates
      // so the lid closes along a curve
      +'<path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000"/>'
      // white is kept: a piece of ink left standing inside the pupil,
      // which reads as a catchlight
-     +(P.eyeGlint>0
-       ? '<g class="eyG'+i+'"><circle fill="#fff" cx="'+(eyeGeom(i).cx-eyeGeom(i).r*0.34).toFixed(1)
-         +'" cy="'+(eyeGeom(i).cy-eyeGeom(i).r*0.36).toFixed(1)
-         +'" r="'+(eyeGeom(i).r*0.30*P.eyeGlint).toFixed(1)+'"/></g>'
-       : '')
-     +'</g></g></g></mask>';
+     +(P.eyeGlint>0 ? '<g class="eyG'+i+'">'+glintShape(i)+'</g>' : '')
+     +'</g></g></g></g></g></mask>';
     batt+=' mask="url(#ey'+i+')"';
    }
    if(lp(i,'lgw')>0) for(var q=0;q<P.lgbris;q++){
@@ -2519,6 +2763,14 @@ function setInk(m){P.inkMode=m;build()}
 function setTexMap(m){P.texMap=m;build()}
 function setTexType(m){P.texType=m;build()}
 function setRenderer(m){P.renderer=m;build();sch()}
+var GLINTS=['dot','oval','pill','square','star','pair','crescent'];
+function setGlint(v){P.glintShape=v;drawGlints();build();sch()}
+function drawGlints(){
+ var e=document.getElementById('glintpicker'); if(!e) return;
+ e.innerHTML=GLINTS.map(function(n){
+  return '<button class="'+(P.glintShape===n?'on':'')+'" onclick="setGlint(\''+n+'\')">'+n+'</button>'
+ }).join('');
+}
 function setSleep(v){P.sleep=v?1:0;syncSleep();build();sch()}
 function syncSleep(){
  var a=document.getElementById('slpOff'), b=document.getElementById('slpOn');
@@ -2662,22 +2914,25 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 // input listeners are attached from. Adding a control to the panel
 // without adding its key here produces a slider that moves and does
 // nothing, which is how the whole Layout group shipped dead.
-var KEYS=['slpAmt','slpDur','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
+var KEYS=['slpAmt','slpDur','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeBow','eyeShut','eyeSpeed','eyeGlint',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
-function sync(){syncSleep();KEYS.forEach(function(k){var e=document.getElementById(k);if(e)e.value=P[k]});
+function sync(){syncSleep();drawGlints();KEYS.forEach(function(k){var e=document.getElementById(k);if(e)e.value=P[k]});
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
 function labels(){
- var f={slpAmt:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
+ var f={slpAmt:2,eyeEase:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
   lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  KEYS.forEach(function(k){var e=document.getElementById('v'+k);if(!e)return;
   e.textContent=(f[k]!==undefined?(+P[k]).toFixed(f[k]):P[k])
-   +(k==='dur'||k==='stag'||k==='orbstag'||k==='slpDur'?'ms':(k==='aangle'||k==='aspin'||k==='orbtilt'||k==='orbtvary')?'deg':k==='wpos'?'%':'')});
+   +(k==='dur'||k==='stag'||k==='orbstag'||k==='slpDur'
+     ||k==='eyeClose'||k==='eyeHold'||k==='eyeOpen'||k==='eyeSettle'?'ms':(k==='aangle'||k==='aspin'||k==='orbtilt'||k==='orbtvary'
+     ||k==='rotX'||k==='rotO'||k==='slpRotX'||k==='slpRotO')?'deg':k==='wpos'?'%':'')});
 }
 function drawPicker(){var h='';Object.keys(MARKS).forEach(function(n){
  h+='<button class="'+(P.marks.indexOf(n)>=0?'on':'')+'" onclick="toggleMark(\''+n+'\')">'+n+'</button>'});

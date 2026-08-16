@@ -130,14 +130,21 @@ export default function SleepMode() {
           aria-hidden
         >
           {/*
-            Looping is forced here rather than trusted to the artwork. A
-            mark built with the tuner's sleep mode already loops and this
-            changes nothing for it; one promoted from the loader pool
-            would otherwise play once and then sit on a still frame,
-            which is a screensaver that has stopped.
+            Only for marks that were NOT built to loop.
+
+            A tuner sleep mark already repeats the parts that should —
+            the eyes, the drift, any spin — and deliberately does not
+            repeat its entrance, so forcing it here would drag the
+            entrance back into the loop and have the mark reassemble
+            itself every few seconds instead of resting. A loader
+            reassigned to sleep has no looping parts at all, and without
+            this would play once and sit on a still frame, which is a
+            screensaver that has stopped.
           */}
-          <style dangerouslySetInnerHTML={{ __html:
-            '.xoxo-sleep-mark .xoxo-brand *{animation-iteration-count:infinite!important}' }} />
+          {!art.loop && (
+            <style dangerouslySetInnerHTML={{ __html:
+              '.xoxo-sleep-mark .xoxo-brand *{animation-iteration-count:infinite!important}' }} />
+          )}
           <div className="xoxo-sleep-mark" style={{ width: MARK_WIDTH }}>
             <XoxoBrandLoader art={art} knockout="transparent" />
           </div>

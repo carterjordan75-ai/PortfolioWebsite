@@ -23,6 +23,17 @@ export type LoaderArt = {
   /** Longest animation end, ms — how long until the mark is complete. */
   duration: number
   /**
+   * Built in the tuner's sleep mode: the ambient parts already repeat
+   * and the entrance is meant to arrive once and stay.
+   *
+   * The sleep overlay needs this to tell such a mark from a loader
+   * someone reassigned. It has to force looping on the latter or the
+   * screensaver freezes on a still frame — and must NOT on the former,
+   * or the entrance is dragged into the loop and the mark reassembles
+   * itself every few seconds instead of resting.
+   */
+  loop?: boolean
+  /**
    * True when the mark paints in a single greyscale colour.
    *
    * Such a mark is not "white" or "black", it is "the ink" — it should
@@ -228,7 +239,7 @@ export function importLoaderHtml(html: string): LoaderArt {
   // Stored already repaired, so the read path finds nothing left to do.
   svg = upgradeShading(svg)
 
-  return { css, svg, duration: longestEnd(css), mono }
+  return { css, svg, duration: longestEnd(css), mono, loop: /--xoxo-sleep/.test(css) }
 }
 
 /**

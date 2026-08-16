@@ -11,6 +11,12 @@ export type LoaderArt = {
   css: string
   svg: string
   duration: number
+  /**
+   * Built in the tuner's sleep mode: its ambient parts already repeat and
+   * its entrance is meant to arrive once and stay. Absent on everything
+   * else, which the sleep overlay has to force into looping itself.
+   */
+  loop?: boolean
   /** Paints in one greyscale colour, so it follows the theme rather than
    *  carrying a colour of its own. */
   mono: boolean
