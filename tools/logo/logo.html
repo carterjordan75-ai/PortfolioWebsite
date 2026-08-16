@@ -146,6 +146,14 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Gap <b id="vlgap"></b></label><input id="lgap" type="range" min=".55" max="2" step=".01"></div>
   <div class="row"><label>Cell turn <b id="vlrot"></b></label><input id="lrot" type="range" min="-45" max="45" step="1"></div>
   <div class="row"><label>Scatter <b id="vlscat"></b></label><input id="lscat" type="range" min="0" max=".6" step=".01"></div>
+  <div class="row"><label>Spread <b id="vlspread"></b></label><input id="lspread" type="range" min=".5" max="2.2" step=".01"></div>
+  <div class="row"><label>Shuffle order <b id="vlshuffle"></b></label><input id="lshuffle" type="range" min="0" max="1" step=".01"></div>
+  <div class="row"><label>Settle to a line <b id="vlsettle"></b></label><input id="lsettle" type="range" min="0" max="1" step=".01"></div>
+  <div class="row"><label>Score line <b id="vlscore"></b></label><input id="lscore" type="range" min="0" max="1" step=".01"></div>
+  <p class="note">Settle turns the arrangement into where the letters come FROM:
+  at 1 they travel out of the grid and land as the wordmark. Spread scales how far
+  apart they start, Shuffle swaps which letter takes which cell, and Score strikes
+  the line through — the top row of a grid, or the run of a stack or diagonal.</p>
   <p class="note">Where the letters end up. They travel into the arrangement
   as they arrive, so Start spread (under Entrance) is where they come from and
   this is where they land — the two combine rather than fight.</p>
@@ -473,7 +481,7 @@ var AREAS=B.map(function(b){return b.w*b.h});
 var LO=Math.min.apply(null,AREAS), HI=Math.max.apply(null,AREAS);
 var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 
-var BASE={layout:'row',lgap:1,lrot:0,lscat:0,
+var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
  lgAlign:'centre',lgTex:0,startSpread:0,
@@ -592,7 +600,8 @@ function sqKF(name,f,originCSS,dur,delay,sq,st){
   +originCSS+'}';
 }
 function arcPath(rx,ry){var p=[];for(var k=0;k<=96;k++){var a=k/96*Math.PI*2;
- p.push([(500+Math.cos(a)*rx).toFixed(1),(121.59+Math.sin(a)*ry).toFixed(1)])}
+ var A=arcFit();
+  p.push([(A.cx+Math.cos(a)*rx*A.kx).toFixed(1),(A.cy+Math.sin(a)*ry*A.ky).toFixed(1)])}
  return 'M'+p.map(function(q){return q[0]+','+q[1]}).join(' L')}
 
 // Weight envelope: start, peak and end are independent, and the peak
@@ -638,7 +647,8 @@ function dentEvents(){
    b.p.forEach(function(q){
     var dx=q[0]-500, dy=q[1]-201, lx=dx*ct-dy*st, ly=dx*st+dy*ct;
     var a=Math.atan2(ly/ry,lx/rx);
-    var gx=lx-Math.cos(a)*rx, gy=ly-Math.sin(a)*ry, d=Math.sqrt(gx*gx+gy*gy);
+    var A2=arcFit();
+    var gx=lx-Math.cos(a)*rx*A2.kx, gy=ly-Math.sin(a)*ry*A2.ky, d=Math.sqrt(gx*gx+gy*gy);
     if(d<bd){bd=d; ba=a; bx=q[0]; by=q[1];
      var m=d||1; nx=(gx/m)*cb-(gy/m)*sb; ny=(gx/m)*sb+(gy/m)*cb}
    });
@@ -913,25 +923,66 @@ var SP=(LCEN[LCEN.length-1][0]-LCEN[0][0])/Math.max(1,LCEN.length-1);
 var MIDX=(LCEN[0][0]+LCEN[LCEN.length-1][0])/2;
 var MIDY=LCEN.reduce(function(s,c){return s+c[1]},0)/LCEN.length;
 
+/**
+ * Which cell a letter takes.
+ *
+ * Shuffle swaps letters between cells rather than moving the cells, so
+ * the arrangement keeps its shape and only the reading order breaks up.
+ * Seeded, so a given setting always gives the same scramble — a
+ * randomiser you cannot reproduce is a dice roll, not a control.
+ */
+function lOrder(){
+  var n=LCEN.length, o=[]; for(var i=0;i<n;i++) o.push(i);
+  if(P.lshuffle>0){
+    for(var i=n-1;i>0;i--){
+      var j=Math.floor(rnd(i*13+7)*(i+1));
+      if(rnd(i*29+3)<P.lshuffle){ var t=o[i]; o[i]=o[j]; o[j]=t }
+    }
+  }
+  return o;
+}
+
 function lHome(li){
- var n=LCEN.length, S=SP*P.lgap, t;
+ var n=LCEN.length, S=SP*P.lgap*P.lspread, t;
+ var ci=lOrder()[li];
  if(P.layout==='grid'){
-  var cols=Math.ceil(Math.sqrt(n)), col=li%cols, row=(li/cols)|0;
+  var cols=Math.ceil(Math.sqrt(n)), col=ci%cols, row=(ci/cols)|0;
   var rows=Math.ceil(n/cols);
   t=[MIDX+(col-(cols-1)/2)*S, MIDY+(row-(rows-1)/2)*S];
  } else if(P.layout==='stack'){
-  t=[MIDX, MIDY+(li-(n-1)/2)*S];
+  t=[MIDX, MIDY+(ci-(n-1)/2)*S];
  } else if(P.layout==='diagonal'){
-  t=[MIDX+(li-(n-1)/2)*S*.66, MIDY+(li-(n-1)/2)*S*.66];
+  t=[MIDX+(ci-(n-1)/2)*S*.66, MIDY+(ci-(n-1)/2)*S*.66];
  } else {
   // Row scales about the middle, so Gap at 1 lands on the drawn
   // positions exactly rather than on an even spacing that is close.
-  t=[MIDX+(LCEN[li][0]-MIDX)*P.lgap, LCEN[li][1]];
+  t=[MIDX+(LCEN[ci][0]-MIDX)*P.lgap*P.lspread, LCEN[ci][1]];
  }
  if(P.lscat){ t[0]+=(rnd(li*7+3)-.5)*S*P.lscat; t[1]+=(rnd(li*7+11)-.5)*S*P.lscat; }
  return [t[0]-LCEN[li][0], t[1]-LCEN[li][1]];
 }
 /** Half-size of a letter, for working out how much room a layout needs. */
+/**
+ * Where a letter finally rests.
+ *
+ * Settle blends its cell back towards the wordmark's own line, so at 1
+ * the letters travel out of the arrangement and land as a row. The
+ * arrangement stops being the destination and becomes the departure —
+ * the same positions, read in the other direction.
+ */
+function lRest(li){
+  var ho=lHome(li), k=1-P.lsettle;
+  return [ho[0]*k, ho[1]*k];
+}
+
+/* The arcs orbit whatever shape the mark is currently in. They used to
+   circle a fixed point on a fixed-width wordmark, so a grid left them
+   swinging round empty space beside it. */
+function arcFit(){
+  var b=markBox();
+  return { cx:b[0]+b[2]/2, cy:b[1]+b[3]/2, kx:b[2]/1000, ky:b[3]/243.17 };
+}
+
 function lHalf(li){
  var w=0,hh=0;
  LETTERS[li].forEach(function(i){ w=Math.max(w,B[i].w/2); hh=Math.max(hh,B[i].h/2) });
@@ -942,12 +993,14 @@ function lHalf(li){
 function markBox(){
  var x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
  LCEN.forEach(function(c,li){
-  var o=lHome(li), hf=lHalf(li);
+  var a=lHome(li), b2=lRest(li), hf=lHalf(li);
   // a rotated letter needs its diagonal, not its width
   var r=P.lrot?Math.hypot(hf[0],hf[1]):0;
   var w=Math.max(hf[0],r), hh=Math.max(hf[1],r);
-  x0=Math.min(x0,c[0]+o[0]-w); x1=Math.max(x1,c[0]+o[0]+w);
-  y0=Math.min(y0,c[1]+o[1]-hh); y1=Math.max(y1,c[1]+o[1]+hh);
+  [a,b2].forEach(function(o){
+   x0=Math.min(x0,c[0]+o[0]-w); x1=Math.max(x1,c[0]+o[0]+w);
+   y0=Math.min(y0,c[1]+o[1]-hh); y1=Math.max(y1,c[1]+o[1]+hh);
+  });
  });
  return [x0,y0,x1-x0,y1-y0];
 }
@@ -1067,9 +1120,9 @@ function tiltCSS(step){
 function startCSS(step){
  var out='';
  LCEN.forEach(function(c,li){
-  var st=lStart(li), ho=lHome(li), rot=P.lrot*(li%2?-1:1);
+  var st=lStart(li), ho=lHome(li), re=lRest(li), rot=P.lrot*(li%2?-1:1);
   // Nothing to animate only when the letter neither travels nor turns.
-  if(!st[0]&&!st[1]&&!ho[0]&&!ho[1]&&!rot) return;
+  if(!st[0]&&!st[1]&&!ho[0]&&!ho[1]&&!re[0]&&!re[1]&&!rot) return;
   var dly=Math.min.apply(null,LETTERS[li].map(function(i){return step[i]*P.stag}))
    +((P.letters[li]||{}).delay||0);
   // From (its spread-out start, offset by where it is going) to (its
@@ -1077,8 +1130,8 @@ function startCSS(step){
   // letter travels into the arrangement in one move.
   var f=[st[0]+ho[0], st[1]+ho[1]];
   out+='@keyframes lt'+li+'{0%{transform:translate('+f[0].toFixed(1)+'px,'
-   +f[1].toFixed(1)+'px) rotate(0deg)}100%{transform:translate('+ho[0].toFixed(1)+'px,'
-   +ho[1].toFixed(1)+'px) rotate('+rot.toFixed(1)+'deg)}}';
+   +f[1].toFixed(1)+'px) rotate(0deg)}100%{transform:translate('+re[0].toFixed(1)+'px,'
+   +re[1].toFixed(1)+'px) rotate('+(rot*(1-P.lsettle)).toFixed(1)+'deg)}}';
   out+='.lt'+li+'{transform-box:view-box;transform-origin:'+c[0].toFixed(1)+'px '
    +c[1].toFixed(1)+'px;animation:lt'+li+' '+P.dur+'ms '+ease()
    +' both;animation-delay:'+dly+'ms}';
@@ -1112,6 +1165,48 @@ function jitCSS(){
  }
  return '@keyframes jit{'+kf+'}.jit{transform-box:view-box;transform-origin:'+markOrigin()[0].toFixed(1)+'px '+markOrigin()[1].toFixed(1)+'px;'
   +'animation:jit '+T+'ms step-end infinite}';
+}
+
+/**
+ * The score: the line struck through a winning row.
+ *
+ * It follows what the letters are doing rather than being drawn at a
+ * fixed angle — through the top row of a grid, down a stack, along the
+ * diagonal — so it reads as the line you draw through three in a row
+ * rather than a rule laid over the top. It runs between the two
+ * outermost letters it crosses and overshoots each end, because a
+ * strike stopping exactly on the letters looks measured, not drawn.
+ */
+function scorePath(){
+  if(P.lscore<=0) return '';
+  var rest=LCEN.map(function(c,li){ var o=lRest(li); return [c[0]+o[0], c[1]+o[1]] });
+  var a,b;
+  if(P.layout==='grid' && P.lsettle<0.5){
+    var byRow={};
+    rest.forEach(function(pt){ var k=Math.round(pt[1]/10); (byRow[k]=byRow[k]||[]).push(pt) });
+    var keys=Object.keys(byRow).sort(function(x,y){return x-y});
+    var row=byRow[keys[0]]||rest;
+    row.sort(function(x,y){return x[0]-y[0]});
+    a=row[0]; b=row[row.length-1];
+  } else {
+    var s=rest.slice().sort(function(x,y){ return (x[0]-y[0])||(x[1]-y[1]) });
+    a=s[0]; b=s[s.length-1];
+  }
+  var dx=b[0]-a[0], dy=b[1]-a[1], L=Math.hypot(dx,dy)||1, over=SP*0.42;
+  var ux=dx/L, uy=dy/L;
+  return 'M'+(a[0]-ux*over).toFixed(1)+','+(a[1]-uy*over).toFixed(1)
+       +'L'+(b[0]+ux*over).toFixed(1)+','+(b[1]+uy*over).toFixed(1);
+}
+
+/** Drawn on after the letters have landed, like the last move. */
+function scoreCSS(total){
+  if(P.lscore<=0) return '';
+  return '@keyframes sc{0%{stroke-dashoffset:1000}100%{stroke-dashoffset:0}}'
+   +'.xl .sc{fill:none;stroke:currentColor;stroke-linecap:round;'
+   +'stroke-width:'+(5+P.lscore*34).toFixed(1)+';'
+   +'stroke-dasharray:1000;'
+   +'animation:sc '+Math.round(P.dur*0.6)+'ms '+ease()+' both;'
+   +'animation-delay:'+Math.round(total*0.6)+'ms}';
 }
 
 function css(){
@@ -1150,6 +1245,7 @@ function css(){
    P.dur,li*P.stag*2.4+(o.delay||0),o.squash,o.stretch);
  });
  out+=startCSS(step)+tiltCSS(step)+extrudeCSS(step)+jiggleCSS(step);
+ out+=scoreCSS(SHT||P.dur);
 
  // One shared sweep: offset 1000 parks the dash just before the path
  // start, 0 lays the whole length down. Marks made of separate strokes
@@ -1581,6 +1677,10 @@ function svg(){
     +'<path class="bw" pathLength="1000" d="'+dd+'"/></g>'}
   s+='<g class="a'+k+'"'+fil+'>'+inner+'</g>';
  }
+ // The score sits above the letters: it is drawn on top of the board,
+ // not woven into it.
+ var sp=scorePath();
+ if(sp) s+='<path class="sc" pathLength="1000" d="'+sp+'"/>';
  return s+(P.jitter>0?'</g>':'')+'</svg>';
 }
 
