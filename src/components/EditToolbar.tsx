@@ -14,7 +14,11 @@ export default function EditToolbar() {
     setSaveState('saving')
     setErrorDetail(null)
     try {
-      const pageKeys = ['info-page', 'look-page', 'experiments-page', 'work-page']
+      // Only info-page exists. look-page, experiments-page and work-page
+      // were carried here long after whatever wrote them was removed —
+      // nothing writes or reads them, so watching for them was work done
+      // on behalf of nothing.
+      const pageKeys = ['info-page']
 
       let ok = 0
       const failed: string[] = []

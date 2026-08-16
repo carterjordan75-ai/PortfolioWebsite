@@ -3075,11 +3075,6 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
   // saving state at the spot the user clicks, without depending on the
   // top-of-form status banner that's often offscreen.
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [lightVid, setLightVid] = useState('')
-  const [darkVid, setDarkVid] = useState('')
-  const [figCaption, setFigCaption] = useState('FIG. 001 — MELBOURNE, 2024')
-  const [profileLight, setProfileLight] = useState('')
-  const [profileDark, setProfileDark] = useState('')
 
   useEffect(() => {
     fetch('/api/pages')
@@ -3099,30 +3094,12 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
           pf[pid] = allPages[pid]?.footerBlurb || ''
         }
         setPageFooters(pf)
-        // Load video panel paths
-        const infoPage = allPages['info-page'] || {}
-        if (infoPage.lightVideoSrc) setLightVid(infoPage.lightVideoSrc)
-        if (infoPage.darkVideoSrc) setDarkVid(infoPage.darkVideoSrc)
-        if (infoPage.figCaption) setFigCaption(infoPage.figCaption)
-        if (infoPage.profileLight) setProfileLight(infoPage.profileLight)
-        if (infoPage.profileDark) setProfileDark(infoPage.profileDark)
-        // Snapshot the originals so on Save we can detect which media URLs
-        // were removed or replaced and free their Blobs.
-        originalMediaRef.current = {
-          lightVid: infoPage.lightVideoSrc || '',
-          darkVid: infoPage.darkVideoSrc || '',
-          profileLight: infoPage.profileLight || '',
-          profileDark: infoPage.profileDark || '',
-        }
         setLoading(false)
       })
       .catch(() => setLoading(false))
   }, [])
 
   // Originals snapshot used on save to diff vs current state for blob cleanup.
-  const originalMediaRef = useRef<{ lightVid: string; darkVid: string; profileLight: string; profileDark: string }>({
-    lightVid: '', darkVid: '', profileLight: '', profileDark: '',
-  })
 
   const handleSave = async () => {
     setSaveState('saving')
@@ -3135,25 +3112,6 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
           fields: { blurb, subtitle, currentlyAt, location, email, footerBlurb },
         }),
       })
-      // Save video panel paths to info-page (always, so clearing a video
-      // also persists — the previous `if (lightVid || darkVid)` guard meant
-      // clearing both didn't actually save the empty state).
-      await fetch('/api/pages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pageId: 'info-page', fields: { lightVideoSrc: lightVid, darkVideoSrc: darkVid, figCaption, profileLight, profileDark } }),
-      })
-      // Diff against originals to find media that's no longer referenced and
-      // free those Blobs.
-      const orig = originalMediaRef.current
-      const orphans: string[] = []
-      if (orig.lightVid && orig.lightVid !== lightVid) orphans.push(orig.lightVid)
-      if (orig.darkVid && orig.darkVid !== darkVid) orphans.push(orig.darkVid)
-      if (orig.profileLight && orig.profileLight !== profileLight) orphans.push(orig.profileLight)
-      if (orig.profileDark && orig.profileDark !== profileDark) orphans.push(orig.profileDark)
-      void deleteBlobUrls(orphans)
-      // Update originals so a second save in the same session doesn't re-delete.
-      originalMediaRef.current = { lightVid, darkVid, profileLight, profileDark }
       // Save per-page footer blurbs
       for (const [pid, text] of Object.entries(pageFooters)) {
         if (text.trim()) {
@@ -3316,122 +3274,12 @@ function InfoPopupEditor({ onClose }: { onClose: () => void }) {
           ))}
         </div>
 
-        {/* Video Panel */}
-        <div className="pt-3 mt-3 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <p className="text-white/60 text-[9px] font-bold uppercase tracking-[0.1em]">Info Page Video Panel</p>
-          <p className="text-white/25 text-[7px]">Upload separate videos for light and dark mode. These loop behind the logo grid on the Info page.</p>
-
-          {/* Light mode video */}
-          <div className="flex items-center gap-3">
-            <label className={labelStyle + ' mb-0 w-[80px] flex-shrink-0'}>Light Mode</label>
-            {lightVid ? (
-              <div className="flex items-center gap-2 flex-1 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10">
-                <span className="text-white/40 text-[8px] truncate flex-1">{lightVid.split('/').pop()}</span>
-                <button onClick={() => setLightVid('')} className="text-red-400/40 text-[7px] hover:text-red-400">✕</button>
-              </div>
-            ) : (
-              <label className="px-3 py-1.5 rounded-full text-[7px] uppercase tracking-[0.1em] font-bold text-white/40 border border-white/12 cursor-pointer hover:border-white/25 transition-all">
-                Upload
-                <input type="file" className="hidden" accept="video/*" onChange={async (e) => {
-                  const file = e.target.files?.[0]; if (!file) return
-                  try {
-                    const { url } = await uploadFileToBlob(file, 'info-videos', 'light-mode', setStatus)
-                    setLightVid(url)
-                    setStatus(null)
-                  } catch (err) { console.error('Info video upload failed:', err) }
-                  e.target.value = ''
-                }} />
-              </label>
-            )}
-          </div>
-
-          {/* Dark mode video */}
-          <div className="flex items-center gap-3">
-            <label className={labelStyle + ' mb-0 w-[80px] flex-shrink-0'}>Dark Mode</label>
-            {darkVid ? (
-              <div className="flex items-center gap-2 flex-1 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10">
-                <span className="text-white/40 text-[8px] truncate flex-1">{darkVid.split('/').pop()}</span>
-                <button onClick={() => setDarkVid('')} className="text-red-400/40 text-[7px] hover:text-red-400">✕</button>
-              </div>
-            ) : (
-              <label className="px-3 py-1.5 rounded-full text-[7px] uppercase tracking-[0.1em] font-bold text-white/40 border border-white/12 cursor-pointer hover:border-white/25 transition-all">
-                Upload
-                <input type="file" className="hidden" accept="video/*" onChange={async (e) => {
-                  const file = e.target.files?.[0]; if (!file) return
-                  try {
-                    const { url } = await uploadFileToBlob(file, 'info-videos', 'dark-mode', setStatus)
-                    setDarkVid(url)
-                    setStatus(null)
-                  } catch (err) { console.error('Info video upload failed:', err) }
-                  e.target.value = ''
-                }} />
-              </label>
-            )}
-          </div>
-        </div>
-
-        {/* Figure Caption */}
-        <div className="pt-3 mt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <p className="text-white/60 text-[9px] font-bold uppercase tracking-[0.1em] mb-2">Info Page Details</p>
-          <div className="mb-3">
-            <label className={labelStyle}>Figure Caption (under profile)</label>
-            <input type="text" value={figCaption} onChange={e => setFigCaption(e.target.value)} className={inputStyle} placeholder="e.g. FIG. 001 — MELBOURNE, 2024" />
-          </div>
-        </div>
-
-        {/* Profile Media — light and dark mode */}
-        <div className="pt-3 mt-3 space-y-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <p className="text-white/60 text-[9px] font-bold uppercase tracking-[0.1em]">Profile Media (replaces polaroid)</p>
-          <p className="text-white/25 text-[7px]">Upload separate videos/images for light and dark mode. WebM with alpha supported.</p>
-
-          {/* Light mode profile */}
-          <div className="flex items-center gap-3">
-            <label className={labelStyle + ' mb-0 w-[80px] flex-shrink-0'}>Light Mode</label>
-            {profileLight ? (
-              <div className="flex items-center gap-2 flex-1 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10">
-                <span className="text-white/40 text-[8px] truncate flex-1">{profileLight.split('/').pop()}</span>
-                <button onClick={() => setProfileLight('')} className="text-red-400/40 text-[7px] hover:text-red-400">✕</button>
-              </div>
-            ) : (
-              <label className="px-3 py-1.5 rounded-full text-[7px] uppercase tracking-[0.1em] font-bold text-white/40 border border-white/12 cursor-pointer hover:border-white/25 transition-all">
-                Upload
-                <input type="file" className="hidden" accept="video/*,image/*" onChange={async (e) => {
-                  const file = e.target.files?.[0]; if (!file) return
-                  try {
-                    const { url } = await uploadFileToBlob(file, 'info-profile', 'profile-light', setStatus)
-                    setProfileLight(url)
-                    setStatus(null)
-                  } catch (err) { console.error('Profile upload failed:', err) }
-                  e.target.value = ''
-                }} />
-              </label>
-            )}
-          </div>
-
-          {/* Dark mode profile */}
-          <div className="flex items-center gap-3">
-            <label className={labelStyle + ' mb-0 w-[80px] flex-shrink-0'}>Dark Mode</label>
-            {profileDark ? (
-              <div className="flex items-center gap-2 flex-1 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10">
-                <span className="text-white/40 text-[8px] truncate flex-1">{profileDark.split('/').pop()}</span>
-                <button onClick={() => setProfileDark('')} className="text-red-400/40 text-[7px] hover:text-red-400">✕</button>
-              </div>
-            ) : (
-              <label className="px-3 py-1.5 rounded-full text-[7px] uppercase tracking-[0.1em] font-bold text-white/40 border border-white/12 cursor-pointer hover:border-white/25 transition-all">
-                Upload
-                <input type="file" className="hidden" accept="video/*,image/*" onChange={async (e) => {
-                  const file = e.target.files?.[0]; if (!file) return
-                  try {
-                    const { url } = await uploadFileToBlob(file, 'info-profile', 'profile-dark', setStatus)
-                    setProfileDark(url)
-                    setStatus(null)
-                  } catch (err) { console.error('Profile upload failed:', err) }
-                  e.target.value = ''
-                }} />
-              </label>
-            )}
-          </div>
-        </div>
+        {/* The Info page video + profile panel used to live here. It
+            wrote lightVideoSrc, darkVideoSrc, figCaption, profileLight
+            and profileDark, and nothing on the site has read any of them
+            since that section of the Info page was removed — uploads
+            went to Blob and were never shown. Removed rather than left
+            as a control that looks like it does something. */}
 
         <button
           onClick={handleSave}
