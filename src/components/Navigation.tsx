@@ -388,8 +388,16 @@ export default function Navigation() {
               className="hover:opacity-70 hover:scale-105 inline-block origin-left"
               style={{ transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out' }}
             >
-              {/* XOXO wordmark logo. Sized via height (clamp for responsive scale)
-                  while keeping the original aspect ratio. Inverts to light fill on dark mode. */}
+              {/* XOXO wordmark. Sized by height, clamped so it tracks the
+                  viewport, aspect ratio left to the SVG. Inverts to a light
+                  fill in dark mode.
+
+                  These numbers ARE the size — not a trim waiting to be
+                  reconsidered. They were reached by taking a tenth off the
+                  previous mark, which the wider new one needed, and that is
+                  now simply what the header logo is. The admin dial reads
+                  1.00 here, so anything set there reads as a change from
+                  this rather than from something nobody can see. */}
               <img
                 src="/assets/Logos/xoxo_Logo_005.svg"
                 alt="xoxo studio"
@@ -980,8 +988,9 @@ export default function Navigation() {
                 <span className="font-light text-[clamp(1.8rem,5.5vw,3.8rem)] leading-[1] tracking-[-0.01em]">)</span>
               </div>
 
-              {/* XOXO wordmark — same logo image as the top-left, inverted to white
-                  for the dark popup background. */}
+              {/* XOXO wordmark — same file as the top-left, inverted to white
+                  for the dark popup ground. As in the header, these sizes are
+                  the baseline the admin dial's 1.00 refers to. */}
               <div className="flex flex-col items-center mb-5 mt-1">
                 <img
                   src="/assets/Logos/xoxo_Logo_005.svg"
