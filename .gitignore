@@ -43,3 +43,10 @@ next-env.d.ts
 # on their own (Cloudflare Worker, etc). They carry their own node_modules
 # and must not be pushed with the website.
 /property-watch/
+
+# Blob storage mirror, written by scripts/pull-assets.mjs.
+# Ignored by default because it is ~184MB of binaries and git keeps them
+# forever — a repo you clone pays that cost on every checkout. Delete
+# these two lines if you would rather the media were versioned; that is
+# a deliberate trade, not an oversight.
+assets-backup/

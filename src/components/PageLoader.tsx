@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import XoxoBrandLoader from './XoxoBrandLoader'
 import { useDarkMode } from '@/contexts/DarkModeContext'
@@ -79,10 +79,18 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
 
   // Resolved once per mount, so the mark cannot swap mid-animation if the
   // pool arrives while it is playing.
-  const art = useMemo(() => currentLoader(), [])
+  //
+  // Lazy initial state rather than useMemo: React may discard a memo and
+  // recompute it whenever it likes, and a recompute that returns a
+  // different loader rewrites the stylesheet, which redefines every
+  // @keyframes and restarts the animation from zero part way through.
+  // An initialiser is guaranteed to run once for the life of the mount.
+  const [art] = useState(currentLoader)
 
-  // Warm the pool for the rest of the session. Deliberately not awaited:
-  // the built-in plays now, the pick applies from the next loader on.
+  // Fetch a pick for next time. Deliberately not awaited — a loader that
+  // has to be downloaded before it can be shown is a contradiction — so
+  // whatever is already stored plays now and this decides what plays on
+  // the next page load.
   useEffect(() => {
     primeLoaderPool()
   }, [])

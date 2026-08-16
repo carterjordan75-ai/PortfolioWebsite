@@ -41,24 +41,22 @@ const CACHE_KEY = 'xoxoLoaderPick'
  * Refreshing rerolls it.
  */
 /**
- * Resolved once and then held.
+ * The pick, held once it is known.
  *
- * This has to be stable by IDENTITY, not just by value. The mark is
- * painted by handing a stylesheet and an SVG to dangerouslySetInnerHTML,
- * and React rewrites both the moment the strings it is given differ.
- * Rewriting the stylesheet redefines every @keyframes in it, which
- * restarts all 319 animations from zero — mid-run, with no DOM change
- * to show for it.
+ * Only a REAL pick is cached. The built-in is a fallback for "the pick
+ * has not arrived yet", and caching that was the bug: the store is
+ * always empty on a fresh load, because priming fills it a moment
+ * later, so the very first call locked the built-in in for the whole
+ * page — and client-side navigation kept it, since the module does not
+ * re-initialise. A loader added in the admin panel then took two full
+ * reloads to appear, which reads as the panel doing nothing.
  *
- * That is exactly what used to happen: this function read sessionStorage
- * on every call and built a new object each time, while primeLoaderPool
- * filled that storage in the background about a second in. Any recompute
- * after it landed handed back a different loader and the mark started
- * again part way through. useMemo was no defence — React is free to
- * discard a memo and recompute it, and it does.
- *
- * Holding the first answer means a run cannot be interrupted by one. A
- * pool pick still applies, from the next full page load.
+ * What must not happen is the art changing identity DURING a run: the
+ * mark is handed to dangerouslySetInnerHTML, and rewriting its
+ * stylesheet redefines every @keyframes, which restarts every animation
+ * from zero mid-flight. That is now held where it belongs — PageLoader
+ * takes its art in lazy initial state, which React guarantees runs
+ * once, rather than relying on this module never changing its answer.
  */
 let resolved: LoaderArt | null = null
 
@@ -66,46 +64,71 @@ export function currentLoader(): LoaderArt {
   if (typeof window === 'undefined') return BUILT_IN
   if (resolved) return resolved
   try {
-    const raw = sessionStorage.getItem(CACHE_KEY)
-    if (!raw) return (resolved = BUILT_IN)
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return BUILT_IN
     const art = JSON.parse(raw) as LoaderArt
-    return (resolved = art && art.css && art.svg ? art : BUILT_IN)
+    if (!art || !art.css || !art.svg) return BUILT_IN
+    return (resolved = art)
   } catch {
-    return (resolved = BUILT_IN)
+    return BUILT_IN
   }
 }
 
 let primed = false
 
-/** Fetch this session's pick. Safe to call repeatedly; only runs once. */
+/**
+ * Fetch a pick and store it.
+ *
+ * Runs on every page load, not only when nothing is stored. The stored
+ * pick is what the NEXT load shows, so priming every time is what makes
+ * randomise actually reroll, and what makes a newly added loader turn
+ * up without anyone clearing anything.
+ *
+ * localStorage rather than sessionStorage so a pick survives the tab
+ * being closed — otherwise every new session starts on the built-in and
+ * the pool is only ever seen by people who navigate twice.
+ */
 export async function primeLoaderPool(): Promise<void> {
   if (primed || typeof window === 'undefined') return
   primed = true
-  if (sessionStorage.getItem(CACHE_KEY)) return
 
   try {
     const res = await fetch('/api/loaders?pick=1', { cache: 'no-store' })
     if (!res.ok) return
     const data = (await res.json()) as { art: LoaderArt | null }
-    if (!data.art?.css || !data.art?.svg) return
+    if (!data.art?.css || !data.art?.svg) {
+      // The pool is empty or everything in it is disabled — drop any
+      // stale pick so the built-in comes back rather than a loader the
+      // admin panel has already retired.
+      try { localStorage.removeItem(CACHE_KEY) } catch { /* nothing to clear */ }
+      return
+    }
     try {
-      sessionStorage.setItem(CACHE_KEY, JSON.stringify(data.art))
+      localStorage.setItem(CACHE_KEY, JSON.stringify(data.art))
     } catch {
-      // Over quota — a ~400KB loader can tip a full sessionStorage. The
-      // built-in still works, so this is a miss, not a failure.
+      // Over quota. The built-in still works, so this is a miss, not a
+      // failure.
     }
   } catch {
     /* offline or the route is down: the built-in covers it */
   }
 }
 
-/** Drop the cached pick so the next prime rerolls. Used by the admin panel. */
+/**
+ * Drop the pick and fetch a fresh one straight away.
+ *
+ * Called by the admin panel after the pool changes. Re-priming rather
+ * than only clearing is what lets a newly added loader show on the very
+ * next page load instead of the one after it.
+ */
 export function clearLoaderPick() {
   try {
-    sessionStorage.removeItem(CACHE_KEY)
+    localStorage.removeItem(CACHE_KEY)
   } catch {
     /* nothing to clear */
   }
+  resolved = null
   primed = false
+  void primeLoaderPool()
   resolved = null
 }
