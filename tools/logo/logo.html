@@ -137,8 +137,7 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><code id="curveval"></code></div>
    </details>
   </details>
-  <details class="grp"><summary>Letters</summary>
-   <details open><summary>Layout</summary>
+  <details class="grp" open><summary>Layout</summary>
   <div class="row"><label>Arrangement</label>
    <button id="loR" onclick="setLayout('row')">Row</button>
    <button id="loG" onclick="setLayout('grid')">Grid</button>
@@ -153,7 +152,8 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <p class="note">The frame follows the arrangement, so a grid crops to a square
   and a row to a band. Gap at 1 is the wordmark as drawn; Cell turn alternates
   direction letter to letter so a grid reads as tiles rather than a tilted block.</p>
-   </details>
+  </details>
+  <details class="grp"><summary>Letters</summary>
    <details><summary>Squash & stretch</summary>
   <div class="row"><label>Target</label>
    <button id="tW" onclick="setTarget('whole')">Whole</button>

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { applyLogoScales, readLogoScales, scaled, LOGO_SCALE_PAGE } from '@/lib/logoScale'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -124,6 +125,9 @@ export default function Navigation() {
       .then(data => {
         if (!data) return
         if (data.pages?.['info-popup']) setInfoData(data.pages['info-popup'])
+        // Published as CSS variables rather than held in state: the
+        // loader paints on surfaces this component never renders on.
+        applyLogoScales(readLogoScales(data.pages?.[LOGO_SCALE_PAGE]))
         const raw = data.pages?.['info-page']?.logoOrder
         if (typeof raw === 'string') {
           try {
@@ -391,7 +395,7 @@ export default function Navigation() {
                 alt="xoxo studio"
                 className="block w-auto"
                 style={{
-                  height: 'clamp(1.26rem, 2.7vw, 2.16rem)',
+                  height: scaled('clamp(1.26rem, 2.7vw, 2.16rem)', 'header'),
                   filter: dark ? 'invert(1)' : 'none',
                 }}
               />
@@ -984,7 +988,7 @@ export default function Navigation() {
                   alt="XOXO"
                   className="block w-auto"
                   style={{
-                    height: 'clamp(2.16rem, 4.95vw, 3.24rem)',
+                    height: scaled('clamp(2.16rem, 4.95vw, 3.24rem)', 'popup'),
                     filter: 'invert(1)',
                   }}
                 />

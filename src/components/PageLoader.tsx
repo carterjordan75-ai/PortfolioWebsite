@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import XoxoBrandLoader from './XoxoBrandLoader'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 import { currentLoader, primeLoaderPool } from '@/lib/loaderPool'
+import { scaled } from '@/lib/logoScale'
 
 interface PageLoaderProps {
   show: boolean
@@ -57,7 +58,7 @@ interface PageLoaderProps {
  * wordmark's own box, so the artwork occupies noticeably more room than
  * this number suggests.
  */
-const MARK_WIDTH = 'min(34vw, 340px)'
+const MARK_WIDTH = scaled('min(34vw, 340px)', 'loader')
 
 /**
  * A beat after the mark completes, before anything is revealed. Without

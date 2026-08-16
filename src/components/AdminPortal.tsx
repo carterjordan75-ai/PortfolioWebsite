@@ -4,6 +4,10 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import XoxoBrandLoader from './XoxoBrandLoader'
+import {
+  applyLogoScales, readLogoScales, DEFAULT_LOGO_SCALES,
+  LOGO_SCALE_PAGE, type LogoScales,
+} from '@/lib/logoScale'
 import { clearLoaderPick } from '@/lib/loaderPool'
 import { upload } from '@vercel/blob/client'
 import { useEditMode } from '@/contexts/EditModeContext'
@@ -15,7 +19,7 @@ import MediaLibraryPicker from './MediaLibraryPicker'
 
 const ADMIN_PASSWORD = '3432'
 
-type Section = 'dashboard' | 'work' | 'archive' | 'employment' | 'experiments' | 'look' | 'info' | 'loaders' | 'storage'
+type Section = 'dashboard' | 'work' | 'archive' | 'employment' | 'experiments' | 'look' | 'info' | 'logo' | 'loaders' | 'storage'
 
 /**
  * Direct-to-Blob file upload. Used by every admin panel that accepts file
@@ -129,6 +133,7 @@ export default function AdminPortal({ show, onClose }: { show: boolean; onClose:
     { id: 'experiments', label: 'Misc' },
     { id: 'look', label: 'Look Gallery' },
     { id: 'info', label: 'Info / About' },
+    { id: 'logo', label: 'Logo' },
     { id: 'loaders', label: 'Loaders' },
     { id: 'storage', label: 'Storage' },
   ]
@@ -284,6 +289,7 @@ export default function AdminPortal({ show, onClose }: { show: boolean; onClose:
                     <InfoPopupEditor onClose={onClose} />
                   )}
 
+                  {activeSection === 'logo' && <LogoScalePanel />}
                   {activeSection === 'loaders' && (
                     <LoadersAdminPanel />
                   )}
@@ -3505,6 +3511,124 @@ type LoaderIndexShape = {
   randomise: boolean
   pinnedId: string | null
   items: Array<{ id: string; name: string; enabled: boolean; duration: number; bytes: number }>
+}
+
+/**
+ * Scale of the wordmark, per place it appears.
+ *
+ * Each surface keeps its own responsive rule — the header clamps between
+ * two rems, the loader sits at a share of the viewport — and this is a
+ * multiplier on top, so 1 is the design as drawn and the dial nudges it
+ * without flattening the clamp into a fixed size.
+ *
+ * Changes show immediately on the page behind the panel, because the
+ * values are published as CSS variables rather than held in React state.
+ * That is also how the loader picks them up: it paints over the gate and
+ * the mobile lock, where the navigation that fetches this is not
+ * mounted, and a variable with a default means those surfaces size
+ * themselves correctly having never heard of any of it.
+ */
+function LogoScalePanel() {
+  const [scales, setScales] = useState<LogoScales>(DEFAULT_LOGO_SCALES)
+  const [loading, setLoading] = useState(true)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  useEffect(() => {
+    fetch('/api/pages', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (d) setScales(readLogoScales(d.pages?.[LOGO_SCALE_PAGE]))
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const nudge = (k: keyof LogoScales, v: number) => {
+    const next = { ...scales, [k]: v }
+    setScales(next)
+    applyLogoScales(next)          // live, so the header behind you moves
+    setSaveState('idle')
+  }
+
+  const save = async () => {
+    setSaveState('saving')
+    try {
+      const res = await fetch('/api/pages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageId: LOGO_SCALE_PAGE, fields: scales }),
+      })
+      setSaveState(res.ok ? 'saved' : 'error')
+    } catch {
+      setSaveState('error')
+    }
+  }
+
+  const reset = () => {
+    setScales(DEFAULT_LOGO_SCALES)
+    applyLogoScales(DEFAULT_LOGO_SCALES)
+    setSaveState('idle')
+  }
+
+  const ROWS: Array<{ k: keyof LogoScales; label: string; hint: string }> = [
+    { k: 'header', label: 'Header',     hint: 'Top-left wordmark, every page' },
+    { k: 'popup',  label: 'Info popup', hint: 'Inside the menu / info overlay' },
+    { k: 'loader', label: 'Loader',     hint: 'The animated mark on the loading screen' },
+  ]
+
+  if (loading) return <p className="text-white/30 text-[10px]">Loading…</p>
+
+  return (
+    <div className="space-y-4 max-w-md">
+      <div>
+        <h2 className="text-white text-xs font-bold tracking-[0.14em] uppercase mb-1">Logo scale</h2>
+        <p className="text-white/35 text-[10px] leading-relaxed">
+          1.00 is the size as designed. Each place keeps its own responsive
+          rule — this scales the result, so it still adapts to the window.
+        </p>
+      </div>
+
+      {ROWS.map(({ k, label, hint }) => (
+        <div key={k} className="space-y-1">
+          <div className="flex items-baseline justify-between">
+            <label className="text-white/70 text-[10px] font-medium">{label}</label>
+            <span className="text-white/40 text-[10px] font-mono tabular-nums">
+              {scales[k].toFixed(2)}×
+            </span>
+          </div>
+          <input
+            type="range" min="0.5" max="1.6" step="0.01" value={scales[k]}
+            onChange={e => nudge(k, parseFloat(e.target.value))}
+            className="w-full"
+          />
+          <p className="text-white/25 text-[9px]">{hint}</p>
+        </div>
+      ))}
+
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          onClick={save}
+          disabled={saveState === 'saving'}
+          className="px-3 py-1.5 rounded-md text-[10px] font-bold tracking-wider uppercase bg-white text-black disabled:opacity-40"
+        >
+          {saveState === 'saving' ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          onClick={reset}
+          className="px-3 py-1.5 rounded-md text-[10px] tracking-wider uppercase border border-white/15 text-white/60 hover:text-white"
+        >
+          Reset to 1.00
+        </button>
+        {saveState === 'saved' && <span className="text-emerald-400/70 text-[10px]">Saved</span>}
+        {saveState === 'error' && <span className="text-red-400/70 text-[10px]">Could not save</span>}
+      </div>
+
+      <p className="text-white/25 text-[9px] leading-relaxed">
+        Unsaved changes still show on the page behind this panel — they are
+        live the moment you drag. Reload without saving and they are gone.
+      </p>
+    </div>
+  )
 }
 
 function LoadersAdminPanel() {
