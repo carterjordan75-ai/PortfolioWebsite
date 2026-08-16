@@ -177,15 +177,21 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Look around <b id="veyeLook"></b></label><input id="eyeLook" type="range" min="0" max="1" step=".01"></div>
   <div class="row"><label>Glances <b id="veyeDart"></b></label><input id="eyeDart" type="range" min="1" max="10" step="1"></div>
   <div class="row"><label>Blinks <b id="veyeBlink"></b></label><input id="eyeBlink" type="range" min="0" max="6" step="1"></div>
-  <div class="row"><label>Pupil size <b id="veyeSize"></b></label><input id="eyeSize" type="range" min=".4" max="1.8" step=".01"></div>
+  <div class="row"><label>Pupil size <b id="veyeSize"></b></label><input id="eyeSize" type="range" min=".3" max="3.4" step=".01"></div>
+  <div class="row"><label>Oval <b id="veyeOval"></b></label><input id="eyeOval" type="range" min=".45" max="2.2" step=".01"></div>
+  <div class="row"><label>Dome <b id="veyeDome"></b></label><input id="eyeDome" type="range" min="0" max="1" step=".01"></div>
   <p class="note">The O's counters become eyes. They dart and hold rather than
   drifting — a pupil that slides smoothly reads as drowsy, one that snaps and
   then sits still reads as looking at something. Blinks shut fast and open
   slower, the way a lid actually moves, and the two eyes are offset by a few
   frames so the pair reads as a face rather than one object with two holes.</p>
-  <p class="note">Look around is capped by the letterform: the pupil stops well
-  short of the rim, because an O with a bite out of it stops being an O long
-  before it stops being an eye.</p>
+  <p class="note">Dome is the fish-eye. A pupil is not a sticker sliding across a
+  flat disc — it sits on a curved surface, so it foreshortens along the direction
+  it travelled and reads fattest when facing you. Turning it off is what makes the
+  eye look flat.</p>
+  <p class="note">Look around is capped by the letterform, and the cap follows
+  Pupil size and Oval — a bigger pupil gets less room, so it still stops short of
+  the rim rather than walking out through it.</p>
   </details>
 
   <details class="grp"><summary>Letters</summary>
@@ -509,7 +515,7 @@ var LO=Math.min.apply(null,AREAS), HI=Math.max.apply(null,AREAS);
 var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 
 var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
- eyes:0,eyeLook:.6,eyeDart:4,eyeBlink:2,eyeSize:1,
+ eyes:0,eyeLook:.6,eyeDart:4,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
  lgAlign:'centre',lgTex:0,startSpread:0,
@@ -614,8 +620,12 @@ function eyeGeom(i){
  // leaves the ring a comfortable margin at full tilt — half was timid,
  // and all of it would let the pupil eat the letterform, at which point
  // the O stops being an O long before it stops being an eye.
- var room=(b.w/2 - r)*0.68;
- return { cx:cx, cy:cy, r:r, room:room };
+ // The pupil's real size, once size and oval have had their say. A
+ // bigger pupil has less room to travel, and computing room off the base
+ // radius let a large one walk out through the rim.
+ var rx=r*P.eyeSize/Math.sqrt(P.eyeOval), ry=r*P.eyeSize*Math.sqrt(P.eyeOval);
+ var room=Math.max(0,(b.w/2 - Math.max(rx,ry))*0.68);
+ return { cx:cx, cy:cy, r:r, rx:rx, ry:ry, room:room };
 }
 function ring(p){var n=p.length,d='M'+p[0][0].toFixed(1)+','+p[0][1].toFixed(1);
  for(var i=0;i<n;i++){var p0=p[(i-1+n)%n],p1=p[i],p2=p[(i+1)%n],p3=p[(i+2)%n];
@@ -1316,71 +1326,136 @@ function jitCSS(){
  * give the same performance. A loader that improvises differently on
  * every visit cannot be art-directed.
  */
-function eyeLookCSS(i, total){
- var g=eyeGeom(i); if(!g) return '';
+function eyeTrack(i){
+ var g=eyeGeom(i); if(!g) return null;
  var darts=Math.max(1, Math.round(P.eyeDart));
  var reach=g.room*P.eyeLook;
  var seed=11, drift=(i%2?1:-1)*0.06;
- var span=100/darts;
- var kf='', prev=[0,0];
- // Timed off the reference: a glance is ~250ms of travel with a clear
- // overshoot, then it settles back over the next ~200ms, and between
- // glances the pupil never actually stops — it creeps. Measured on the
- // video the pupil ran 732 -> 754 (a slow creep), then 777 -> 793 in two
- // frames (the dart), then came back to 762 and sat there breathing.
- var moveP=Math.min(span*0.42, 100*260/total);   // travel
- var overP=moveP*0.62;                            // where it overshoots
- var setP=Math.min(span*0.62, moveP+100*200/total); // settled
- function at(v){ return Math.max(0,Math.min(100,v)) }
- function tr(x,y){ return 'transform:translate('+x.toFixed(1)+'px,'+y.toFixed(1)+'px)' }
- for(var k=0;k<=darts;k++){
+ var pts=[[0,0]];
+ for(var k=1;k<darts;k++){
   var a=rnd(seed+k*13)*Math.PI*2, rr=Math.sqrt(rnd(seed+k*29))*reach;
-  var pos=(k===0||k===darts) ? [0,0]
-   : [Math.cos(a)*rr*(1+drift), Math.sin(a)*rr*(1-drift)];
-  var t0=k*span;
-  if(k===0){ kf+='0%{'+tr(0,0)+'}'; prev=[0,0]; continue }
-  // creep away from where it was sitting, so it is alive before it moves
-  var cx=prev[0]+(rnd(seed+k*7)-0.5)*reach*0.10;
-  var cy=prev[1]+(rnd(seed+k*17)-0.5)*reach*0.10;
-  kf+=at(t0-moveP).toFixed(2)+'%{'+tr(cx,cy)+';animation-timing-function:cubic-bezier(.5,0,.75,.2)}';
-  // past the target, then back onto it — the settle is what stops it
-  // reading as a teleport
-  kf+=at(t0-moveP+overP).toFixed(2)+'%{'+tr(pos[0]*1.13,pos[1]*1.13)+';animation-timing-function:cubic-bezier(.2,.7,.3,1)}';
+  pts.push([Math.cos(a)*rr*(1+drift), Math.sin(a)*rr*(1-drift)]);
+ }
+ pts.push([0,0]);
+ return { g:g, pts:pts, darts:darts, reach:reach, seed:seed };
+}
+
+/**
+ * Where the pupil looks.
+ *
+ * It creeps while it waits, accelerates, overshoots and settles — the
+ * shape measured off the reference, where the pupil ran 732 to 754 as a
+ * slow drift, jumped to 793, then came back to 762 and sat breathing.
+ * Nothing here ever holds a value: even the "still" stretches carry a
+ * slow wander, because a pupil frozen to the pixel is the single thing
+ * that reads as a mechanism rather than a creature.
+ */
+function eyeLookCSS(i, total){
+ var T=eyeTrack(i); if(!T) return '';
+ var span=100/T.darts;
+ var moveP=Math.min(span*0.44, 100*280/total);
+ var overP=moveP*0.58;
+ var setP=Math.min(span*0.66, moveP+100*230/total);
+ var at=function(v){ return Math.max(0,Math.min(100,v)) };
+ var tr=function(x,y){ return 'transform:translate('+x.toFixed(1)+'px,'+y.toFixed(1)+'px)' };
+ var kf='0%{'+tr(0,0)+'}', prev=[0,0];
+ for(var k=1;k<=T.darts;k++){
+  var pos=T.pts[k], t0=k*span;
+  // two creep stops through the hold, so it is never parked
+  var c1=[prev[0]+(rnd(T.seed+k*7)-0.5)*T.reach*0.09, prev[1]+(rnd(T.seed+k*17)-0.5)*T.reach*0.09];
+  var c2=[c1[0]+(rnd(T.seed+k*23)-0.5)*T.reach*0.07, c1[1]+(rnd(T.seed+k*31)-0.5)*T.reach*0.07];
+  kf+=at(t0-moveP-span*0.28).toFixed(2)+'%{'+tr(c1[0],c1[1])+';animation-timing-function:linear}';
+  kf+=at(t0-moveP).toFixed(2)+'%{'+tr(c2[0],c2[1])+';animation-timing-function:cubic-bezier(.55,0,.7,.25)}';
+  kf+=at(t0-moveP+overP).toFixed(2)+'%{'+tr(pos[0]*1.16,pos[1]*1.16)+';animation-timing-function:cubic-bezier(.18,.72,.28,1)}';
   kf+=at(t0-moveP+setP).toFixed(2)+'%{'+tr(pos[0],pos[1])+';animation-timing-function:linear}';
   prev=pos;
  }
  kf+='100%{'+tr(0,0)+'}';
  return '@keyframes eyL'+i+'{'+kf+'}'
-  +'.eyL'+i+'{transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;'
+  +'.eyL'+i+'{transform-box:view-box;transform-origin:'+T.g.cx.toFixed(1)+'px '+T.g.cy.toFixed(1)+'px;'
   +'animation:eyL'+i+' '+Math.round(total)+'ms linear both}';
 }
 
+/**
+ * The dome.
+ *
+ * A pupil is not a sticker sliding across a flat disc — it sits on a
+ * curved surface, so as it turns away from front-on it foreshortens
+ * along the direction it travelled, and it reads slightly larger when it
+ * is facing you. That compression is most of what "fish eye" means here,
+ * and its absence is most of what made the eye look flat. Squashing
+ * along the axis of travel is cheap and it is also what the geometry
+ * actually does.
+ */
+function eyeDomeCSS(i, total){
+ var T=eyeTrack(i); if(!T || P.eyeDome<=0) return '';
+ var span=100/T.darts;
+ var moveP=Math.min(span*0.44, 100*280/total);
+ var setP=Math.min(span*0.66, moveP+100*230/total);
+ var at=function(v){ return Math.max(0,Math.min(100,v)) };
+ function pose(p){
+  var m=Math.hypot(p[0],p[1]);
+  var f=T.reach? Math.min(1,m/T.reach) : 0;
+  var ang=(Math.atan2(p[1],p[0])*180/Math.PI);
+  var squash=1-P.eyeDome*f*f*0.34;      // foreshorten along travel
+  var bulge=1+P.eyeDome*(1-f)*0.10;     // fattest when facing you
+  return 'transform:rotate('+ang.toFixed(1)+'deg) scale('
+   +(squash*bulge).toFixed(3)+','+bulge.toFixed(3)+') rotate('+(-ang).toFixed(1)+'deg)';
+ }
+ var kf='0%{'+pose([0,0])+'}';
+ for(var k=1;k<=T.darts;k++){
+  var t0=k*span;
+  kf+=at(t0-moveP).toFixed(2)+'%{'+pose(T.pts[k-1])+';animation-timing-function:cubic-bezier(.3,0,.3,1)}';
+  kf+=at(t0-moveP+setP).toFixed(2)+'%{'+pose(T.pts[k])+'}';
+ }
+ kf+='100%{'+pose([0,0])+'}';
+ return '@keyframes eyD'+i+'{'+kf+'}'
+  +'.eyD'+i+'{transform-box:view-box;transform-origin:'+T.g.cx.toFixed(1)+'px '+T.g.cy.toFixed(1)+'px;'
+  +'animation:eyD'+i+' '+Math.round(total)+'ms linear both}';
+}
+
+/**
+ * The blink.
+ *
+ * A lid comes DOWN. Squashing about the middle moves the top and bottom
+ * toward each other equally, which is the mechanical-looking version;
+ * the eye should close from above and the shut sliver should sit low.
+ * So the squash is paired with a drop, and the two eased differently on
+ * the way down and the way up — measured off the reference at roughly
+ * 200ms to close, 80ms shut, 220ms to open.
+ *
+ * It does not shut to nothing. A sliver is left, which is what keeps a
+ * closed eye reading as an eye instead of the hole having vanished.
+ */
 function eyeBlinkCSS(i, total){
  var g=eyeGeom(i); if(!g) return '';
- var sz=P.eyeSize;
+ var sx=P.eyeSize/Math.sqrt(P.eyeOval), sy=P.eyeSize*Math.sqrt(P.eyeOval);
  var n=Math.max(0, Math.round(P.eyeBlink));
- var base='scale('+sz.toFixed(3)+','+sz.toFixed(3)+')';
+ var open='transform:translate(0,0) scale('+sx.toFixed(3)+','+sy.toFixed(3)+')';
  if(n<=0) return '.eyB'+i+'{transform-box:view-box;transform-origin:'
-   +g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;transform:'+base+'}';
- // Measured off the reference: ~200ms to close, ~80ms held shut, ~220ms
- // to open. Slower and softer than a snap, and it does not shut to a
- // hairline — there is still a sliver, which is what keeps the closed
- // eye reading as an eye rather than as the hole simply vanishing.
+   +g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;'+open+'}';
  var pct=function(ms){ return Math.max(0,Math.min(100,ms/total*100)) };
- var lid=function(k){ return 'scale('+sz.toFixed(3)+','+(sz*k).toFixed(3)+')' };
- var kf='0%{transform:'+base+'}', last=0;
+ var lid=function(k){
+  // as it shuts it also drops, so the closure reads as a lid rather
+  // than as the pupil being pinched
+  var drop=g.r*sy*(1-k)*0.42;
+  return 'transform:translate(0,'+drop.toFixed(1)+'px) scale('
+   +(sx*(1+(1-k)*0.06)).toFixed(3)+','+(sy*k).toFixed(3)+')';
+ };
+ var kf='0%{'+open+'}', last=0;
  for(var k=0;k<n;k++){
-  var at=total*(0.24+0.60*(n===1?0.5:k/(n-1))) + (i%2?46:0);
-  var a=pct(at-200), b=pct(at-60), c=pct(at), d=pct(at+80), e=pct(at+300);
+  var t=total*(0.24+0.60*(n===1?0.5:k/(n-1))) + (i%2?46:0);
+  var a=pct(t-210), b=pct(t-95), c=pct(t), d=pct(t+80), e=pct(t+150), f=pct(t+320);
   if(a<=last) continue;
-  kf+=a.toFixed(2)+'%{transform:'+base+';animation-timing-function:cubic-bezier(.45,0,.9,.4)}'
-    + b.toFixed(2)+'%{transform:'+lid(0.34)+'}'
-    + c.toFixed(2)+'%{transform:'+lid(0.09)+'}'
-    + d.toFixed(2)+'%{transform:'+lid(0.09)+';animation-timing-function:cubic-bezier(.15,.7,.3,1)}'
-    + e.toFixed(2)+'%{transform:'+base+'}';
-  last=e;
+  kf+=a.toFixed(2)+'%{'+open+';animation-timing-function:cubic-bezier(.4,0,.75,.35)}'
+    + b.toFixed(2)+'%{'+lid(0.42)+';animation-timing-function:cubic-bezier(.5,0,.9,.6)}'
+    + c.toFixed(2)+'%{'+lid(0.07)+'}'
+    + d.toFixed(2)+'%{'+lid(0.07)+';animation-timing-function:cubic-bezier(.1,.6,.25,1)}'
+    + e.toFixed(2)+'%{'+lid(0.62)+';animation-timing-function:cubic-bezier(.2,.7,.3,1.4)}'
+    + f.toFixed(2)+'%{'+open+'}';
+  last=f;
  }
- kf+='100%{transform:'+base+'}';
+ kf+='100%{'+open+'}';
  return '@keyframes eyB'+i+'{'+kf+'}'
   +'.eyB'+i+'{transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;'
   +'animation:eyB'+i+' '+Math.round(total)+'ms linear both}';
@@ -1389,7 +1464,7 @@ function eyeBlinkCSS(i, total){
 function eyesCSS(total){
  if(!EYES()) return '';
  var out='';
- B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,total)+eyeBlinkCSS(i,total) } });
+ B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,total)+eyeDomeCSS(i,total)+eyeBlinkCSS(i,total) } });
  return out;
 }
 
@@ -1820,9 +1895,9 @@ function svg(){
     defs+='<mask id="ey'+i+'" maskUnits="userSpaceOnUse" x="-600" y="-800" '
      +'width="2200" height="2000">'
      +'<rect x="-600" y="-800" width="2200" height="2000" fill="#fff"/>'
-     +'<g class="eyL'+i+'"><g class="eyB'+i+'">'
+     +'<g class="eyL'+i+'"><g class="eyD'+i+'"><g class="eyB'+i+'">'
      +'<path d="'+ring(b2.hp)+'" fill="#000"/>'
-     +'</g></g></mask>';
+     +'</g></g></g></mask>';
     batt+=' mask="url(#ey'+i+')"';
    }
    if(lp(i,'lgw')>0) for(var q=0;q<P.lgbris;q++){
@@ -2384,7 +2459,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 // without adding its key here produces a slider that moves and does
 // nothing, which is how the whole Layout group shipped dead.
 var KEYS=['lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
- 'eyeLook','eyeDart','eyeBlink','eyeSize',
+ 'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
