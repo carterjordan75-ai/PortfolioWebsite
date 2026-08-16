@@ -815,13 +815,24 @@ function shapeCSS(step){
   });
   fr.push([T,b.p]);
   fr.sort(function(a,c){return a[0]-c[0]});
-  var seen=-1, body='';
+  // A full ring of cubics is ~2.4KB, and a run holds its shape across
+  // several stops — the rest pose alone is the first frame, the last, and
+  // both sides of every dent. Emitting the path once per stop repeated it
+  // verbatim; a keyframe selector takes a list, so identical stops share
+  // one copy. Percentages define the timeline independently of the order
+  // they are written in, so grouping non-adjacent stops is safe.
+  var seen=-1, stops=[], byD={};
   fr.forEach(function(f){
    var p=Math.max(0,Math.min(100,f[0]/T*100));
    if(p<=seen) p=seen+.01;
    if(p>100) return;
-   seen=p; body+=p.toFixed(2)+'%{d:path("'+toD(f[1])+'")}';
+   seen=p;
+   var d=toD(f[1]);
+   if(!byD[d]){ byD[d]=[]; stops.push(d) }
+   byD[d].push(p.toFixed(2)+'%');
   });
+  var body='';
+  stops.forEach(function(d){ body+=byD[d].join(',')+'{d:path("'+d+'")}' });
   out+='@keyframes sh'+i+'{'+body+'}';
   SHAPED[i]=T; SHFR[i]=fr;
  });
@@ -1831,7 +1842,12 @@ function svg(){
  if(P.tex>0)
   // feTurbulence displacement roughens the stroke edge — the closest
   // thing SVG gives to a brush without hand-drawing every mark.
-  s+='<filter id="brush" x="-30%" y="-30%" width="160%" height="160%">'
+  // sRGB for the same reason shade3d asks for it: the SVG default is
+  // linearRGB, so the browser converts the whole surface in and back out
+  // again, and the round trip through 8-bit costs levels off the ramp.
+  // Two full-surface conversions saved, and a cleaner edge.
+  s+='<filter id="brush" x="-30%" y="-30%" width="160%" height="160%" '
+   +'color-interpolation-filters="sRGB">'
    +'<feTurbulence type="fractalNoise" baseFrequency="'+P.rough+'" numOctaves="'+P.oct
    +'" seed="'+(P.seed*7)+'" result="n"/>'
    +'<feDisplacementMap in="SourceGraphic" in2="n" scale="'+P.tex
@@ -1852,39 +1868,56 @@ function svg(){
     // Dither: the normals come off an 8-bit alpha, so a wide ramp has
     // only 256 levels and the light turns them into terraces. A little
     // noise breaks the bands into grain.
-    +'<feOffset in="bB" dx="0" dy="0" result="b0"/>'
-    // Low-frequency turbulence pushed through the height map, so the
-    // light finds dents and swells across the surface — thumbprints.
-    +(P.bump>0?'<feTurbulence type="fractalNoise" baseFrequency="'+(P.bumpS*.02).toFixed(4)
-      +'" numOctaves="3" seed="'+(P.seed*17)+'" result="bmpR"/>'
-      // soften the noise before it displaces, or its hard detail becomes
-      // hard detail in the surface and the light terraces it
-      +'<feGaussianBlur in="bmpR" stdDeviation="'+P.bumpBlur.toFixed(2)+'" result="bmp"/>'
-      +'<feDisplacementMap in="b0" in2="bmp" scale="'+(P.bump*4).toFixed(1)
-      +'" xChannelSelector="R" yChannelSelector="G" result="b1"/>'
-     :'<feOffset in="b0" dx="0" dy="0" result="b1"/>')
-    // a supplied height map stacks on top of the procedural bumps
-    +(P.texHt?'<feImage href="'+P.texHt+'" x="0" y="0" width="'+P.texScale
-      +'" height="'+P.texScale+'" result="hi"/><feTile in="hi" result="htR"/>'
-      +'<feGaussianBlur in="htR" stdDeviation="'+P.htBlur.toFixed(2)+'" result="ht"/>'
-      +'<feDisplacementMap in="b1" in2="ht" scale="'+P.texHtAmt
-      +'" xChannelSelector="R" yChannelSelector="G" result="b2"/>'
-     :'<feOffset in="b1" dx="0" dy="0" result="b2"/>')
-    // one last pass over the combined surface — whatever the per-source
-    // blurs leave behind, this takes out
-    +(P.hmBlur>0?'<feGaussianBlur in="b2" stdDeviation="'+P.hmBlur.toFixed(2)
-      +'" result="b3"/>':'<feOffset in="b2" dx="0" dy="0" result="b3"/>')
-    // Dither last, right before the light. Jitter each pixel across a
-    // band, then blur it back — the blur is what actually adds precision,
-    // averaging two neighbouring 8-bit steps into the values between them.
-    +(P.dither>0
-      ?'<feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" seed="'
-       +(P.seed*23)+'" result="dth"/>'
-       +'<feDisplacementMap in="b3" in2="dth" scale="'+(P.dither*9).toFixed(2)
-       +'" xChannelSelector="R" yChannelSelector="G" result="b3d"/>'
-       +'<feGaussianBlur in="b3d" stdDeviation="'+(P.dither*1.6+.4).toFixed(2)+'" result="b3s"/>'
-      :'<feOffset in="b3" dx="0" dy="0" result="b3s"/>')
-    +'<feComponentTransfer in="b3s" result="hm">'
+    // Every stage below is optional, and a filter chain names its inputs
+    // rather than nesting them. The way to skip one is to leave the
+    // surface holding the name it already had — NOT to copy it under a
+    // new name with a dx=0 dy=0 feOffset, which is what this used to do.
+    // Each of those is a full pass over the filter region, and with the
+    // defaults four of them survived into every export doing nothing.
+    +(function(){
+      var hs='bB', out='';
+      // Low-frequency turbulence pushed through the height map, so the
+      // light finds dents and swells across the surface — thumbprints.
+      if(P.bump>0){
+       out+='<feTurbulence type="fractalNoise" baseFrequency="'+(P.bumpS*.02).toFixed(4)
+        +'" numOctaves="3" seed="'+(P.seed*17)+'" result="bmpR"/>'
+        // soften the noise before it displaces, or its hard detail becomes
+        // hard detail in the surface and the light terraces it
+        +'<feGaussianBlur in="bmpR" stdDeviation="'+P.bumpBlur.toFixed(2)+'" result="bmp"/>'
+        +'<feDisplacementMap in="'+hs+'" in2="bmp" scale="'+(P.bump*4).toFixed(1)
+        +'" xChannelSelector="R" yChannelSelector="G" result="b1"/>';
+       hs='b1';
+      }
+      // a supplied height map stacks on top of the procedural bumps
+      if(P.texHt){
+       out+='<feImage href="'+P.texHt+'" x="0" y="0" width="'+P.texScale
+        +'" height="'+P.texScale+'" result="hi"/><feTile in="hi" result="htR"/>'
+        +'<feGaussianBlur in="htR" stdDeviation="'+P.htBlur.toFixed(2)+'" result="ht"/>'
+        +'<feDisplacementMap in="'+hs+'" in2="ht" scale="'+P.texHtAmt
+        +'" xChannelSelector="R" yChannelSelector="G" result="b2"/>';
+       hs='b2';
+      }
+      // one last pass over the combined surface — whatever the per-source
+      // blurs leave behind, this takes out
+      if(P.hmBlur>0){
+       out+='<feGaussianBlur in="'+hs+'" stdDeviation="'+P.hmBlur.toFixed(2)
+        +'" result="b3"/>';
+       hs='b3';
+      }
+      // Dither last, right before the light. Jitter each pixel across a
+      // band, then blur it back — the blur is what actually adds precision,
+      // averaging two neighbouring 8-bit steps into the values between them.
+      if(P.dither>0){
+       out+='<feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" seed="'
+        +(P.seed*23)+'" result="dth"/>'
+        +'<feDisplacementMap in="'+hs+'" in2="dth" scale="'+(P.dither*9).toFixed(2)
+        +'" xChannelSelector="R" yChannelSelector="G" result="b3d"/>'
+        +'<feGaussianBlur in="b3d" stdDeviation="'+(P.dither*1.6+.4).toFixed(2)
+        +'" result="b3s"/>';
+       hs='b3s';
+      }
+      return out+'<feComponentTransfer in="'+hs+'" result="hm">';
+     })()
     +'<feFuncA type="gamma" amplitude="1" exponent="'+P.d3gam+'" offset="0"/>'
     +'</feComponentTransfer>'
     +'<feDiffuseLighting in="hm" surfaceScale="'+P.d3d+'" diffuseConstant="1" '
@@ -1923,7 +1956,8 @@ function svg(){
        +'<feComposite in="dithered" in2="SourceAlpha" operator="in"/>'
       :'')
     +'</filter>':'')
-  +(P.lgTex>0?'<filter id="brushL" x="-30%" y="-30%" width="160%" height="160%">'
+  +(P.lgTex>0?'<filter id="brushL" x="-30%" y="-30%" width="160%" height="160%" '
+    +'color-interpolation-filters="sRGB">'
     +'<feTurbulence type="fractalNoise" baseFrequency="'+P.rough+'" numOctaves="'+P.oct
     +'" seed="'+(P.seed*11)+'" result="nL"/>'
     +'<feDisplacementMap in="SourceGraphic" in2="nL" scale="'+P.lgTex
@@ -2860,7 +2894,20 @@ function exportJSON(){
  a.download='xoxo-loader.settings.json';a.click();
  setTimeout(function(){URL.revokeObjectURL(a.href)},2000);
 }
-function exportHTML(){var b=new Blob([standalone()],{type:'text/html'});
+function exportHTML(){
+ // The WebGL renderer draws to a canvas that only exists inside this
+ // tool. A standalone file is CSS and SVG, so shade3d is what carries the
+ // depth there — and it is not even written while the WebGL preview is
+ // on. Exporting from that state silently ships flat letters, and the
+ // preview gives no hint, so say so before the file is written rather
+ // than leaving it to be discovered in the loader pool.
+ if(P.renderer==='webgl'&&P.d3d>0&&!confirm(
+   'The WebGL renderer is on. It draws to a canvas that only exists in '
+  +'this tool — a standalone file has no WebGL, so the 3D shading will '
+  +'be missing entirely from the export.\n\n'
+  +'Switch the renderer to SVG to export the depth.\n\n'
+  +'Export flat anyway?')) return;
+ var b=new Blob([standalone()],{type:'text/html'});
  var a=document.createElement('a');a.href=URL.createObjectURL(b);
  a.download='xoxo-loader.html';a.click();
  setTimeout(function(){URL.revokeObjectURL(a.href)},2000)}
