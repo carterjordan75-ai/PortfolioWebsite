@@ -1585,7 +1585,10 @@ function eyeLookCSS(i, total){
  // overwrites it. So the final glance was cut off and the pupil slid
  // home in whatever time was left, linearly, with none of the
  // character every other glance gets. That is the "too sudden".
- var homeP=Math.max(8, Math.min(46, 100*(P.eyeHome/sp)/total));
+ // Up to two thirds of the cycle, not 46%. The return is the part that
+ // reads as the eye thinking, and capping it low was quietly overruling
+ // the control every time it was pushed past halfway.
+ var homeP=Math.max(8, Math.min(66, 100*(P.eyeHome/sp)/total));
  var live=100-homeP;
  // The track's own last point is already the centre — it used to be what
  // brought the eye home. That job belongs to the tail below now, so the
@@ -1633,12 +1636,18 @@ function eyeLookCSS(i, total){
  // a short counter-lean before it sets off, so the move has a wind-up
  var lean=[prev[0]*1.045, prev[1]*1.045];
  kf+=at(100-homeP).toFixed(2)+'%{'+tr(hc[0],hc[1])+';animation-timing-function:cubic-bezier(.32,0,.68,.22)}';
- kf+=at(100-homeP*0.86).toFixed(2)+'%{'+tr(lean[0],lean[1])+';animation-timing-function:cubic-bezier(.5,0,.62,.4)}';
- kf+=at(100-homeP*0.42).toFixed(2)+'%{'+tr(back[0],back[1])+';animation-timing-function:cubic-bezier(.16,.62,.3,1)}';
- // the last sliver is a settle onto centre, eased harder the higher the
- // landing-ease control goes
- kf+=at(100-homeP*0.14).toFixed(2)+'%{'+tr(back[0]*0.22,back[1]*0.22)
-  +';animation-timing-function:cubic-bezier(0.2,'+(0.55+0.4*ease).toFixed(3)+',0.25,1)}';
+ kf+=at(100-homeP*0.9).toFixed(2)+'%{'+tr(lean[0],lean[1])+';animation-timing-function:cubic-bezier(.55,0,.55,.32)}';
+ // Overshoot early, then spend the REST of the return drifting onto
+ // centre. The landing used to get the last 14% of the home time and
+ // everything before it was travel, which is why it still read as rushed
+ // however long the return was made — the long part was the journey, not
+ // the arrival. It is the other way round now: the crossing is brisk and
+ // the settle has two thirds of the return to give its speed up in.
+ kf+=at(100-homeP*0.62).toFixed(2)+'%{'+tr(back[0],back[1])
+  +';animation-timing-function:cubic-bezier('+(0.02+0.06*(1-ease)).toFixed(3)
+  +','+(0.82+0.16*ease).toFixed(3)+',0.12,1)}';
+ kf+=at(100-homeP*0.22).toFixed(2)+'%{'+tr(back[0]*0.10,back[1]*0.10)
+  +';animation-timing-function:cubic-bezier(0.1,'+(0.72+0.26*ease).toFixed(3)+',0.2,1)}';
  kf+='100%{'+tr(0,0)+'}';
  return '@keyframes eyL'+i+'{'+kf+'}'
   +'.eyL'+i+'{transform-box:view-box;transform-origin:'+T.g.cx.toFixed(1)+'px '+T.g.cy.toFixed(1)+'px;'
@@ -2163,10 +2172,21 @@ function eyeWakeCSS(){
   // read as a plain XOXO first — it arrived as a face with its eyes
   // shut. Scaled from the counter's own size, so the growth starts from
   // exactly the O the letterform draws.
+  // The oval is what the eye IS, so it holds from the first frame of the
+  // wake to the last. Growing from scale(1) meant starting round and
+  // ending oval, and anything that replayed that animation ran the pupil
+  // between a circle and an oval on a loop — which is not a thing an eye
+  // does. It grows within its own proportion instead: same shape
+  // throughout, only the size changes.
   var sx=(P.eyeSize/Math.sqrt(P.eyeOval)), sy=(P.eyeSize*Math.sqrt(P.eyeOval));
-  out+='@keyframes eyBw'+i+'{0%{transform:scale(1)}'
+  var k=0.58;
+  out+='@keyframes eyBw'+i+'{0%{transform:scale('+(sx*k).toFixed(3)+','+(sy*k).toFixed(3)+')}'
    +'100%{transform:scale('+sx.toFixed(3)+','+sy.toFixed(3)+')}}'
-   +'.eyB'+i+'{animation:eyBw'+i+' 520ms cubic-bezier(.2,.8,.25,1) '+wake+'ms both}'
+   // iteration-count spelled out rather than left to the shorthand's
+   // default: the sleep sheet lifts that count on the eye groups, and
+   // this one must never be caught by it.
+   +'.eyB'+i+'{animation:eyBw'+i+' 520ms cubic-bezier(.2,.8,.25,1) '+wake+'ms both;'
+   +'animation-iteration-count:1}'
   +'@keyframes eyGw'+i+'{0%{opacity:0}100%{opacity:1}}'
    +'.eyG'+i+'{animation:eyG'+i+' '+blink+'ms linear '+wake+'ms infinite,'
    +'eyGw'+i+' 420ms ease '+wake+'ms both}';
