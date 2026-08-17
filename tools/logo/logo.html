@@ -83,8 +83,11 @@ button:hover{background:var(--fg);color:var(--bg)}button.on{background:var(--fg)
  text-transform:uppercase;cursor:pointer;outline:none}
 .panel select:focus{border-color:#888}
 .stage{border:1px solid var(--line);border-radius:14px;background:var(--card);
-display:grid;place-items:center;height:390px;padding:56px 58px}
-.xl{display:block;width:100%;height:auto;overflow:visible;max-width:440px;max-height:440px}
+display:grid;place-items:center;height:390px;padding:56px 58px;
+/* clips a zoomed mark to the box instead of letting it cover the panel */
+overflow:hidden}
+.xl{display:block;width:calc(100% * var(--zm,1));height:auto;overflow:visible;
+max-width:calc(440px * var(--zm,1));max-height:calc(440px * var(--zm,1))}
 /* Height is capped as well as width because the viewBox follows the
    layout: a stack is four times taller than a row, and with only a
    width cap the stage grew down the page and shoved the panel text
@@ -581,6 +584,16 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
    <button id="vwin"  onclick="setSlpView('in')">Arriving</button>
    <button id="vwamb" onclick="setSlpView('ambient')">Resting</button>
    <button id="vwful" onclick="setSlpView('full')">Whole thing</button>
+  </div>
+  <div class="row transport">
+   <label style="opacity:.55">View</label>
+   <button onclick="zoomBy(1/1.3)" title="Zoom out">&minus;</button>
+   <button onclick="zoomBy(1.3)" title="Zoom in">+</button>
+   <button onclick="setZoom(1)" title="Back to the framing the export uses">Fit</button>
+   <input id="zm" type="range" min="0.25" max="4" step="0.05" value="1"
+    title="Zoom the viewer. Changes nothing about the mark or the export."
+    oninput="setZoom(+this.value)">
+   <b id="zmval">100%</b>
   </div>
   <div class="row transport">
    <button id="pauseb" onclick="togglePause()">Pause</button>
@@ -3061,6 +3074,29 @@ function applyPause(){
  document.querySelectorAll('#stage *').forEach(function(e){
   e.getAnimations().forEach(function(a){a.pause(); a.currentTime=scrubT})});
 }
+/**
+ * Zooming the viewer, and nothing else.
+ *
+ * Done by resizing the mark rather than transforming it: .xl already
+ * carries a transform for the 3D tilt and the spin, and a second one
+ * here would silently replace it — the mark would zoom and quietly lose
+ * its perspective.
+ *
+ * Deliberately not part of P, so it is never saved, never exported and
+ * never appears in a preset. It is how closely you are looking at the
+ * work, which is not a property of the work.
+ */
+function setZoom(z){
+ z=Math.max(0.25,Math.min(4,z||1));
+ document.documentElement.style.setProperty('--zm',z.toFixed(3));
+ var s=document.getElementById('zm'); if(s) s.value=z;
+ var b=document.getElementById('zmval'); if(b) b.textContent=Math.round(z*100)+'%';
+}
+function zoomBy(f){
+ var s=document.getElementById('zm');
+ setZoom((s?+s.value:1)*f);
+}
+
 function togglePause(){
  paused=!paused;
  document.getElementById('pauseb').classList.toggle('on',paused);
