@@ -112,21 +112,30 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
    <select id="slpinsel" onchange="setEntrance(this.value)"></select></div>
   <div class="row"><label>Arrival length <b id="vsdur"></b></label><input id="sdur" data-p="dur" type="range" min="200" max="12000" step="50"></div>
   <div class="row"><label>Stagger <b id="vsstag"></b></label><input id="sstag" data-p="stag" type="range" min="0" max="2000" step="10"></div>
+  <div class="row"><label>Gap <b id="vsgap"></b></label><input id="sgap" data-p="lgap" type="range" min=".55" max="2" step=".01"></div>
+  <div class="row"><label>Spread <b id="vsspread"></b></label><input id="sspread" data-p="lspread" type="range" min=".5" max="2.2" step=".01"></div>
+  <div class="row"><label>Scatter <b id="vsscat"></b></label><input id="sscat" data-p="lscat" type="range" min="0" max=".6" step=".01"></div>
+  <div class="row"><label>Shuffle order <b id="vsshuffle"></b></label><input id="sshuffle" data-p="lshuffle" type="range" min="0" max="1" step=".01"></div>
+  <div class="row"><label>Turn <b id="vsturn"></b></label><input id="sturn" data-p="lturn" type="range" min="-180" max="180" step="45"></div>
+  <div class="row"><label>Start spread <b id="vsstart"></b></label><input id="sstart" data-p="startSpread" type="range" min="-400" max="400" step="10"></div>
+  <div class="row"><label>Settle back to a row <b id="vssettle"></b></label><input id="ssettle" data-p="lsettle" type="range" min="0" max="1" step=".01"></div>
   <p class="note">How the mark gets there. Plays once — the loop below takes
    over when it lands.</p>
   </details>
   <details open><summary>Resting</summary>
   <div class="row"><label>Ambient motion</label>
    <select id="slpambsel" onchange="setAmbient(this.value)"></select></div>
-  <div class="row"><label>Loop length <b id="vslpDur"></b></label><input id="slpDur" type="range" min="500" max="60000" step="250"></div>
+  <div class="row"><label>Ambient cycle <b id="vslpDur"></b></label><input id="slpDur" type="range" min="500" max="60000" step="250"></div>
   <div class="row"><label>Amount <b id="vslpAmt"></b></label><input id="slpAmt" type="range" min="0" max="3" step=".05"></div>
   <div class="row"><label>Loop ease <b id="vslpEase"></b></label><input id="slpEase" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Hold at ends <b id="vslpHold"></b></label><input id="slpHold" type="range" min="0" max=".4" step=".02"></div>
   <div class="row"><label>Eye cycle <b id="veyeCycle"></b></label><input id="eyeCycle" type="range" min="600" max="30000" step="100"></div>
   <div class="row"><label>Wake after arrival <b id="vslpWake"></b></label><input id="slpWake" type="range" min="0" max="10000" step="50"></div>
   <p class="note">What it does once it has landed, for as long as it is up.
-   Loop length and Eye cycle are separate clocks on purpose — how often the
-   mark breathes has nothing to do with how often a face blinks.</p>
+   Ambient cycle is how long one breath takes, Eye cycle how long one round
+   of looking takes. Separate on purpose, and neither governs the other —
+   a long, slowly-shifting rest comes from the two being different lengths,
+   not from turning one of them down.</p>
   </details>
   <p class="note">It arrives once, then rests. While it rests the eyes keep
    looking around whatever else is chosen — that is what makes it read as
@@ -458,8 +467,7 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   projected by hand, because browsers flatten 3D transforms inside SVG.</p>
   <h3>Shading</h3>
   <div class="row"><label>Renderer</label>
-   <button id="rnS" onclick="setRenderer('svg')">SVG</button>
-   <button id="rnG" onclick="setRenderer('webgl')">WebGL</button></div>
+
   <p class="note">SVG filters read an 8-bit height map and multiply it by depth, which is why
   deep relief bands. WebGL does the same lighting in float and only quantises at the very end,
   so depth and a smooth surface stop fighting. The animation is unchanged either way — the SVG
@@ -607,7 +615,6 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
  lgAlign:'centre',lgTex:0,startSpread:0,
- renderer:'svg',
  sleep:0,slpAmt:1,slpDur:7000,slpRotX:0,slpRotO:0,
  slpAmbient:'float',slpEntrance:'row',slpView:'full',started:0,
  slpEase:.6,slpHold:0,eyeCycle:3400,slpWake:500,
@@ -2110,7 +2117,16 @@ function eyeWakeCSS(){
   // The catchlight is the tell that it IS an eye, so it is not there
   // before the eyes are. Opacity rather than the transform the blink
   // already owns, so the two can share one element without fighting.
-  out+='@keyframes eyGw'+i+'{0%{opacity:0}100%{opacity:1}}'
+  // The pupil grows into its eye size as it wakes. Before this the
+  // counter was already eye-sized during the arrival, so the mark never
+  // read as a plain XOXO first — it arrived as a face with its eyes
+  // shut. Scaled from the counter's own size, so the growth starts from
+  // exactly the O the letterform draws.
+  var sx=(P.eyeSize/Math.sqrt(P.eyeOval)), sy=(P.eyeSize*Math.sqrt(P.eyeOval));
+  out+='@keyframes eyBw'+i+'{0%{transform:scale(1)}'
+   +'100%{transform:scale('+sx.toFixed(3)+','+sy.toFixed(3)+')}}'
+   +'.eyB'+i+'{animation:eyBw'+i+' 520ms cubic-bezier(.2,.8,.25,1) '+wake+'ms both}'
+  +'@keyframes eyGw'+i+'{0%{opacity:0}100%{opacity:1}}'
    +'.eyG'+i+'{animation:eyG'+i+' '+blink+'ms linear '+wake+'ms infinite,'
    +'eyGw'+i+' 420ms ease '+wake+'ms both}';
  });
@@ -2437,7 +2453,7 @@ function svgRaw(){
    +'" xChannelSelector="R" yChannelSelector="G"/></filter>';
  s+='<clipPath id="cUp"><rect x="-800" y="-700" width="2600" height="901"/></clipPath>'
   +'<clipPath id="cDn"><rect x="-800" y="201" width="2600" height="1200"/></clipPath>'
-  +(P.d3d>0&&P.renderer!=='webgl'?'<filter id="shade3d" x="-30%" y="-30%" width="160%" height="160%" '
+  +(P.d3d>0?'<filter id="shade3d" x="-30%" y="-30%" width="160%" height="160%" '
     // linearRGB is the SVG default and crushes the ramp into fewer usable
     // levels, which is half the terracing
     +'color-interpolation-filters="sRGB">'
@@ -2691,7 +2707,7 @@ function svgRaw(){
      +(P.texCol?'<path class="p'+i+' lx"'+cp+' d="'+dl2+'"/>':'')+'</g>';
    }
    var outline='<path class="p'+i+' lp" pathLength="1000" d="'+dl2+'"/>'+lgs;
-   var sh=(P.d3d>0&&P.renderer!=='webgl'&&P.texMap==='shape');
+   var sh=(P.d3d>0&&P.texMap==='shape');
    body+=so+(sh?'<g filter="url(#shade3d)">':'')
     +'<g class="bl b'+i+'"'+batt+'>'
     +(P.lgfOver?outline+fillEl:fillEl+outline)+'</g>'+(sh?'</g>':'')+sc2;
@@ -2701,7 +2717,7 @@ function svgRaw(){
  body+=close;
  s+=(defs?'<defs>'+defs+'</defs>':'')
   +(function(){
-     var inner=(P.d3d>0&&P.renderer!=='webgl'&&P.texMap!=='shape')?'<g filter="url(#shade3d)">'+body+'</g>':body;
+     var inner=(P.d3d>0&&P.texMap!=='shape')?'<g filter="url(#shade3d)">'+body+'</g>':body;
      return P.grain>0?'<g filter="url(#grain)">'+inner+'</g>':inner})();
 
  for(var n3=0;n3<P.arcs;n3++){
@@ -2942,10 +2958,6 @@ function build(){
   if(b) b.classList.toggle('on',P.layout===['row','grid','stack','diagonal'][n])});
  ['tW','tL','tS'].forEach(function(id,n){
   document.getElementById(id).classList.toggle('on',P.target===['whole','letter','shape'][n])});
- ['rnS','rnG'].forEach(function(id,n){
-  var b=document.getElementById(id);
-  b.classList.toggle('on',P.renderer===['svg','webgl'][n]);
-  if(id==='rnG'&&!GL.supported()){b.disabled=true;b.title='No WebGL in this browser'}});
  ['gtN','gtP','gtM','gtH'].forEach(function(id,n){
   document.getElementById(id).classList.toggle('on',
    P.texType===['noise','paper','mottle','halftone'][n])});
@@ -2964,9 +2976,7 @@ function build(){
   document.getElementById(id).classList.toggle('on',P.lgfStyle===
    ['fade','rise','wipe','bloom','liquid','ink','drip','speckle','lumps'][n])});
  drawCurve();
- // In WebGL mode the SVG still carries the animation but stops shading —
- // the canvas on top does that, reading the same shapes each frame.
- if(P.renderer==='webgl'&&P.d3d>0&&GL.supported()) GL.on(); else GL.off();
+ GL.off();
  applyPause();
  document.getElementById('out').textContent=
   'over '+P.over.toFixed(3)+'  curve '+P.curve.toFixed(2)+'  smooth '+P.smooth.toFixed(2)
@@ -2984,7 +2994,7 @@ function build(){
   +(P.extrude>0?'   extrude '+P.extrude+'/'+P.exSlices:'')
   +(P.jiggle>0?'   jiggle '+P.jiggle.toFixed(2)+'x'+P.jigSpeed:'')
   +(P.grain>0?'   '+P.texType+' '+P.grain.toFixed(2):'')
-  +(P.d3d>0?'   '+P.renderer+' depth '+P.d3d+' round '+P.d3blur+' gamma '+P.d3gam.toFixed(2)
+  +(P.d3d>0?'   depth '+P.d3d+' round '+P.d3blur+' gamma '+P.d3gam.toFixed(2)
     +' amb '+P.d3amb.toFixed(2)+' light '+P.d3ang+'/'+P.d3elev:'')
   +((P.tiltY||P.tiltX)?'   tilt '+P.tiltY+'/'+P.tiltX+' persp '+P.persp:'')+'  draw '+P.lgdraw.toFixed(2)
   +'  strands '+P.lgbris+'/'+P.lgsp.toFixed(1)+'/'+P.lgbw.toFixed(2)
@@ -3058,14 +3068,27 @@ function setFillOrder(v){P.lgfOver=v;build()}
 function setInk(m){P.inkMode=m;build()}
 function setTexMap(m){P.texMap=m;build()}
 function setTexType(m){P.texType=m;build()}
-function setRenderer(m){P.renderer=m;build();sch()}
+
 var GLINTS=['dot','oval','pill','square','star','pair','crescent'];
 var AMBIENTS=['still','float','breathe','sway','bob','pulse'];
 // How it arrives: the same layouts the mark can animate in from, so this
 // is the existing Layout choice surfaced where it is actually decided.
 var ENTRANCES=['row','grid','stack','diagonal'];
 function setAmbient(v){P.slpAmbient=v;drawSleepPickers();build();sch()}
-function setEntrance(v){P.slpEntrance=v;P.layout=v;P.lsettle=v==='row'?0:1;drawSleepPickers();build();sch()}
+/**
+ * The layout the mark arrives into — and stays in.
+ *
+ * Settle blends a letter's cell back toward the wordmark's own line, so
+ * at 1 the letters travel out of the arrangement and land as a row. This
+ * used to set it to 1 for every layout but 'row', which meant choosing
+ * grid made the mark assemble into a grid and then leave it — the
+ * arrival and the resting state disagreed about where the letters were.
+ * Landing in the chosen layout and staying there is the whole point of
+ * choosing one, so settle stays at 0 and the Arriving sliders can move
+ * it deliberately if a settle is actually wanted.
+ */
+function setEntrance(v){P.slpEntrance=v;P.layout=v;P.lsettle=0;
+ sync();build();sch()}
 function drawSleepPickers(){
  var a=document.getElementById('slpambsel');
  if(a) a.innerHTML=AMBIENTS.map(function(n){
@@ -3241,8 +3264,29 @@ function randomise(){P.seed=Math.floor(Math.random()*9999);
  P.aangle=Math.floor(Math.random()*360/5)*5;
  if(P.jit===0)P.jit=.35; sync();build()}
 function tAuto(b){auto=!auto;b.classList.toggle('on',auto);sch()}
-function sch(){clearInterval(timer);if(auto&&!paused)timer=setInterval(build,
- Math.max(1500,((P.dur+9*P.stag)/rate)+900))}
+/**
+ * The stage's auto-replay.
+ *
+ * A loader ends, so the stage rebuilds it every so often to play it
+ * again — otherwise you tune a thing that ran once and stopped.
+ *
+ * A resting sleep mark does not end, and rebuilding it is actively
+ * wrong: the interval was sized to the arrival, so a 60 second ambient
+ * cycle got torn down and restarted every two seconds and never showed
+ * more than its first few percent. That is what "the resting animation
+ * doesn't loop" was — not a loop that stopped, a loop that kept being
+ * started again. It loops on its own, so the replay just gets out of
+ * the way.
+ *
+ * The exception is the Arriving view, where seeing it land over and
+ * over is the entire point of that view.
+ */
+function sch(){
+ clearInterval(timer);
+ if(!auto||paused) return;
+ if(P.sleep&&P.slpView!=='in') return;
+ timer=setInterval(build, Math.max(1500,((P.dur+9*P.stag)/rate)+900));
+}
 
 var PRESETS={
  r9:mk({}),
@@ -3597,18 +3641,6 @@ function exportJSON(){
  setTimeout(function(){URL.revokeObjectURL(a.href)},2000);
 }
 function exportHTML(){
- // The WebGL renderer draws to a canvas that only exists inside this
- // tool. A standalone file is CSS and SVG, so shade3d is what carries the
- // depth there — and it is not even written while the WebGL preview is
- // on. Exporting from that state silently ships flat letters, and the
- // preview gives no hint, so say so before the file is written rather
- // than leaving it to be discovered in the loader pool.
- if(P.renderer==='webgl'&&P.d3d>0&&!confirm(
-   'The WebGL renderer is on. It draws to a canvas that only exists in '
-  +'this tool — a standalone file has no WebGL, so the 3D shading will '
-  +'be missing entirely from the export.\n\n'
-  +'Switch the renderer to SVG to export the depth.\n\n'
-  +'Export flat anyway?')) return;
  // Whatever half of a sleep mark the stage happens to be showing, the
  // file is the whole sequence.
  var b=new Blob([withFullSequence(standalone)],{type:'text/html'});
