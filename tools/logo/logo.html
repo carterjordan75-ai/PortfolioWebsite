@@ -109,8 +109,8 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row secbar"><button onclick="openCreateNew()">Create new</button>
    <b id="kindnow" style="opacity:.4;font:10px ui-monospace,monospace;letter-spacing:.14em"></b></div>
   <div class="row secbar"><button onclick="allSecs(true)">Expand all</button><button onclick="allSecs(false)">Collapse all</button></div>
-  <details open id="slpsection"><summary>Sleep</summary>
-  <details open><summary>Arriving</summary>
+  <details id="slpsection"><summary>Sleep</summary>
+  <details><summary>Arriving</summary>
   <div class="row"><label>Layout</label>
    <select id="slpinsel" onchange="setEntrance(this.value)"></select></div>
   <div class="row"><label>Arrival length <b id="vsdur"></b></label><input id="sdur" data-p="dur" type="range" min="200" max="12000" step="50"></div>
@@ -125,7 +125,7 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <p class="note">How the mark gets there. Plays once — the loop below takes
    over when it lands.</p>
   </details>
-  <details open><summary>Resting</summary>
+  <details><summary>Resting</summary>
   <div class="row"><label>Ambient motion</label>
    <select id="slpambsel" onchange="setAmbient(this.value)"></select></div>
   <div class="row"><label>Ambient cycle <b id="vslpDur"></b></label><input id="slpDur" type="range" min="500" max="60000" step="250"></div>
@@ -149,7 +149,7 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
    and the resting motion separately. Export, then add it in the admin panel
    as a Sleep mark.</p>
   </details>
-  <details open><summary>Preset</summary>
+  <details><summary>Preset</summary>
   <div class="row">
    <button onclick="preset('r9')">Round 9</button>
    <button onclick="preset('bloom')">Bloom</button>
@@ -191,7 +191,7 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><code id="curveval"></code></div>
    </details>
   </details>
-  <details class="grp" open><summary>Layout</summary>
+  <details class="grp" id="layoutgrp"><summary>Layout</summary>
   <div class="row"><label>Arrangement</label>
    <button id="loR" onclick="setLayout('row')">Row</button>
    <button id="loG" onclick="setLayout('grid')">Grid</button>
@@ -545,7 +545,7 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <p class="note">Nudges the frame between held frames, the way a rostrum never lines up twice.</p>
    </details>
   </details>
-  <details open><summary>Playback</summary>
+  <details><summary>Playback</summary>
   <div class="row">
    <button onclick="play()">↻ Replay</button>
    <button id="autob" class="on" onclick="tAuto(this)">Auto</button>
@@ -3301,6 +3301,21 @@ function syncSleep(){
  // a working view is meaningless when there is only one thing to watch.
  var sec=document.getElementById('slpsection');
  if(sec) sec.style.display=P.sleep?'':'none';
+ // Arriving carries the layout controls for a sleep mark, so the
+ // standalone Layout group would be the same sliders twice — the same
+ // settings, two places to change them, and no way to tell which one you
+ // last touched. It stays for a loader, which has no Arriving section.
+ var lay=document.getElementById('layoutgrp');
+ if(lay) lay.style.display=P.sleep?'none':'';
+ // Same rule for the arrival's own timing: Arriving owns it in sleep, so
+ // Timing does not also offer it. Reached through the sliders rather
+ // than by wrapping the rows in markup — this panel is deep enough that
+ // one more nesting level is a real risk of an unbalanced tag, and the
+ // rows already have a container.
+ ['dur','stag'].forEach(function(id){
+  var e=document.getElementById(id), row=e&&e.closest('.row');
+  if(row) row.style.display=P.sleep?'none':'';
+ });
  var bar=document.getElementById('slpviewbar');
  if(bar) bar.style.display=P.sleep?'':'none';
  var on={in:'vwin',ambient:'vwamb',full:'vwful'};
@@ -3997,4 +4012,6 @@ function applyHelp(){
 }
 
 sync();build();sch();pullSaved();applyHelp();
-</script></body></html>
+</script>
+</div>
+</body></html>
