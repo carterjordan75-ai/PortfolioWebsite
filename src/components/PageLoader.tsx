@@ -84,6 +84,16 @@ const SETTLE_MS = 90
  */
 const MAX_HOLD_MS = 1600
 
+/**
+ * Above everything, the header included.
+ *
+ * This was 9999 against a navigation at 10000, so the header drew on top
+ * of the loading screen — which defeats the point of a screen whose job
+ * is to hide a page that is not ready yet. Off by one, and easy to miss
+ * because the mark itself is centred well clear of the header.
+ */
+const OVER_EVERYTHING = 10_100
+
 export default function PageLoader({ show, onComplete, mode = 'transition' }: PageLoaderProps) {
   const [visible, setVisible] = useState(show)
   const handedOver = useRef(false)
@@ -233,7 +243,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 9999,
+            zIndex: OVER_EVERYTHING,
             background: ground,
             display: 'flex',
             alignItems: 'center',

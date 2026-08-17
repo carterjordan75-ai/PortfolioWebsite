@@ -21,6 +21,18 @@ import { scaled } from '@/lib/logoScale'
 
 const IDLE_MS = 45_000
 
+/**
+ * Above everything, including the header.
+ *
+ * The navigation sits at 10000 and its open dropdowns reach 10002, so at
+ * 9998 the screensaver was drawn UNDER the site chrome — the one thing
+ * that is meant to cover the whole page was the one thing showing
+ * through it. Anything that covers the page has to clear that stack, not
+ * sit next to it, so this is deliberately well above rather than one
+ * more than the current highest.
+ */
+const OVER_EVERYTHING = 10_100
+
 /** Wider than the loader's mark. Nothing is waiting on it, so it can breathe. */
 const MARK_WIDTH = scaled('min(46vw, 460px)', 'loader')
 
@@ -148,7 +160,7 @@ export default function SleepMode() {
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 9998,
+            zIndex: OVER_EVERYTHING,
             background: ground,
             backdropFilter: 'blur(18px)',
             WebkitBackdropFilter: 'blur(18px)',
