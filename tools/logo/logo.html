@@ -117,6 +117,8 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Amount <b id="vslpAmt"></b></label><input id="slpAmt" type="range" min="0" max="3" step=".05"></div>
   <div class="row"><label>Loop ease <b id="vslpEase"></b></label><input id="slpEase" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Hold at ends <b id="vslpHold"></b></label><input id="slpHold" type="range" min="0" max=".4" step=".02"></div>
+  <div class="row"><label>Eye cycle <b id="veyeCycle"></b></label><input id="eyeCycle" type="range" min="800" max="8000" step="100"></div>
+  <div class="row"><label>Wake after arrival <b id="vslpWake"></b></label><input id="slpWake" type="range" min="0" max="3000" step="50"></div>
   <p class="note">It arrives once, then rests. While it rests the eyes keep
    looking around whatever else is chosen — that is what makes it read as
    awake rather than parked. Loop length is the ambient cycle, Amount scales
@@ -600,7 +602,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  renderer:'svg',
  sleep:0,slpAmt:1,slpDur:7000,slpRotX:0,slpRotO:0,
  slpAmbient:'float',slpEntrance:'row',slpView:'full',started:0,
- slpEase:.6,slpHold:0,
+ slpEase:.6,slpHold:0,eyeCycle:3400,slpWake:500,
  rotX:0,rotO:0,
  d3d:0,d3blur:18,d3ang:135,d3elev:42,d3spec:.8,d3gam:.75,d3amb:.28,
  d3gloss:22,d3edge:1.2,tiltY:0,tiltX:0,persp:900,lgfOver:0,
@@ -1657,9 +1659,13 @@ function blinkTimes(i, total){
  if(n<=0) return [];
  var sp=Math.max(0.35, P.eyeSpeed);
  var close=P.eyeClose/sp, shut=P.eyeHold/sp, open=P.eyeOpen/sp, settle=P.eyeSettle/sp;
- // Eyes are offset from each other so they do not blink in lockstep,
- // which reads as a mechanism rather than a face.
- var skew=(i%2?46:0);
+ // No offset between the eyes. A face's eyes are yoked — they track and
+ // blink as a pair, and staggering them by even a few frames reads as
+ // two independent things sharing a face rather than as one creature.
+ // The only per-eye difference left is the slight shape drift in
+ // eyeTrack, which stops them being pixel-identical without unpicking
+ // the pairing.
+ var skew=0;
  var lead=total*0.10+skew;
  var span=close+shut+open;
 
@@ -1997,23 +2003,47 @@ function ambientKF(kind, a){
  * A prime-ish ratio rather than a round one: 1.0 and 0.5 would re-sync
  * every loop or two, which is the thing this exists to avoid.
  */
+/**
+ * When the arrival is over — the last letter's animation end.
+ *
+ * The eyes wake relative to this rather than to the run length, so
+ * changing the stagger or the duration moves the wake with it instead of
+ * leaving the face to open its eyes while letters are still landing.
+ */
+function entranceEnd(){
+ return P.dur + Math.max(0,(LETTERS.length-1))*P.stag;
+}
+
 function eyeWakeCSS(){
  if(!EYES()) return '';
- var out='', base=Math.max(2000,P.slpDur), n=0;
+ // The eyes keep their OWN clock. This used to be derived from the
+ // ambient loop length, which meant setting a ten second drift also made
+ // the eyes blink over ten seconds — the mark rested more slowly and the
+ // face went slack with it. They are unrelated things: how often the
+ // whole mark breathes has nothing to do with how often a face blinks.
+ var out='', cyc=Math.max(600,P.eyeCycle);
+ // Both eyes on one clock, and the same phase, so they look and blink
+ // together. An earlier version deliberately gave them different periods
+ // to stop them marching in step; that was the wrong instinct — eyes
+ // marching in step is what eyes do.
+ var wake=Math.round(entranceEnd()+Math.max(0,P.slpWake));
  B.forEach(function(b,i){
   if(!b.hp) return;
-  // Counted by EYE, not by blob index. Parity on the blob index looked
-  // right and was not: in XOXO both O's are odd-numbered blobs, so both
-  // eyes landed on the same branch and got identical periods — which is
-  // precisely the marching in step this exists to break. Caught by
-  // checking the two came out different, not by reading it.
-  var odd=(n++)%2;
-  var look=Math.round(base*(odd?0.83:1.17));
-  var blink=Math.round(base*(odd?1.31:0.94));
-  out+='.eyL'+i+'{animation-duration:'+look+'ms}'
-   +'.eyD'+i+'{animation-duration:'+look+'ms}'
-   +'.eyP'+i+'{animation-duration:'+blink+'ms}'
-   +'.eyG'+i+'{animation-duration:'+blink+'ms}';
+  var look=cyc, blink=cyc;
+  // The delay is the morph: until it elapses each animation sits on its
+  // own first frame, which for the pupil is dead centre and fully open —
+  // an ordinary O counter. So the mark arrives as plain XOXO and only
+  // then becomes a face.
+  out+='.eyL'+i+'{animation-duration:'+look+'ms;animation-delay:'+wake+'ms}'
+   +'.eyD'+i+'{animation-duration:'+look+'ms;animation-delay:'+wake+'ms}'
+   +'.eyP'+i+'{animation-duration:'+blink+'ms;animation-delay:'+wake+'ms}'
+   +'.eyG'+i+'{animation-duration:'+blink+'ms;animation-delay:'+wake+'ms}';
+  // The catchlight is the tell that it IS an eye, so it is not there
+  // before the eyes are. Opacity rather than the transform the blink
+  // already owns, so the two can share one element without fighting.
+  out+='@keyframes eyGw'+i+'{0%{opacity:0}100%{opacity:1}}'
+   +'.eyG'+i+'{animation:eyG'+i+' '+blink+'ms linear '+wake+'ms infinite,'
+   +'eyGw'+i+' 420ms ease '+wake+'ms both}';
  });
  return out;
 }
@@ -3150,7 +3180,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 // input listeners are attached from. Adding a control to the panel
 // without adding its key here produces a slider that moves and does
 // nothing, which is how the whole Layout group shipped dead.
-var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
+var KEYS=['slpAmt','slpDur','slpEase','slpHold','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeBow','eyeShut','eyeSpeed','eyeGlint',
  'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome',
@@ -3168,7 +3198,7 @@ function labels(){
   e.textContent=(f[k]!==undefined?(+P[k]).toFixed(f[k]):P[k])
    +(k==='dur'||k==='stag'||k==='orbstag'||k==='slpDur'
      ||k==='eyeClose'||k==='eyeHold'||k==='eyeOpen'||k==='eyeSettle'
-     ||k==='eyeHome'?'ms':(k==='aangle'||k==='aspin'||k==='orbtilt'||k==='orbtvary'
+     ||k==='eyeHome'||k==='eyeCycle'||k==='slpWake'?'ms':(k==='aangle'||k==='aspin'||k==='orbtilt'||k==='orbtvary'
      ||k==='rotX'||k==='rotO'||k==='slpRotX'||k==='slpRotO')?'deg':k==='wpos'?'%':'')});
 }
 function drawPicker(){var h='';Object.keys(MARKS).forEach(function(n){
