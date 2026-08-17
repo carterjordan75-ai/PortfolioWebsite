@@ -1608,10 +1608,24 @@ function eyeLookCSS(i, total){
  // settle back onto it. Overshooting the middle is what makes it read as
  // looking back rather than as a transform returning to zero — an eye
  // that arrives exactly on target and stops has no mass.
+ // Four stops rather than two. The return used to be a hard push and a
+ // single overshoot, which lands on centre still carrying speed and
+ // stops dead — that is the rushed feeling, and no amount of duration
+ // fixes it because the problem is the shape, not the length. Now it
+ // eases out of the hold, crosses, overshoots, drifts back, and comes to
+ // rest with almost nothing left to give up.
+ var ease=Math.max(0,Math.min(1,P.eyeEase));
  var back=[-prev[0]*(ov-1)*1.4, -prev[1]*(ov-1)*1.4];
  var hc=[prev[0]+(rnd(T.seed+91)-0.5)*T.reach*0.07, prev[1]+(rnd(T.seed+97)-0.5)*T.reach*0.07];
- kf+=at(100-homeP).toFixed(2)+'%{'+tr(hc[0],hc[1])+';animation-timing-function:cubic-bezier(.55,0,.7,.25)}';
- kf+=at(100-homeP*0.46).toFixed(2)+'%{'+tr(back[0],back[1])+';animation-timing-function:cubic-bezier(.18,.72,.28,1)}';
+ // a short counter-lean before it sets off, so the move has a wind-up
+ var lean=[prev[0]*1.045, prev[1]*1.045];
+ kf+=at(100-homeP).toFixed(2)+'%{'+tr(hc[0],hc[1])+';animation-timing-function:cubic-bezier(.32,0,.68,.22)}';
+ kf+=at(100-homeP*0.86).toFixed(2)+'%{'+tr(lean[0],lean[1])+';animation-timing-function:cubic-bezier(.5,0,.62,.4)}';
+ kf+=at(100-homeP*0.42).toFixed(2)+'%{'+tr(back[0],back[1])+';animation-timing-function:cubic-bezier(.16,.62,.3,1)}';
+ // the last sliver is a settle onto centre, eased harder the higher the
+ // landing-ease control goes
+ kf+=at(100-homeP*0.14).toFixed(2)+'%{'+tr(back[0]*0.22,back[1]*0.22)
+  +';animation-timing-function:cubic-bezier(0.2,'+(0.55+0.4*ease).toFixed(3)+',0.25,1)}';
  kf+='100%{'+tr(0,0)+'}';
  return '@keyframes eyL'+i+'{'+kf+'}'
   +'.eyL'+i+'{transform-box:view-box;transform-origin:'+T.g.cx.toFixed(1)+'px '+T.g.cy.toFixed(1)+'px;'
@@ -1961,8 +1975,19 @@ function sleepSpinCSS(){
 function eyesCSS(total, step){
  if(!EYES()) return '';
  var out='';
- B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,total)+eyeDomeCSS(i,total)
-  +eyeBlinkCSS(i,total)+eyeGlintCSS(i,total)+eyeUprightCSS(i,total,step) } });
+ // The eye keyframes are percentages, so they have to be worked out
+ // against the duration they will actually be PLAYED at — which in sleep
+ // is the eye cycle, not the run.
+ //
+ // They were built against the run and then had their duration
+ // overridden to the eye cycle, so every millisecond figure was
+ // converted using one number and played at another. Set the look back
+ // to 600ms and it came out as some unrelated fraction of a different
+ // length: the controls moved and the result did not follow, which is
+ // what "the numbers mean nothing" was.
+ var span=P.sleep?Math.max(600,P.eyeCycle):total;
+ B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,span)+eyeDomeCSS(i,span)
+  +eyeBlinkCSS(i,span)+eyeGlintCSS(i,span)+eyeUprightCSS(i,total,step) } });
  return out;
 }
 
@@ -2110,10 +2135,13 @@ function eyeWakeCSS(){
   // own first frame, which for the pupil is dead centre and fully open —
   // an ordinary O counter. So the mark arrives as plain XOXO and only
   // then becomes a face.
-  out+='.eyL'+i+'{animation-duration:'+look+'ms;animation-delay:'+wake+'ms}'
-   +'.eyD'+i+'{animation-duration:'+look+'ms;animation-delay:'+wake+'ms}'
-   +'.eyP'+i+'{animation-duration:'+blink+'ms;animation-delay:'+wake+'ms}'
-   +'.eyG'+i+'{animation-duration:'+blink+'ms;animation-delay:'+wake+'ms}';
+  // Delay only. The duration is already the eye cycle, because the
+  // keyframes were built against it — overriding it here as well is what
+  // used to put the percentages and the playback length out of step.
+  out+='.eyL'+i+'{animation-delay:'+wake+'ms}'
+   +'.eyD'+i+'{animation-delay:'+wake+'ms}'
+   +'.eyP'+i+'{animation-delay:'+wake+'ms}'
+   +'.eyG'+i+'{animation-delay:'+wake+'ms}';
   // The catchlight is the tell that it IS an eye, so it is not there
   // before the eyes are. Opacity rather than the transform the blink
   // already owns, so the two can share one element without fighting.
