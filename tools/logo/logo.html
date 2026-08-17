@@ -239,6 +239,8 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Blink speed <b id="veyeSpeed"></b></label><input id="eyeSpeed" type="range" min=".35" max="2.2" step=".05"></div>
   <div class="row"><label>Glance overshoot <b id="veyeOver"></b></label><input id="eyeOver" type="range" min="1" max="1.6" step=".01"></div>
   <div class="row"><label>Look back <b id="veyeHome"></b></label><input id="eyeHome" type="range" min="80" max="6000" step="20"></div>
+  <div class="row"><label>Stretch in motion <b id="veyeStretch"></b></label><input id="eyeStretch" type="range" min="0" max="1.5" step=".05"></div>
+  <div class="row"><label>Swell in motion <b id="veyeSwell"></b></label><input id="eyeSwell" type="range" min="-.4" max=".4" step=".02"></div>
   <div class="row"><label>Close <b id="veyeClose"></b></label><input id="eyeClose" type="range" min="60" max="4000" step="20"></div>
   <div class="row"><label>Hold shut <b id="veyeHold"></b></label><input id="eyeHold" type="range" min="0" max="4000" step="20"></div>
   <div class="row"><label>Reopen <b id="veyeOpen"></b></label><input id="eyeOpen" type="range" min="80" max="6000" step="20"></div>
@@ -623,7 +625,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyes:0,eyeLook:.6,eyeDart:4,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
  eyeBow:.55,eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
  eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
- eyeOver:1.22,eyeHome:460,
+ eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -1665,25 +1667,58 @@ function eyeLookCSS(i, total){
  * along the axis of travel is cheap and it is also what the geometry
  * actually does.
  */
+/**
+ * How the pupil deforms — at rest, and while it is travelling.
+ *
+ * Two different things, and only the first existed. Dome is about WHERE
+ * it is: a pupil off to one side is being seen at an angle, so it
+ * foreshortens, and it is fattest facing you. That is a property of the
+ * position and holds still while the pupil does.
+ *
+ * Stretch and swell are about the MOVE. Something that accelerates hard
+ * and stops hard should show it in its shape on the way — drawn out
+ * along its travel at speed, back to itself once parked. So they are
+ * applied at a stop part way through each move and are gone again by the
+ * time it lands, which is why they need their own keyframe rather than
+ * riding on the two the dome already had.
+ */
 function eyeDomeCSS(i, total){
- var T=eyeTrack(i); if(!T || P.eyeDome<=0) return '';
+ var T=eyeTrack(i);
+ if(!T || (P.eyeDome<=0 && P.eyeStretch<=0 && P.eyeSwell===0)) return '';
  var span=100/T.darts;
  var moveP=Math.min(span*0.44, 100*280/total);
  var setP=Math.min(span*0.66, moveP+100*230/total);
  var at=function(v){ return Math.max(0,Math.min(100,v)) };
- function pose(p){
+ function pose(p, from){
   var m=Math.hypot(p[0],p[1]);
   var f=T.reach? Math.min(1,m/T.reach) : 0;
   var ang=(Math.atan2(p[1],p[0])*180/Math.PI);
   var squash=1-P.eyeDome*f*f*0.34;      // foreshorten along travel
   var bulge=1+P.eyeDome*(1-f)*0.10;     // fattest when facing you
+  // `from` is only passed for the mid-move stop. The stretch runs along
+  // the direction of TRAVEL, which is rarely the direction the pupil is
+  // offset in, so it needs its own angle — using the position angle here
+  // would stretch it sideways to the way it is actually going.
+  if(from){
+   var dx=p[0]-from[0], dy=p[1]-from[1], d=Math.hypot(dx,dy);
+   if(d>0.01){
+    ang=Math.atan2(dy,dx)*180/Math.PI;
+    var trav=T.reach? Math.min(1,d/(T.reach*1.4)) : 0;
+    squash=1+P.eyeStretch*trav*0.42;          // drawn out along the move
+    bulge=(1-P.eyeStretch*trav*0.16)*(1+P.eyeSwell*trav);
+   }
+  }
   return 'transform:rotate('+ang.toFixed(1)+'deg) scale('
    +(squash*bulge).toFixed(3)+','+bulge.toFixed(3)+') rotate('+(-ang).toFixed(1)+'deg)';
  }
  var kf='0%{'+pose([0,0])+'}';
  for(var k=1;k<=T.darts;k++){
   var t0=k*span;
-  kf+=at(t0-moveP).toFixed(2)+'%{'+pose(T.pts[k-1])+';animation-timing-function:cubic-bezier(.3,0,.3,1)}';
+  kf+=at(t0-moveP).toFixed(2)+'%{'+pose(T.pts[k-1])+';animation-timing-function:cubic-bezier(.3,0,.5,1)}';
+  // part way across, at speed
+  if(P.eyeStretch>0||P.eyeSwell!==0)
+   kf+=at(t0-moveP+setP*0.40).toFixed(2)+'%{'+pose(T.pts[k],T.pts[k-1])
+    +';animation-timing-function:cubic-bezier(.25,.1,.3,1)}';
   kf+=at(t0-moveP+setP).toFixed(2)+'%{'+pose(T.pts[k])+'}';
  }
  kf+='100%{'+pose([0,0])+'}';
@@ -3393,7 +3428,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeBow','eyeShut','eyeSpeed','eyeGlint',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
@@ -3406,7 +3441,7 @@ function sync(){syncSleep();drawGlints();drawSleepPickers();
  });
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
 function labels(){
- var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
+ var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
   lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
@@ -3795,6 +3830,8 @@ eyeHold:'Time held shut.',
 eyeOpen:'Time to reopen. The rushed feeling lives here.',
 eyeSettle:'Open time guaranteed before the run ends, so it never finishes mid-blink.',
 eyeEase:'How softly the lid lands back open.',
+eyeStretch:'Draws the pupil out along its direction of travel while it moves. Back to its own shape once parked.',
+eyeSwell:'Size change while moving. Positive swells, negative shrinks. 0 keeps it steady.',
 eyeGlint:'Size of the catchlight. 0 removes it.',
 // --- shape ---
 squash:'Squashes on impact.',
