@@ -100,9 +100,13 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
 <div class="wrap">
  <div class="panel">
   <div class="row secbar"><button onclick="allSecs(true)">Expand all</button><button onclick="allSecs(false)">Collapse all</button></div>
-  <details open><summary>Sleep mode</summary>
+  <details open><summary>Kind</summary>
   <div class="row"><button id="slpOff" onclick="setSleep(0)">Loader</button>
    <button id="slpOn" onclick="setSleep(1)">Sleep</button></div>
+  <div class="row" id="slpviewrow" style="display:none">
+   <label>Working view</label></div>
+  <div class="row" id="slpviewpicker" style="display:none"></div>
+  <div id="slpsection">
   <div class="row"><label>1 — How it arrives</label></div>
   <div class="row" id="slpinpicker"></div>
   <div class="row"><label>2 — What it does while it rests</label></div>
@@ -114,6 +118,7 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
    is the thing that makes it read as awake rather than parked. Loop length
    sets the ambient cycle; Amount scales it. Export, then add it in the admin
    panel as a Sleep mark.</p>
+  </div>
   </details>
   <details open><summary>Preset</summary>
   <div class="row">
@@ -533,6 +538,19 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
 
  <div class="sticky">
   <div class="stage" id="stage"></div>
+  <div id="newgate" style="position:fixed;inset:0;z-index:50;display:grid;place-items:center;
+   background:rgba(8,8,10,.88);backdrop-filter:blur(14px)">
+   <div style="text-align:center;max-width:420px">
+    <h2 style="letter-spacing:.22em;text-transform:uppercase;font-size:12px;margin:0 0 6px">Create new</h2>
+    <p class="note" style="margin:0 0 18px">A loader covers a wait and stops when the page
+     is ready. A sleep mark has nothing waiting on it — it arrives, then rests, and keeps
+     going until the mouse moves. Different jobs, different controls.</p>
+    <div class="row" style="justify-content:center">
+     <button onclick="createNew('loader')">Loader</button>
+     <button onclick="createNew('sleep')">Sleep</button>
+    </div>
+   </div>
+  </div>
   <div class="row transport">
    <button id="pauseb" onclick="togglePause()">Pause</button>
    <input id="scrub" type="range" min="0" max="1000" step="1" value="0"
@@ -568,7 +586,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  lgAlign:'centre',lgTex:0,startSpread:0,
  renderer:'svg',
  sleep:0,slpAmt:1,slpDur:7000,slpRotX:0,slpRotO:0,
- slpAmbient:'float',slpEntrance:'row',
+ slpAmbient:'float',slpEntrance:'row',slpView:'full',started:0,
  rotX:0,rotO:0,
  d3d:0,d3blur:18,d3ang:135,d3elev:42,d3spec:.8,d3gam:.75,d3amb:.28,
  d3gloss:22,d3edge:1.2,tiltY:0,tiltX:0,persp:900,lgfOver:0,
@@ -1977,6 +1995,44 @@ function eyeWakeCSS(){
  return out;
 }
 
+/**
+ * Which PART of a sleep mark the stage is showing.
+ *
+ * A sleep mark is two things joined end to end — it arrives, then it
+ * rests — and they are tuned separately. Watching the arrival means
+ * seeing it repeat, which it never does in the finished piece; watching
+ * the ambient means not waiting through the arrival every time. So this
+ * exists only for the stage.
+ *
+ * It must never reach the export. Every caller that writes a file forces
+ * the full sequence first — see withFullSequence() — because a preview
+ * setting escaping into a saved loader is exactly the sort of thing that
+ * is invisible until it is live.
+ *
+ * Parking rather than disabling, for the ambient view: a large negative
+ * delay puts a finite animation on its final frame, which is where the
+ * arrival is supposed to have left it. The ambient ones are infinite, so
+ * the same delay would only shift their phase — they get their delay
+ * handed back by name.
+ */
+function viewCSS(){
+ if(!P.sleep || P.slpView==='full') return '';
+ var live=[];
+ B.forEach(function(b,i){ if(b.hp) live.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i,'.eyS'+i) });
+ LCEN.forEach(function(c,li){ live.push('.slr'+li) });
+
+ if(P.slpView==='in')
+  // The arrival on repeat, with the resting motion held off so it is not
+  // competing for attention while the arrival is being tuned.
+  return '.xl *{animation-iteration-count:infinite!important}'
+   +'.xl{animation:none!important}'
+   +(live.length?live.join(',')+'{animation:none!important}':'');
+
+ // 'ambient' — the arrival parked on its last frame, only the rest running
+ return '.xl *{animation-delay:-99999s!important}'
+  +(live.length?live.join(',')+'{animation-delay:0s!important}':'');
+}
+
 function sleepCSS(){
  if(!P.sleep) return '';
  var d=Math.max(2000,P.slpDur), a=P.slpAmt;
@@ -2154,7 +2210,7 @@ function css(){
  if((P.spinY||P.spinX)&&!holdProjected())
   out+='.xl{transform:perspective('+P.spinP+'px) rotateY('+P.spinY
    +'deg) rotateX('+P.spinX+'deg)}';
- return poster(out)+jitCSS()+sleepCSS();
+ return poster(out)+jitCSS()+sleepCSS()+viewCSS();
 }
 
 // A strand is the same path, nudged sideways. Offsets alternate either
@@ -2898,11 +2954,34 @@ function drawGlints(){
   return '<button class="'+(P.glintShape===n?'on':'')+'" onclick="setGlint(\''+n+'\')">'+n+'</button>'
  }).join('');
 }
-function setSleep(v){P.sleep=v?1:0;syncSleep();build();sch()}
+function setSleep(v){P.sleep=v?1:0;if(!v)P.slpView='full';syncSleep();build();sch()}
+var SLPVIEWS=[['in','Arriving'],['ambient','Resting'],['full','Whole thing']];
+function setSlpView(v){P.slpView=v;syncSleep();build();sch()}
+/**
+ * The opening choice. A sleep mark and a loader are different pieces of
+ * work with different controls, and starting in one by default meant the
+ * sleep options were something you had to know to go and switch on.
+ */
+function createNew(kind){
+ P.sleep = kind==='sleep' ? 1 : 0;
+ P.slpView = P.sleep ? 'in' : 'full';
+ P.started = 1;
+ var g=document.getElementById('newgate'); if(g) g.style.display='none';
+ syncSleep(); build(); sch();
+}
 function syncSleep(){
  var a=document.getElementById('slpOff'), b=document.getElementById('slpOn');
  if(a) a.classList.toggle('on',!P.sleep);
  if(b) b.classList.toggle('on',!!P.sleep);
+ // The sleep-only controls are hidden rather than disabled for a loader:
+ // a working view is meaningless when there is only one thing to watch.
+ ['slpviewrow','slpviewpicker','slpsection'].forEach(function(id){
+  var e=document.getElementById(id); if(e) e.style.display=P.sleep?'':'none';
+ });
+ var v=document.getElementById('slpviewpicker');
+ if(v) v.innerHTML=SLPVIEWS.map(function(x){
+  return '<button class="'+(P.slpView===x[0]?'on':'')+'" onclick="setSlpView(\''+x[0]+'\')">'+x[1]+'</button>'
+ }).join('');
 }
 // Light mode used to restyle only the panel, leaving the stage on the
 // artwork's own dark background — which looked like a baked-in black.
@@ -3197,6 +3276,18 @@ function exportSvg(){
  if(isMono()) s=s.replace(/color:[^;"]*;?/,'');
  return s.replace(/ style="\s*"/,'');
 }
+/**
+ * Runs fn with the stage's preview view forced back to the full
+ * sequence, then restores it. Everything that writes a file goes through
+ * here, so what lands on disk is the finished piece and not whichever
+ * half was being looked at.
+ */
+function withFullSequence(fn){
+ var was=P.slpView;
+ P.slpView='full';
+ try { return fn() } finally { P.slpView=was }
+}
+
 function standalone(){
  var mono=isMono();
  return '<!doctype html><meta charset="utf-8"><title>XOXO loader</title>'
@@ -3212,7 +3303,8 @@ function standalone(){
   +'stroke-linecap:round;stroke-linejoin:round}'+css()+'</style>'+exportSvg();
 }
 function show(kind){var ta=document.getElementById('ta');ta.style.display='block';
- ta.value = kind==='css'?css() : kind==='json'?JSON.stringify(P,null,1) : tsx();
+ ta.value = withFullSequence(function(){
+  return kind==='css'?css() : kind==='json'?JSON.stringify(P,null,1) : tsx() });
  ta.select()}
 function tsx(){
  return "// XoxoLoader — generated from the tuner\n'use client'\n\n"
@@ -3352,7 +3444,9 @@ function exportHTML(){
   +'be missing entirely from the export.\n\n'
   +'Switch the renderer to SVG to export the depth.\n\n'
   +'Export flat anyway?')) return;
- var b=new Blob([standalone()],{type:'text/html'});
+ // Whatever half of a sleep mark the stage happens to be showing, the
+ // file is the whole sequence.
+ var b=new Blob([withFullSequence(standalone)],{type:'text/html'});
  var a=document.createElement('a');a.href=URL.createObjectURL(b);
  a.download='xoxo-loader.html';a.click();
  setTimeout(function(){URL.revokeObjectURL(a.href)},2000)}
