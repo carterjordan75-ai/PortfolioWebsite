@@ -46,7 +46,35 @@ export default function SleepMode() {
   const asleepRef = useRef(false)
   asleepRef.current = asleep
 
-  const blocked = NEVER.some(p => pathname === p || pathname.startsWith(p + '/'))
+  /**
+   * Reduced motion means no screensaver at all.
+   *
+   * Not a smaller one, and not a still one. The two render paths get this
+   * wrong in opposite directions if left alone: the rewrite path forces
+   * iteration-count to 1, so the mark arrives and then freezes, and sits
+   * frozen until the mouse moves — a screensaver that has stopped, which
+   * is worse than none. The verbatim path carries no such rule at all, so
+   * it animates in full at someone who explicitly asked it not to.
+   *
+   * A loader is different and stays: it covers a wait that is happening
+   * whether or not it is drawn. This is decoration that appears
+   * unprompted, so the honest reading of the preference is not to.
+   *
+   * Watched rather than read once — the preference can change while the
+   * page is open, and a session started before it was turned on should
+   * respect it from that moment.
+   */
+  const [lessMotion, setLessMotion] = useState(false)
+  useEffect(() => {
+    const q = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const read = () => setLessMotion(q.matches)
+    read()
+    q.addEventListener('change', read)
+    return () => q.removeEventListener('change', read)
+  }, [])
+
+  const blocked = lessMotion
+    || NEVER.some(p => pathname === p || pathname.startsWith(p + '/'))
 
   useEffect(() => {
     if (blocked) { setAsleep(false); return }
