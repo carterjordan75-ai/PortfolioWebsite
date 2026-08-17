@@ -103,14 +103,17 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <details open><summary>Sleep mode</summary>
   <div class="row"><button id="slpOff" onclick="setSleep(0)">Loader</button>
    <button id="slpOn" onclick="setSleep(1)">Sleep</button></div>
-  <div class="row"><label>Ambient drift <b id="vslpAmt"></b></label><input id="slpAmt" type="range" min="0" max="3" step=".05"></div>
+  <div class="row"><label>1 — How it arrives</label></div>
+  <div class="row" id="slpinpicker"></div>
+  <div class="row"><label>2 — What it does while it rests</label></div>
+  <div class="row" id="slpambpicker"></div>
   <div class="row"><label>Loop length <b id="vslpDur"></b></label><input id="slpDur" type="range" min="2000" max="20000" step="500"></div>
-  <div class="row"><label>Spin X per loop <b id="vslpRotX"></b></label><input id="slpRotX" type="range" min="-360" max="360" step="15"></div>
-  <div class="row"><label>Spin O per loop <b id="vslpRotO"></b></label><input id="slpRotO" type="range" min="-360" max="360" step="15"></div>
-  <p class="note">A loader plays once and stops on its last frame — the page
-   is waiting on it. A sleep mark has nothing waiting, so everything repeats
-   for as long as it is up and a slow drift rides on top. Export it, then add
-   it in the admin panel as a Sleep mark.</p>
+  <div class="row"><label>Amount <b id="vslpAmt"></b></label><input id="slpAmt" type="range" min="0" max="3" step=".05"></div>
+  <p class="note">Two decisions. It arrives once, then rests — and while it
+   rests the eyes keep looking around whatever else is chosen, because that
+   is the thing that makes it read as awake rather than parked. Loop length
+   sets the ambient cycle; Amount scales it. Export, then add it in the admin
+   panel as a Sleep mark.</p>
   </details>
   <details open><summary>Preset</summary>
   <div class="row">
@@ -565,6 +568,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  lgAlign:'centre',lgTex:0,startSpread:0,
  renderer:'svg',
  sleep:0,slpAmt:1,slpDur:7000,slpRotX:0,slpRotO:0,
+ slpAmbient:'float',slpEntrance:'row',
  rotX:0,rotO:0,
  d3d:0,d3blur:18,d3ang:135,d3elev:42,d3spec:.8,d3gam:.75,d3amb:.28,
  d3gloss:22,d3edge:1.2,tiltY:0,tiltX:0,persp:900,lgfOver:0,
@@ -1901,6 +1905,78 @@ function scoreCSS(total){
  * so a plain declaration at this specificity would lose to every one of
  * them and silently do nothing.
  */
+/**
+ * The ambient motions a resting mark can be given.
+ *
+ * Each is written 0% and 100% identical, which is what lets it repeat
+ * without a seam. That is the whole constraint — a screensaver that
+ * visibly restarts is worse than one that does nothing — and it is why
+ * these are a fixed set rather than a pile of sliders: it is easy to
+ * build a combination of drift, sway and spin that does not close, and
+ * the failure only shows up once every loop length.
+ *
+ * `a` scales all of them so one Amount control covers whichever is on.
+ */
+function ambientKF(kind, a){
+ var f=function(v){return v.toFixed(3)};
+ if(kind==='breathe')
+  return '0%{transform:scale(1)}50%{transform:scale('+f(1+a*0.026)+')}100%{transform:scale(1)}';
+ if(kind==='float')
+  return '0%{transform:translateY(0)}50%{transform:translateY(-'+f(a*1.3)+'%)}'
+       + '100%{transform:translateY(0)}';
+ if(kind==='sway')
+  // Four stops, not three: a sway that only visits one side reads as a
+  // nudge rather than as swaying.
+  return '0%{transform:rotate(0deg)}25%{transform:rotate('+f(a*1.1)+'deg)}'
+       + '50%{transform:rotate(0deg)}75%{transform:rotate(-'+f(a*1.1)+'deg)}'
+       + '100%{transform:rotate(0deg)}';
+ if(kind==='bob')
+  return '0%{transform:translateY(0) rotate(0deg)}'
+       + '30%{transform:translateY(-'+f(a*1.1)+'%) rotate('+f(a*0.6)+'deg)}'
+       + '65%{transform:translateY('+f(a*0.6)+'%) rotate(-'+f(a*0.4)+'deg)}'
+       + '100%{transform:translateY(0) rotate(0deg)}';
+ if(kind==='pulse')
+  // Asymmetric on purpose — an even in-and-out reads mechanical.
+  return '0%{transform:scale(1)}36%{transform:scale('+f(1+a*0.03)+')}'
+       + '58%{transform:scale('+f(1-a*0.012)+')}100%{transform:scale(1)}';
+ // 'still' — the eyes carry it alone
+ return '';
+}
+
+/**
+ * Keeps the eyes alive while the mark rests.
+ *
+ * The look cycle already loops once the iteration count is lifted, but
+ * it loops on the RUN's clock — the same period as everything else — so
+ * every glance, blink and drift restarted together on the same beat and
+ * the whole thing pulsed. Given its own period, and a different one per
+ * eye, they stop agreeing with each other and it reads as looking about
+ * rather than as a mechanism resetting.
+ *
+ * A prime-ish ratio rather than a round one: 1.0 and 0.5 would re-sync
+ * every loop or two, which is the thing this exists to avoid.
+ */
+function eyeWakeCSS(){
+ if(!EYES()) return '';
+ var out='', base=Math.max(2000,P.slpDur), n=0;
+ B.forEach(function(b,i){
+  if(!b.hp) return;
+  // Counted by EYE, not by blob index. Parity on the blob index looked
+  // right and was not: in XOXO both O's are odd-numbered blobs, so both
+  // eyes landed on the same branch and got identical periods — which is
+  // precisely the marching in step this exists to break. Caught by
+  // checking the two came out different, not by reading it.
+  var odd=(n++)%2;
+  var look=Math.round(base*(odd?0.83:1.17));
+  var blink=Math.round(base*(odd?1.31:0.94));
+  out+='.eyL'+i+'{animation-duration:'+look+'ms}'
+   +'.eyD'+i+'{animation-duration:'+look+'ms}'
+   +'.eyP'+i+'{animation-duration:'+blink+'ms}'
+   +'.eyG'+i+'{animation-duration:'+blink+'ms}';
+ });
+ return out;
+}
+
 function sleepCSS(){
  if(!P.sleep) return '';
  var d=Math.max(2000,P.slpDur), a=P.slpAmt;
@@ -1908,11 +1984,9 @@ function sleepCSS(){
  // mark built to loop from a loader someone reassigned, and has to force
  // looping on everything — which would drag the entrance back into the
  // loop and undo the whole point of the rule above.
+ var amb=ambientKF(P.slpAmbient, a);
  return '.xl{--xoxo-sleep:1}'
-  +'@keyframes xslp{'
-  +'0%{transform:translateY(0) scale(1)}'
-  +'50%{transform:translateY(-'+(a*1.3).toFixed(2)+'%) scale('+(1+a*.012).toFixed(4)+')}'
-  +'100%{transform:translateY(0) scale(1)}}'
+  +(amb?'@keyframes xslp{'+amb+'}':'')
   // Only the ambient parts repeat. The entrance arrives once and stays
   // arrived — a mark that reassembles itself every few seconds is not
   // resting, it is a loader stuck on replay. What keeps going is what a
@@ -1928,7 +2002,12 @@ function sleepCSS(){
     B.forEach(function(b,i){ if(b.hp) sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i) });
     return sel.length?sel.join(',')+'{animation-iteration-count:infinite}':'';
    })()
-  +(a>0?'.xl{animation:xslp '+d+'ms ease-in-out infinite}':'')
+  // The eyes are not optional here. Whatever the mark does or does not
+  // do around them, a face with still eyes reads as switched off — so
+  // they keep looking around for as long as it is up, which is the one
+  // thing that makes it read as resting rather than as parked.
+  +eyeWakeCSS()
+  +((amb&&a>0)?'.xl{animation:xslp '+d+'ms ease-in-out infinite}':'')
   +sleepSpinCSS();
 }
 function css(){
@@ -2798,6 +2877,20 @@ function setTexMap(m){P.texMap=m;build()}
 function setTexType(m){P.texType=m;build()}
 function setRenderer(m){P.renderer=m;build();sch()}
 var GLINTS=['dot','oval','pill','square','star','pair','crescent'];
+var AMBIENTS=['still','float','breathe','sway','bob','pulse'];
+// How it arrives: the same layouts the mark can animate in from, so this
+// is the existing Layout choice surfaced where it is actually decided.
+var ENTRANCES=['row','grid','stack','diagonal'];
+function setAmbient(v){P.slpAmbient=v;drawSleepPickers();build();sch()}
+function setEntrance(v){P.slpEntrance=v;P.layout=v;P.lsettle=v==='row'?0:1;drawSleepPickers();build();sch()}
+function drawSleepPickers(){
+ var a=document.getElementById('slpambpicker');
+ if(a) a.innerHTML=AMBIENTS.map(function(n){
+  return '<button class="'+(P.slpAmbient===n?'on':'')+'" onclick="setAmbient(\''+n+'\')">'+n+'</button>'}).join('');
+ var e=document.getElementById('slpinpicker');
+ if(e) e.innerHTML=ENTRANCES.map(function(n){
+  return '<button class="'+(P.slpEntrance===n?'on':'')+'" onclick="setEntrance(\''+n+'\')">'+n+'</button>'}).join('');
+}
 function setGlint(v){P.glintShape=v;drawGlints();build();sch()}
 function drawGlints(){
  var e=document.getElementById('glintpicker'); if(!e) return;
@@ -2956,7 +3049,7 @@ var KEYS=['slpAmt','slpDur','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lsc
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
-function sync(){syncSleep();drawGlints();KEYS.forEach(function(k){var e=document.getElementById(k);if(e)e.value=P[k]});
+function sync(){syncSleep();drawGlints();drawSleepPickers();KEYS.forEach(function(k){var e=document.getElementById(k);if(e)e.value=P[k]});
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
 function labels(){
  var f={slpAmt:2,eyeEase:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
