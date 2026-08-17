@@ -3648,5 +3648,189 @@ function exportHTML(){
  a.download='xoxo-loader.html';a.click();
  setTimeout(function(){URL.revokeObjectURL(a.href)},2000)}
 
-sync();build();sch();pullSaved();
+/**
+ * What each control does, shown on hover.
+ *
+ * Written as a map rather than a title="" on every input: there are 142
+ * sliders and putting the prose in the markup made the panel unreadable
+ * to edit. It also means a slider added without a description shows up
+ * in the coverage check below rather than silently having no help.
+ */
+var HELP={
+// --- sleep: arriving ---
+sdur:'How long the mark takes to arrive. Plays once.',
+sstag:'Delay between each letter setting off. 0 sends them all at once.',
+sgap:'Spacing between letters in the arrangement.',
+sspread:'Scales the whole arrangement outward from its middle.',
+sscat:'Randomly nudges each letter off its cell. Rough, not tidy.',
+sshuffle:'Reorders which letter goes to which cell.',
+sturn:'Rotates the whole arrangement about its middle, in eighths.',
+sstart:'How far outside its cell each letter begins. Negative starts inside.',
+ssettle:'At 1 the letters leave the arrangement and land as a plain row instead.',
+// --- sleep: resting ---
+slpDur:'How long one breath of the ambient motion takes.',
+slpAmt:'How far the ambient motion travels. 0 holds still.',
+slpEase:'0 drifts evenly; 1 accents each end of the cycle.',
+slpHold:'Pauses at the extremes instead of turning round the moment it arrives.',
+eyeCycle:'How long one round of looking and blinking takes. Separate from the breath.',
+slpWake:'Beat after the mark lands before the eyes open and it becomes a face.',
+// --- loader timing ---
+dur:'How long the entrance takes.',
+stag:'Delay between each letter setting off.',
+over:'How far past its final size a letter swells before settling.',
+curve:'Peak of the entrance curve. Higher is more of a lurch.',
+smooth:'Softens the entrance easing towards a glide.',
+spin:'Rotation each letter carries as it arrives.',
+jiggle:'Wobble left on a letter after it lands.',
+jigSpeed:'How fast that wobble shakes.',
+// --- layout ---
+lgap:'Spacing between letters.',
+lrot:'Alternating tilt, one letter each way.',
+lscat:'Randomly nudges each letter off its cell.',
+lspread:'Scales the arrangement outward from its middle.',
+lshuffle:'Reorders which letter goes to which cell.',
+lturn:'Rotates the whole arrangement, in eighths.',
+rotX:'Turns the X letterforms only.',
+rotO:'Turns the O letterforms only. The eyes stay level.',
+lsettle:'At 1 the letters leave the arrangement and land as a row.',
+lscore:'Draws a line through the arrangement, like a won row.',
+// --- eyes ---
+eyeLook:'How far the pupil travels from centre.',
+eyeDart:'How many places it looks before coming back.',
+eyeBlink:'Blinks per run.',
+eyeSize:'Pupil size. A bigger pupil has less room to travel before it would break through the ring.',
+eyeOval:'Stretches the pupil from round towards an oval.',
+eyeDome:'Foreshortens the pupil as it moves, so it reads as sitting on a sphere.',
+eyeBow:'How much the lid curves as it closes. Flat reads as a shutter.',
+eyeShut:'How nearly closed a blink gets. 0 is fully shut.',
+eyeSpeed:'Scales close, hold and reopen together.',
+eyeOver:'How far past a target the pupil throws before settling.',
+eyeHome:'How long the look back to centre takes at the end.',
+eyeClose:'Time to close.',
+eyeHold:'Time held shut.',
+eyeOpen:'Time to reopen. The rushed feeling lives here.',
+eyeSettle:'Open time guaranteed before the run ends, so it never finishes mid-blink.',
+eyeEase:'How softly the lid lands back open.',
+eyeGlint:'Size of the catchlight. 0 removes it.',
+// --- shape ---
+squash:'Squashes on impact.',
+stretch:'Stretches along the direction of travel.',
+wresp:'How much width answers the squash, rather than height alone.',
+damp:'How quickly the squash settles.',
+startSpread:'How far outside its place each letter begins.',
+morph:'Blends the letterform towards a circle at the start.',
+msize:'Size of that circle.',
+// --- outline ---
+lgw:'Outline weight. 0 is a solid letter.',
+lgdraw:'Draws the outline on rather than fading it in.',
+lgbris:'Number of overlapping strands in the outline.',
+lgsp:'How far those strands spread apart.',
+lgbw:'Weight of each strand.',
+lgvar:'Variation between strands.',
+lgTex:'Roughens the outline edge.',
+lgfill:'Opacity of the letter fill.',
+lgfTime:'How long the fill takes to arrive.',
+lgfWhen:'When the fill starts, relative to the letter.',
+lgSoft:'Softens the fill edge.',
+lgScale:'Scale of the fill reveal pattern.',
+// --- accents ---
+acc:'How many accent marks are thrown.',
+asize:'Accent size.',
+aw:'Accent stroke weight.',
+place:'Pushes accents inside or outside the letters.',
+aangle:'Base angle accents are thrown at.',
+jit:'Randomness in accent placement.',
+spread:'How far accents scatter.',
+orient:'How much accents align to the letter they came from.',
+draw:'Draws accents on rather than fading them in.',
+drift:'How far accents travel after appearing.',
+aspin:'Rotation accents carry.',
+atime:'Accent timing relative to the letters.',
+// --- arcs ---
+arcs:'How many arcs orbit the mark.',
+orbw:'Arc stroke weight.',
+halo:'A soft glow around each arc.',
+tapA:'Taper at the start of an arc.',
+tapB:'Taper at the end.',
+press:'How hard an arc presses into a letter it crosses.',
+preach:'How far that press reaches.',
+dentw:'Width of the dent an arc leaves.',
+orbSize:'Arc radius, as a share of the mark. Above 1 the arcs clear the letters entirely.',
+orbvary:'Variation between arc radii.',
+orbtilt:'Tilt of the arc plane.',
+orbtvary:'Variation in that tilt.',
+orbarc:'How much of a full circle each arc draws.',
+orbtime:'How long an arc takes to draw.',
+orbstag:'Delay between arcs.',
+// --- stroke weight ---
+lw:'Overall stroke weight.',
+w0:'Weight at the start of the run.',
+w1:'Weight at the midpoint.',
+w2:'Weight at the end.',
+wpos:'Where that midpoint falls.',
+bris:'Number of bristles in the stroke.',
+brisSp:'How far bristles spread.',
+brisW:'Bristle weight.',
+brisVar:'Variation between bristles.',
+tex:'Roughens the stroke edge.',
+rough:'Grain of that roughness. Lower is coarser.',
+oct:'Detail levels in the roughness.',
+// --- colour and grain ---
+inkAngle:'Angle of the ink gradient.',
+grain:'Amount of surface grain.',
+grainS:'Scale of the grain.',
+grainC:'Contrast of the grain.',
+texMix:'How strongly a supplied texture shows.',
+texHtAmt:'How much a supplied height map dents the surface.',
+texScale:'Scale of the supplied texture.',
+texRot:'Rotation of the supplied texture.',
+// --- 3D ---
+d3d:'Depth of the 3D shading. 0 is flat.',
+d3blur:'How rounded the shaded surface is.',
+d3gam:'Bends the surface profile between a dome and a plateau.',
+d3ang:'Direction the light comes from.',
+d3elev:'How high the light sits.',
+d3amb:'Lifts the dark side so it shades rather than crushes.',
+d3spec:'Strength of the highlight.',
+d3gloss:'Tightness of the highlight. Higher is glassier.',
+d3edge:'Softens the silhouette so the edge stops reading as a cut.',
+bump:'Low-frequency dents and swells across the surface.',
+bumpS:'Scale of those bumps.',
+dither:'Breaks up contour banding in the shading. Turning this off brings the terracing back.',
+bumpBlur:'Softens the bumps before they displace.',
+htBlur:'Softens a supplied height map.',
+hmBlur:'A final smoothing pass over the whole surface.',
+// --- perspective ---
+tiltY:'Tilts the mark left and right.',
+tiltX:'Tilts it up and down.',
+extrude:'Depth of the extruded side wall.',
+exSlices:'How many slices that extrusion is built from.',
+persp:'Perspective strength. Lower is more extreme.',
+spinY:'Real 3D rotation about the vertical.',
+spinX:'Real 3D rotation about the horizontal.',
+spinP:'Perspective for that rotation.',
+// --- stage ---
+fps:'Frames per second the export is baked at.',
+jitter:'Shakes the whole mark.',
+scrub:'Scrub the timeline. Pause first to hold a frame.'
+};
+
+/**
+ * Puts the descriptions on the controls.
+ *
+ * Applied to the slider AND its label, because the label is the wider
+ * target and the one you are already reading when you wonder what a
+ * thing does. Runs once at boot; nothing here changes after that.
+ */
+function applyHelp(){
+ [].forEach.call(document.querySelectorAll("input[type=range]"),function(e){
+  var k=e.dataset.p||e.id, t=HELP[k]||HELP[e.id];
+  if(!t) return;
+  e.title=t;
+  var row=e.closest(".row"), lab=row&&row.querySelector("label");
+  if(lab) lab.title=t;
+ });
+}
+
+sync();build();sch();pullSaved();applyHelp();
 </script></body></html>
