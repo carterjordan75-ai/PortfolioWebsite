@@ -103,12 +103,10 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
 
 <div class="wrap">
  <div class="panel">
+  <div class="row secbar"><button onclick="openCreateNew()">Create new</button>
+   <b id="kindnow" style="opacity:.4;font:10px ui-monospace,monospace;letter-spacing:.14em"></b></div>
   <div class="row secbar"><button onclick="allSecs(true)">Expand all</button><button onclick="allSecs(false)">Collapse all</button></div>
-  <details open><summary>Kind</summary>
-  <div class="row"><button id="slpOff" onclick="setSleep(0)">Loader</button>
-   <button id="slpOn" onclick="setSleep(1)">Sleep</button></div>
-
-  <div id="slpsection">
+  <details open id="slpsection"><summary>Sleep</summary>
   <div class="row"><label>Animate in</label>
    <select id="slpinsel" onchange="setEntrance(this.value)"></select></div>
   <div class="row"><label>Ambient motion</label>
@@ -127,7 +125,6 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
    moment it arrives. Use Showing, under the viewer, to work on the arrival
    and the resting motion separately. Export, then add it in the admin panel
    as a Sleep mark.</p>
-  </div>
   </details>
   <details open><summary>Preset</summary>
   <div class="row">
@@ -3012,7 +3009,22 @@ function drawGlints(){
   return '<button class="'+(P.glintShape===n?'on':'')+'" onclick="setGlint(\''+n+'\')">'+n+'</button>'
  }).join('');
 }
-function setSleep(v){P.sleep=v?1:0;if(!v)P.slpView='full';syncSleep();build();sch()}
+/**
+ * Back to the opening choice, which is the only way between the two.
+ *
+ * There was a Loader/Sleep toggle sitting in the panel, and it was the
+ * wrong shape for what it did: flipping it silently changed which set of
+ * controls applied and what the export would be, in the middle of a
+ * piece of work. They are separate jobs, so crossing between them is a
+ * deliberate act of starting something, not a switch you can brush past.
+ *
+ * The look settings survive the crossing on purpose — the mark is the
+ * same mark either way, and only the job it is being built for changes.
+ */
+function openCreateNew(){
+ var g=document.getElementById('newgate');
+ if(g) g.style.display='grid';
+}
 var SLPVIEWS=[['in','Arriving'],['ambient','Resting'],['full','Whole thing']];
 function setSlpView(v){P.slpView=v;syncSleep();build();sch()}
 /**
@@ -3028,14 +3040,12 @@ function createNew(kind){
  syncSleep(); build(); sch();
 }
 function syncSleep(){
- var a=document.getElementById('slpOff'), b=document.getElementById('slpOn');
- if(a) a.classList.toggle('on',!P.sleep);
- if(b) b.classList.toggle('on',!!P.sleep);
+ var k=document.getElementById('kindnow');
+ if(k) k.textContent=P.sleep?'SLEEP':'LOADER';
  // The sleep-only controls are hidden rather than disabled for a loader:
  // a working view is meaningless when there is only one thing to watch.
- ['slpsection'].forEach(function(id){
-  var e=document.getElementById(id); if(e) e.style.display=P.sleep?'':'none';
- });
+ var sec=document.getElementById('slpsection');
+ if(sec) sec.style.display=P.sleep?'':'none';
  var bar=document.getElementById('slpviewbar');
  if(bar) bar.style.display=P.sleep?'':'none';
  var on={in:'vwin',ambient:'vwamb',full:'vwful'};
