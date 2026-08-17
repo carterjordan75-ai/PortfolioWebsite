@@ -78,6 +78,10 @@ color:var(--fg);background:transparent;border:1px solid var(--line);border-radiu
 padding:6px 11px;cursor:pointer;margin:0 5px 5px 0}
 button:hover{background:var(--fg);color:var(--bg)}button.on{background:var(--fg);color:var(--bg)}
 .sticky{position:sticky;top:16px}
+.panel select{background:var(--card);color:inherit;border:1px solid var(--line);
+ border-radius:999px;padding:6px 12px;font:inherit;font-size:11px;letter-spacing:.06em;
+ text-transform:uppercase;cursor:pointer;outline:none}
+.panel select:focus{border-color:#888}
 .stage{border:1px solid var(--line);border-radius:14px;background:var(--card);
 display:grid;place-items:center;height:390px;padding:56px 58px}
 .xl{display:block;width:100%;height:auto;overflow:visible;max-width:440px;max-height:440px}
@@ -103,21 +107,24 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <details open><summary>Kind</summary>
   <div class="row"><button id="slpOff" onclick="setSleep(0)">Loader</button>
    <button id="slpOn" onclick="setSleep(1)">Sleep</button></div>
-  <div class="row" id="slpviewrow" style="display:none">
-   <label>Working view</label></div>
-  <div class="row" id="slpviewpicker" style="display:none"></div>
+
   <div id="slpsection">
-  <div class="row"><label>1 — How it arrives</label></div>
-  <div class="row" id="slpinpicker"></div>
-  <div class="row"><label>2 — What it does while it rests</label></div>
-  <div class="row" id="slpambpicker"></div>
-  <div class="row"><label>Loop length <b id="vslpDur"></b></label><input id="slpDur" type="range" min="2000" max="20000" step="500"></div>
+  <div class="row"><label>Animate in</label>
+   <select id="slpinsel" onchange="setEntrance(this.value)"></select></div>
+  <div class="row"><label>Ambient motion</label>
+   <select id="slpambsel" onchange="setAmbient(this.value)"></select></div>
+  <div class="row"><label>Loop length <b id="vslpDur"></b></label><input id="slpDur" type="range" min="1000" max="10000" step="250"></div>
   <div class="row"><label>Amount <b id="vslpAmt"></b></label><input id="slpAmt" type="range" min="0" max="3" step=".05"></div>
-  <p class="note">Two decisions. It arrives once, then rests — and while it
-   rests the eyes keep looking around whatever else is chosen, because that
-   is the thing that makes it read as awake rather than parked. Loop length
-   sets the ambient cycle; Amount scales it. Export, then add it in the admin
-   panel as a Sleep mark.</p>
+  <div class="row"><label>Loop ease <b id="vslpEase"></b></label><input id="slpEase" type="range" min="0" max="1" step=".05"></div>
+  <div class="row"><label>Hold at ends <b id="vslpHold"></b></label><input id="slpHold" type="range" min="0" max=".4" step=".02"></div>
+  <p class="note">It arrives once, then rests. While it rests the eyes keep
+   looking around whatever else is chosen — that is what makes it read as
+   awake rather than parked. Loop length is the ambient cycle, Amount scales
+   it, Loop ease decides whether it drifts evenly or accents each end, and
+   Hold keeps it at its extremes for a beat instead of turning round the
+   moment it arrives. Use Showing, under the viewer, to work on the arrival
+   and the resting motion separately. Export, then add it in the admin panel
+   as a Sleep mark.</p>
   </div>
   </details>
   <details open><summary>Preset</summary>
@@ -551,6 +558,12 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
     </div>
    </div>
   </div>
+  <div class="row transport" id="slpviewbar" style="display:none">
+   <label style="opacity:.55">Showing</label>
+   <button id="vwin"  onclick="setSlpView('in')">Arriving</button>
+   <button id="vwamb" onclick="setSlpView('ambient')">Resting</button>
+   <button id="vwful" onclick="setSlpView('full')">Whole thing</button>
+  </div>
   <div class="row transport">
    <button id="pauseb" onclick="togglePause()">Pause</button>
    <input id="scrub" type="range" min="0" max="1000" step="1" value="0"
@@ -587,6 +600,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  renderer:'svg',
  sleep:0,slpAmt:1,slpDur:7000,slpRotX:0,slpRotO:0,
  slpAmbient:'float',slpEntrance:'row',slpView:'full',started:0,
+ slpEase:.6,slpHold:0,
  rotX:0,rotO:0,
  d3d:0,d3blur:18,d3ang:135,d3elev:42,d3spec:.8,d3gam:.75,d3amb:.28,
  d3gloss:22,d3edge:1.2,tiltY:0,tiltX:0,persp:900,lgfOver:0,
@@ -1937,26 +1951,35 @@ function scoreCSS(total){
  */
 function ambientKF(kind, a){
  var f=function(v){return v.toFixed(3)};
+ // Hold pushes the middle stops apart so the cycle pauses at its
+ // extremes instead of turning round the instant it arrives. h=0 is the
+ // even cycle these had before.
+ var h=Math.max(0,Math.min(.4,P.slpHold));
+ var m=function(pc){
+  // Move a stop away from 50% by the hold amount, so the swing happens
+  // faster and the ends last longer, without moving 0% or 100%.
+  return (pc<50 ? pc*(1-h*1.6) : 100-(100-pc)*(1-h*1.6)).toFixed(2);
+ };
  if(kind==='breathe')
-  return '0%{transform:scale(1)}50%{transform:scale('+f(1+a*0.026)+')}100%{transform:scale(1)}';
+  return '0%{transform:scale(1)}'+m(50)+'%{transform:scale('+f(1+a*0.026)+')}100%{transform:scale(1)}';
  if(kind==='float')
-  return '0%{transform:translateY(0)}50%{transform:translateY(-'+f(a*1.3)+'%)}'
+  return '0%{transform:translateY(0)}'+m(50)+'%{transform:translateY(-'+f(a*1.3)+'%)}'
        + '100%{transform:translateY(0)}';
  if(kind==='sway')
   // Four stops, not three: a sway that only visits one side reads as a
   // nudge rather than as swaying.
-  return '0%{transform:rotate(0deg)}25%{transform:rotate('+f(a*1.1)+'deg)}'
-       + '50%{transform:rotate(0deg)}75%{transform:rotate(-'+f(a*1.1)+'deg)}'
+  return '0%{transform:rotate(0deg)}'+m(25)+'%{transform:rotate('+f(a*1.1)+'deg)}'
+       + '50%{transform:rotate(0deg)}'+m(75)+'%{transform:rotate(-'+f(a*1.1)+'deg)}'
        + '100%{transform:rotate(0deg)}';
  if(kind==='bob')
   return '0%{transform:translateY(0) rotate(0deg)}'
-       + '30%{transform:translateY(-'+f(a*1.1)+'%) rotate('+f(a*0.6)+'deg)}'
-       + '65%{transform:translateY('+f(a*0.6)+'%) rotate(-'+f(a*0.4)+'deg)}'
+       + m(30)+'%{transform:translateY(-'+f(a*1.1)+'%) rotate('+f(a*0.6)+'deg)}'
+       + m(65)+'%{transform:translateY('+f(a*0.6)+'%) rotate(-'+f(a*0.4)+'deg)}'
        + '100%{transform:translateY(0) rotate(0deg)}';
  if(kind==='pulse')
   // Asymmetric on purpose — an even in-and-out reads mechanical.
-  return '0%{transform:scale(1)}36%{transform:scale('+f(1+a*0.03)+')}'
-       + '58%{transform:scale('+f(1-a*0.012)+')}100%{transform:scale(1)}';
+  return '0%{transform:scale(1)}'+m(36)+'%{transform:scale('+f(1+a*0.03)+')}'
+       + m(58)+'%{transform:scale('+f(1-a*0.012)+')}100%{transform:scale(1)}';
  // 'still' — the eyes carry it alone
  return '';
 }
@@ -2063,7 +2086,12 @@ function sleepCSS(){
   // they keep looking around for as long as it is up, which is the one
   // thing that makes it read as resting rather than as parked.
   +eyeWakeCSS()
-  +((amb&&a>0)?'.xl{animation:xslp '+d+'ms ease-in-out infinite}':'')
+  // Loop ease at 0 is a constant drift with no accent; at 1 it eases
+  // hard into and out of every stop. Written as a curve rather than the
+  // ease-in-out keyword so the slider has something to move.
+  +((amb&&a>0)?'.xl{animation:xslp '+d+'ms cubic-bezier('
+    +(0.5*P.slpEase).toFixed(3)+',0,'+(1-0.5*P.slpEase).toFixed(3)
+    +',1) infinite}':'')
   +sleepSpinCSS();
 }
 function css(){
@@ -2940,12 +2968,12 @@ var ENTRANCES=['row','grid','stack','diagonal'];
 function setAmbient(v){P.slpAmbient=v;drawSleepPickers();build();sch()}
 function setEntrance(v){P.slpEntrance=v;P.layout=v;P.lsettle=v==='row'?0:1;drawSleepPickers();build();sch()}
 function drawSleepPickers(){
- var a=document.getElementById('slpambpicker');
+ var a=document.getElementById('slpambsel');
  if(a) a.innerHTML=AMBIENTS.map(function(n){
-  return '<button class="'+(P.slpAmbient===n?'on':'')+'" onclick="setAmbient(\''+n+'\')">'+n+'</button>'}).join('');
- var e=document.getElementById('slpinpicker');
+  return '<option value="'+n+'"'+(P.slpAmbient===n?' selected':'')+'>'+n+'</option>'}).join('');
+ var e=document.getElementById('slpinsel');
  if(e) e.innerHTML=ENTRANCES.map(function(n){
-  return '<button class="'+(P.slpEntrance===n?'on':'')+'" onclick="setEntrance(\''+n+'\')">'+n+'</button>'}).join('');
+  return '<option value="'+n+'"'+(P.slpEntrance===n?' selected':'')+'>'+n+'</option>'}).join('');
 }
 function setGlint(v){P.glintShape=v;drawGlints();build();sch()}
 function drawGlints(){
@@ -2975,13 +3003,15 @@ function syncSleep(){
  if(b) b.classList.toggle('on',!!P.sleep);
  // The sleep-only controls are hidden rather than disabled for a loader:
  // a working view is meaningless when there is only one thing to watch.
- ['slpviewrow','slpviewpicker','slpsection'].forEach(function(id){
+ ['slpsection'].forEach(function(id){
   var e=document.getElementById(id); if(e) e.style.display=P.sleep?'':'none';
  });
- var v=document.getElementById('slpviewpicker');
- if(v) v.innerHTML=SLPVIEWS.map(function(x){
-  return '<button class="'+(P.slpView===x[0]?'on':'')+'" onclick="setSlpView(\''+x[0]+'\')">'+x[1]+'</button>'
- }).join('');
+ var bar=document.getElementById('slpviewbar');
+ if(bar) bar.style.display=P.sleep?'':'none';
+ var on={in:'vwin',ambient:'vwamb',full:'vwful'};
+ Object.keys(on).forEach(function(k){
+  var b=document.getElementById(on[k]); if(b) b.classList.toggle('on',P.slpView===k);
+ });
 }
 // Light mode used to restyle only the panel, leaving the stage on the
 // artwork's own dark background — which looked like a baked-in black.
@@ -3120,7 +3150,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 // input listeners are attached from. Adding a control to the panel
 // without adding its key here produces a slider that moves and does
 // nothing, which is how the whole Layout group shipped dead.
-var KEYS=['slpAmt','slpDur','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
+var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeBow','eyeShut','eyeSpeed','eyeGlint',
  'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome',
@@ -3131,7 +3161,7 @@ var KEYS=['slpAmt','slpDur','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lsc
 function sync(){syncSleep();drawGlints();drawSleepPickers();KEYS.forEach(function(k){var e=document.getElementById(k);if(e)e.value=P[k]});
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
 function labels(){
- var f={slpAmt:2,eyeEase:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
+ var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
   lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  KEYS.forEach(function(k){var e=document.getElementById('v'+k);if(!e)return;
