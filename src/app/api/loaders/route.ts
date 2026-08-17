@@ -28,11 +28,17 @@ const INDEX_KEY = 'state/loaders.json'
 const artKey = (id: string) => `state/loader-art/${id}.json`
 
 /**
- * Which colour modes a loader is allowed to appear in.
+ * How a mark is PAINTED, not when it is allowed to appear.
  *
- * 'both' is the default and what almost everything wants — a mono mark
- * follows the theme on its own. It matters for a loader carrying actual
- * colour, which can be built to sit on black and look wrong on white.
+ * 'both' follows the viewer's theme, which is what a mono mark wants —
+ * it takes its ink from whatever it is placed on. 'light' and 'dark'
+ * pin it: a mark built to sit on black is shown on black whatever theme
+ * the site is in, rather than being hidden from half the audience.
+ *
+ * This started life as a filter — light-only meant "only picked in light
+ * mode" — which was the wrong reading. It made a perfectly good mark
+ * invisible to anyone browsing in the other theme, and if every mark in
+ * the pool was pinned the same way, the loader simply did not appear.
  */
 export type LoaderModes = 'both' | 'light' | 'dark'
 
@@ -132,11 +138,6 @@ export async function GET(request: NextRequest) {
   const index = await readIndex()
   if (!pick) return NextResponse.json(index, NO_CACHE)
 
-  // The viewer's mode comes from the client, because the server has no
-  // way to know it — it is a browser preference, not a request property.
-  // An unknown or absent mode means "do not filter", so a caller that
-  // has not been taught about this still gets a loader.
-  const mode = request.nextUrl.searchParams.get('mode')
   // Sleep marks and loading marks are different pools and must not leak
   // into each other: a loader shown as a screensaver would stop after one
   // play, and a sleep mark used as a loader would never finish and the
@@ -144,13 +145,12 @@ export async function GET(request: NextRequest) {
   // request and on the stored item.
   const wantKind: LoaderKind = request.nextUrl.searchParams.get('kind') === 'sleep'
     ? 'sleep' : 'loader'
-  const live = index.items.filter(i => {
-    if (!i.enabled) return false
-    if ((i.kind || 'loader') !== wantKind) return false
-    const m = i.modes || 'both'
-    if (m === 'both' || mode !== 'light' && mode !== 'dark') return true
-    return m === mode
-  })
+  // Kind is the only filter. Modes used to filter here too, which meant a
+  // mark pinned to light was withheld from anyone in dark mode — and a
+  // pool where everything was pinned returned nothing at all. It is a
+  // painting instruction now and travels with the artwork instead.
+  const live = index.items.filter(i =>
+    i.enabled && (i.kind || 'loader') === wantKind)
   if (!live.length) return NextResponse.json({ index, chosen: null, art: null }, NO_CACHE)
 
   const pinned = wantKind === 'sleep' ? index.pinnedSleepId : index.pinnedId
@@ -159,7 +159,11 @@ export async function GET(request: NextRequest) {
     : live.find(i => i.id === pinned) || live[0]
 
   const art = await readArt(chosen.id)
-  return NextResponse.json({ index, chosen, art }, NO_CACHE)
+  // The renderer needs to know how to paint it, and only the index knows.
+  return NextResponse.json(
+    { index, chosen, art: art ? { ...art, modes: chosen.modes || 'both' } : art },
+    NO_CACHE,
+  )
 }
 
 /** POST { name, html } — html is a loader exported from the tuner. */

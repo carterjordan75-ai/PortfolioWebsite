@@ -31,7 +31,13 @@ export function sleepArt(mode: 'light' | 'dark'): Promise<LoaderArt | null> {
   const p = fetch(`/api/loaders?pick=1&kind=sleep&mode=${mode}`, { cache: 'no-store' })
     .then(r => (r.ok ? r.json() : null))
     .then((d: { art?: LoaderArt | null } | null) => {
-      const art = d?.art?.css && d.art.svg ? d.art : null
+      // Either representation counts. This asked for css AND svg, which
+      // was right until the API started serving the exported file
+      // verbatim and blanking the rewrite — from then on every sleep mark
+      // stored as a file failed this test and sleep silently never
+      // happened. The same guard in loaderPool was updated; this copy was
+      // missed, which is the cost of having two of them.
+      const art = d?.art && (d.art.html || (d.art.css && d.art.svg)) ? d.art : null
       held[mode] = art
       return art
     })

@@ -34,6 +34,13 @@ export type LoaderArt = {
    */
   loop?: boolean
   /**
+   * How to paint it: 'both' follows the viewer's theme, 'light' and
+   * 'dark' pin it regardless. Set from the index when the art is served,
+   * not stored in the artwork itself — it is a choice about presentation
+   * that the admin panel can change without touching the file.
+   */
+  modes?: 'both' | 'light' | 'dark'
+  /**
    * The exported file, kept exactly as it was downloaded.
    *
    * When this is present the site plays it verbatim in an iframe rather

@@ -17,6 +17,13 @@ export type LoaderArt = {
    * else, which the sleep overlay has to force into looping itself.
    */
   loop?: boolean
+  /**
+   * How to paint it: 'both' follows the viewer's theme, 'light' and
+   * 'dark' pin it regardless. Set from the index when the art is served,
+   * not stored in the artwork itself — it is a choice about presentation
+   * that the admin panel can change without touching the file.
+   */
+  modes?: 'both' | 'light' | 'dark'
   /** The exported file, verbatim. Played as-is when present. */
   html?: string
   /** Paints in one greyscale colour, so it follows the theme rather than

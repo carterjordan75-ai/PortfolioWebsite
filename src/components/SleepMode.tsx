@@ -128,7 +128,11 @@ export default function SleepMode() {
   // Enough to read as a veil rather than a wall: the page behind stays
   // legible in outline, which is what makes it read as the site resting
   // rather than as a new screen having opened.
-  const ground = dark ? 'rgba(10,10,10,0.62)' : 'rgba(255,255,255,0.62)'
+  // Same as the loader: a pinned mark decides its own ground, so light
+  // means it is always shown light rather than only shown to people
+  // already browsing in light mode.
+  const pinnedDark = art?.modes === 'dark' ? true : art?.modes === 'light' ? false : dark
+  const ground = pinnedDark ? 'rgba(10,10,10,0.62)' : 'rgba(255,255,255,0.62)'
 
   return (
     <AnimatePresence>

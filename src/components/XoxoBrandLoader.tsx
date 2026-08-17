@@ -153,9 +153,12 @@ export default function XoxoBrandLoader({
   const id = useId()
   const { dark } = useDarkMode()
 
-  // Only a mono mark takes a colour from here; anything else carries its
-  // own and must not be overpainted.
-  const colour = ink ?? (art.mono ? (dark ? '#ffffff' : '#111111') : undefined)
+  // A mark can be pinned to a look regardless of the site's theme — for
+  // artwork built for one ground that would read wrong on the other. The
+  // explicit `ink` prop still wins, since a surface that knows what it is
+  // (the gate, a preview swatch) is more specific than either.
+  const pinned = art.modes === 'light' ? false : art.modes === 'dark' ? true : dark
+  const colour = ink ?? (art.mono ? (pinned ? '#ffffff' : '#111111') : undefined)
 
   return (
     <div

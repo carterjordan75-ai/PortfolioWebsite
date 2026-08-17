@@ -92,7 +92,6 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
   // The screen's ground. The mark's ink follows the same mode inside
   // XoxoBrandLoader, so a mono loader lands white-on-black or
   // black-on-white without either end having to know about the other.
-  const ground = dark ? '#0a0a0a' : '#ffffff'
 
   // When the current run started, so it can always be allowed to finish.
   const startedAt = useRef(0)
@@ -126,6 +125,13 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
     // animation completing, not the cover.
     startedAt.current = Date.now()
   }, [])
+
+  // A pinned mark brings its own ground with it, so a mark built for
+  // black is shown on black even in light mode. Has to sit below `art`,
+  // which is the whole reason it is not up with the other colour work.
+  const pinnedDark = art && art.modes === 'dark' ? true
+    : art && art.modes === 'light' ? false : dark
+  const ground = pinnedDark ? '#0a0a0a' : '#ffffff'
 
   // Fetch a pick for next time. Deliberately not awaited — a loader that
   // has to be downloaded before it can be shown is a contradiction — so
