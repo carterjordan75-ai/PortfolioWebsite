@@ -641,6 +641,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeBow:.55,eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
  eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeVia:.5,
+ eyeEdge:.68,emos:['neutral'],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -760,7 +761,14 @@ function eyeGeom(i){
  // ring exactly, which is where a cartoon eye goes when it looks hard at
  // something; past that it would eat the letterform and the O stops
  // being an O long before it stops being an eye.
- var room=Math.max(0,(b.w/2 - Math.max(rx,ry))*Math.max(0,Math.min(1,P.eyeEdge)));
+ // Defaulted rather than trusted. This is multiplied into the travel
+ // budget, so an undefined value does not read as "use none of it" — it
+ // reads as NaN, which spreads to the reach, to every glance coordinate,
+ // and out into keyframes full of NaN that the browser drops silently.
+ // The eye simply stops looking around and nothing anywhere reports an
+ // error. That is exactly what happened.
+ var edge=(typeof P.eyeEdge==='number'&&isFinite(P.eyeEdge))?P.eyeEdge:0.68;
+ var room=Math.max(0,(b.w/2 - Math.max(rx,ry))*Math.max(0,Math.min(1,edge)));
  return { cx:cx, cy:cy, r:r, rx:rx, ry:ry, room:room };
 }
 function ring(p){var n=p.length,d='M'+p[0][0].toFixed(1)+','+p[0][1].toFixed(1);
@@ -4533,6 +4541,31 @@ scrub:'Scrub the timeline. Pause first to hold a frame.'
  * target and the one you are already reading when you wonder what a
  * thing does. Runs once at boot; nothing here changes after that.
  */
+/**
+ * Every bound control must have a default.
+ *
+ * A slider in KEYS with no entry in BASE leaves its value undefined
+ * until someone touches it, and undefined in arithmetic is NaN — which
+ * propagates silently, produces keyframes the browser discards without
+ * complaint, and looks exactly like a feature that stopped working. One
+ * missing default cost the eyes their glance entirely, and every static
+ * check passed the whole time because the file was perfectly valid.
+ *
+ * Cheap to check, so it is checked on every load.
+ */
+function checkDefaults(){
+ var missing=KEYS.filter(function(k){ return BASE[k]===undefined });
+ if(missing.length) console.warn('[tuner] controls with no default:', missing.join(', '));
+ var unbound=[].filter.call(document.querySelectorAll('input[type=range]'),function(e){
+  var k=e.dataset.p||e.id;
+  // scrub and zm are preview controls, deliberately not parameters —
+  // neither may reach the export, so neither belongs in KEYS.
+  return k!=='scrub' && k!=='zm' && KEYS.indexOf(k)<0;
+ }).map(function(e){return e.id});
+ if(unbound.length) console.warn('[tuner] sliders not in KEYS:', unbound.join(', '));
+ return {missingDefaults:missing, unboundSliders:unbound};
+}
+
 function applyHelp(){
  [].forEach.call(document.querySelectorAll("input[type=range]"),function(e){
   var k=e.dataset.p||e.id, t=HELP[k]||HELP[e.id];
@@ -4543,7 +4576,7 @@ function applyHelp(){
  });
 }
 
-sync();build();sch();pullSaved();applyHelp();
+sync();build();sch();pullSaved();applyHelp();checkDefaults();
 </script>
 </div>
 </body></html>
