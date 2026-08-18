@@ -1970,10 +1970,14 @@ function emoGaze(em){
  * itself squash and lean carries the rest of the expression, and it
  * reads from across a room where a change inside the counter does not.
  *
- * Applied to every letter, not only the O's: an X that leans with the
- * face it is standing next to belongs to the same creature. The eyes
- * are inside this wrapper, so they come along with it — which is right,
- * an eye set in a squashed head is squashed.
+ * The O's only. An X has no face — deforming it makes the wordmark
+ * itself wobble rather than making a creature emote, and the letters
+ * stop being letters. The eyes are inside this wrapper, so they come
+ * along with the O they belong to, which is right: an eye set in a
+ * squashed head is squashed.
+ *
+ * The whole-mark body movement is a separate thing and still moves
+ * everything — a creature that jumps takes its whole self with it.
  */
 function emoLetterCSS(total){
  if(!EYES()) return '';
@@ -1982,6 +1986,7 @@ function emoLetterCSS(total){
  var S=lookSchedule(1,total); if(!S) return '';
  var out='';
  LCEN.forEach(function(c,li){
+  if(!isO(li)) return;
   var kf='', seen=-1;
   var at=function(p,o){
    p=Math.max(0,Math.min(100,p));
@@ -2758,7 +2763,7 @@ function viewCSS(){
  // parked at its rest pose, and the Resting view showed a mark that
  // never moved while every number said it should.
  var live=['.emoBody'];
- LCEN.forEach(function(c,li){ live.push('.emoL'+li) });
+ LCEN.forEach(function(c,li){ if(isO(li)) live.push('.emoL'+li) });
  B.forEach(function(b,i){ if(b.hp) live.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i,'.eyS'+i);
   glintSet().forEach(function(sh,n){ live.push('.eyGs'+i+'_'+n) }) });
  LCEN.forEach(function(c,li){ live.push('.slr'+li) });
@@ -2800,7 +2805,7 @@ function sleepCSS(){
     // state as much as the eyes do — an expression that bounces once and
     // then holds still is not an expression, it is a thing that happened.
     var sel=['.emoBody'];
-    LCEN.forEach(function(c,li){ sel.push('.emoL'+li) });
+    LCEN.forEach(function(c,li){ if(isO(li)) sel.push('.emoL'+li) });
     B.forEach(function(b,i){ if(b.hp){
      sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i);
      glintSet().forEach(function(sh,n){ sel.push('.eyGs'+i+'_'+n) });
@@ -3233,7 +3238,7 @@ function svgRaw(){
   var lho=lHome(li), lmoves=!!(stv[0]||stv[1]||lho[0]||lho[1]||letterRot(li));
   var _lo=P.letters[li];
   var slpSpin=P.sleep&&((_lo&&_lo.slpRot!==undefined)?_lo.slpRot:(isO(li)?P.slpRotO:P.slpRotX));
-  var wantEmoL=EYES()&&emoOn().length>0&&(P.emoAmt===undefined?1:P.emoAmt)>0;
+  var wantEmoL=isO(li)&&EYES()&&emoOn().length>0&&(P.emoAmt===undefined?1:P.emoAmt)>0;
   var lo=(lmoves?'<g class="lt'+li+'">':'')
    +(slpSpin?'<g class="slr'+li+'">':'')
    +(wantEmoL?'<g class="emoL'+li+'">':'')
