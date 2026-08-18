@@ -232,6 +232,8 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
    <button id="eyOn" onclick="setEyes(1)">Eyes</button></div>
   <div class="row"><label>Look around <b id="veyeLook"></b></label><input id="eyeLook" type="range" min="0" max="1" step=".01"></div>
   <div class="row"><label>Reach to rim <b id="veyeEdge"></b></label><input id="eyeEdge" type="range" min="0" max="1" step=".02"></div>
+  <div class="row"><label>Lid curve <b id="veyeLidR"></b></label><input id="eyeLidR" type="range" min="1.05" max="6" step=".05"></div>
+  <div class="row"><label>Lid at rest <b id="veyeLidRest"></b></label><input id="eyeLidRest" type="range" min="0" max=".6" step=".02"></div>
   <div class="row"><label>Emotions</label></div>
   <div class="row" id="emopicker"></div>
   <div class="row"><label>Expression strength <b id="vemoAmt"></b></label><input id="emoAmt" type="range" min="0" max="1.6" step=".05"></div>
@@ -641,7 +643,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeBow:.55,eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
  eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeVia:.5,
- eyeEdge:.68,emos:['neutral'],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
+ eyeEdge:.68,eyeLidR:1.9,eyeLidRest:0,emos:['neutral'],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -2098,6 +2100,60 @@ function emoAt(k){
  * pair. Angling them both the same way makes the face look askew rather
  * than cross, and it is the single strongest cue on the reference sheet.
  */
+
+/**
+ * The lids, built the way a cartoon eye is built.
+ *
+ * A lid OCCLUDES the eye; it does not shrink it. The previous version
+ * squashed the whole counter, which makes the eye smaller and leaves a
+ * sliver with no pupil in it — the recording of "tired" is a curved line
+ * with no eye behind it, because there was no eye left. A real heavy lid
+ * covers the top third and the eye underneath stays exactly as big as it
+ * was, pupil and all. That difference is most of what reads as character.
+ *
+ * Each lid is a large disc of ink sliding across. A circle is smooth
+ * everywhere by definition, so the lid edge can never crease however far
+ * it travels — and its curvature is the lid's curvature, which is a real
+ * expressive control: a flat lid is bored, a strongly curved one is
+ * cartoonish and wide awake.
+ *
+ * They sit OUTSIDE the pupil's transforms on purpose. A lid belongs to
+ * the face, not to the eyeball: an eye looking left keeps the same lid,
+ * and a pupil darting under a steady lid is exactly the read wanted.
+ */
+function lidGeom(i, cover, fromTop, tiltDeg){
+ var g=eyeGeom(i); if(!g) return null;
+ var r=g.r*Math.max(P.eyeSize,0.2), R=r*Math.max(1.05,P.eyeLidR);
+ // Travel measured by where the lid's own edge sits: at 0 it is level
+ // with the far side of the eye and covers nothing, at 1 it has crossed
+ // the whole eye.
+ var edge=fromTop ? (g.cy-r+cover*2*r) : (g.cy+r-cover*2*r);
+ var cy=fromTop ? edge-R : edge+R;
+ var a=(tiltDeg||0)*Math.PI/180, dy=cy-g.cy;
+ return { cx:g.cx + (-dy)*Math.sin(a), cy:g.cy + dy*Math.cos(a), r:R, eye:g, er:r };
+}
+
+function lidDiscs(i){
+ var g=eyeGeom(i); if(!g) return '';
+ // Drawn at full cover and translated back out of the way, so the
+ // animation is a plain transform on a group — cheap, interpolates
+ // exactly, and never touches the geometry.
+ var a=lidGeom(i,1,true,0), b=lidGeom(i,1,false,0);
+ if(!a||!b) return '';
+ return '<g class="eyTop'+i+'"><circle fill="#fff" cx="'+a.cx.toFixed(1)+'" cy="'
+   +a.cy.toFixed(1)+'" r="'+a.r.toFixed(1)+'"/></g>'
+  +'<g class="eyBot'+i+'"><circle fill="#fff" cx="'+b.cx.toFixed(1)+'" cy="'
+   +b.cy.toFixed(1)+'" r="'+b.r.toFixed(1)+'"/></g>';
+}
+
+/** How far each lid is drawn back from full cover, in user units. */
+function lidOffset(i, cover, fromTop){
+ var g=eyeGeom(i); if(!g) return 0;
+ var r=g.r*Math.max(P.eyeSize,0.2);
+ // full cover is 1; at `cover` it needs to sit (1-cover)*2r away
+ return (fromTop?-1:1)*(1-Math.max(0,Math.min(1,cover)))*2*r;
+}
+
 function lidPath(i, k, em){
  var b=B[i], g=eyeGeom(i); if(!b.hp||!g) return '';
  var r=g.r||1, bow=P.eyeBow;
@@ -2107,10 +2163,11 @@ function lidPath(i, k, em){
  // both rather than the same way on both.
  var side=(g.cx<MIDX)?1:-1;
  var tilt=(em.tilt||0)*side*amt*Math.PI/180;
- // Each half of the eye is squashed toward the middle. A lid coming down
- // flattens the top half; a lid coming up flattens the bottom.
- var top=1-(em.lidTop||0)*amt;
- var bot=1-(em.lidBot||0)*amt;
+ // No lid squashing here any more — lidCSS covers the eye with discs
+ // instead, which is what a lid actually does. What is left is the
+ // pupil's own proportion for this face, which is the eyeball changing
+ // rather than being covered.
+ var top=1, bot=1;
  var ca=Math.cos(tilt), sa=Math.sin(tilt);
  var pts=b.hp.map(function(q){
   var dx=q[0]-g.cx, dy=q[1]-g.cy;
@@ -2270,71 +2327,103 @@ function pupilScaleCSS(i, total, g){
   +(wake?'':'')+';animation-iteration-count:1}';
 }
 
-function eyeBlinkCSS(i, total){
+
+/**
+ * How the lids move: the blink, and the face's resting lid.
+ *
+ * Four things borrowed from how blinks are actually animated, none of
+ * which the squash version could express:
+ *
+ *  Asymmetry.   The close is roughly twice as fast as the open. An even
+ *               blink reads mechanical; this is the single biggest cue.
+ *  Anticipation. The lid lifts a little before it drops. A few frames,
+ *               barely visible on its own, and the drop lands much harder
+ *               for it.
+ *  Overshoot.   Opening, the lid goes slightly past its resting height
+ *               and settles back. Eyelids have mass.
+ *  Offset.     The lower lid moves less and lags the upper. They are not
+ *               a pair of shutters closing on a line.
+ *
+ * The lids carry the whole blink now, so the pupil is left alone —
+ * it stays round and full behind them, which is what lets the eye still
+ * read as an eye when it is three-quarters covered.
+ */
+function lidCSS(i, total){
  var g=eyeGeom(i); if(!g||!B[i].hp) return '';
- var S=lookSchedule(i,total);
- // Which face is worn when. A glance and an expression change together —
- // the eye settles somewhere new wearing a new face, which is how a
- // reaction reads. Changing them independently makes two things happen
- // at once for no reason and neither lands.
- var emOf=function(t){
-  if(!S) return emoAt(0);
-  var k=Math.floor((t/total*100)/Math.max(0.01,S.span));
-  return emoAt(k);
- };
- var openAt=function(em){ return 'd:path("'+lidPath(i,1,em)+'")' };
  var times=blinkTimes(i,total);
+ var S=lookSchedule(i,total);
+ var amt=(P.emoAmt===undefined?1:P.emoAmt);
+ var rest=Math.max(0,P.eyeLidRest||0);
  var pct=function(ms){ return Math.max(0,Math.min(100,ms/total*100)) };
  var ez=Math.max(0,Math.min(1,P.eyeEase));
- var land='cubic-bezier(0.2,'+(0.5+0.42*ez).toFixed(3)+',0.25,1)';
 
- // Every moment the lid has to be somewhere, from both causes at once:
- // an expression arriving, and a blink running. Built as one sorted list
- // rather than two passes, because a blink landing inside an expression
- // change needs the shape of BOTH, and two independent keyframe sets on
- // the same property would simply overwrite each other.
- var stops=[];
- var push=function(p,d,e){ stops.push({p:Math.max(0,Math.min(100,p)), d:d, e:e}) };
- push(0, openAt(emOf(0)), null);
- if(S && emoOn().length>1){
-  for(var k=1;k<=S.n;k++){
-   var tAt=k*S.span;
-   // arrives with the glance, eased so the face changes rather than cuts
-   push(tAt-S.moveP, openAt(emoAt(k-1)), 'cubic-bezier(.4,0,.3,1)');
-   push(tAt-S.moveP+S.setP, openAt(emoAt(k)), null);
+ // The resting cover for a face: its lid setting plus the global rest.
+ var coverOf=function(em,fromTop){
+  var base=fromTop?rest:0;
+  return Math.max(0,Math.min(1, base + (fromTop?(em.lidTop||0):(em.lidBot||0))*amt ));
+ };
+ var emAt=function(t){
+  if(!S) return emoAt(0);
+  return emoAt(Math.floor((t/total*100)/Math.max(0.01,S.span)));
+ };
+
+ var out='';
+ [true,false].forEach(function(fromTop){
+  var cls=fromTop?'eyTop':'eyBot';
+  var stops=[], seen=-1;
+  var push=function(p,cover,e){
+   stops.push({p:Math.max(0,Math.min(100,p)), y:lidOffset(i,cover,fromTop), e:e});
+  };
+  push(0, coverOf(emAt(0),fromTop), null);
+  // the face's resting lid arrives with its glance
+  if(S && emoOn().length>1) for(var k=1;k<=S.n;k++){
+   push(k*S.span-S.moveP, coverOf(emoAt(k-1),fromTop), 'cubic-bezier(.4,0,.3,1)');
+   push(k*S.span-S.moveP+S.setP, coverOf(emoAt(k),fromTop), null);
   }
- }
- times.forEach(function(T){
-  var em=emOf(T.t);
-  var a=pct(T.t-T.close), b=pct(T.t-T.close*0.45), c=pct(T.t), d=pct(T.t+T.shut),
-      e=pct(T.t+T.shut+T.open*0.55), f=pct(T.t+T.shut+T.open);
-  push(a, openAt(em), 'cubic-bezier(.35,0,.65,.5)');
-  push(b, 'd:path("'+lidPath(i,0.46,em)+'")', 'cubic-bezier(.45,0,.8,.7)');
-  push(c, 'd:path("'+lidPath(i,P.eyeShut,em)+'")', null);
-  // Slow out of the shut, then gathering pace — the ramp — and only
-  // then the eased landing above.
-  push(d, 'd:path("'+lidPath(i,P.eyeShut,em)+'")', 'cubic-bezier(.7,0,.85,.35)');
-  push(e, 'd:path("'+lidPath(i,0.40,em)+'")', land);
-  push(f, openAt(em), null);
- });
- push(100, openAt(emOf(total)), null);
+  times.forEach(function(T){
+   var em=emAt(T.t), base=coverOf(em,fromTop);
+   // the lower lid does less of the work and starts a little later
+   var reach=fromTop?1:0.42, lag=fromTop?0:T.close*0.22;
+   var shut=Math.max(base, base+(1-base)*reach*(1-P.eyeShut));
+   push(pct(T.t-T.close-T.close*0.55+lag), base, 'cubic-bezier(.3,0,.7,1)');
+   // anticipation: a small lift before the drop
+   push(pct(T.t-T.close+lag), Math.max(0,base-0.07*reach), 'cubic-bezier(.5,0,.75,.9)');
+   push(pct(T.t+lag), shut, null);
+   push(pct(T.t+T.shut+lag), shut, 'cubic-bezier(.25,0,.5,.65)');
+   // overshoot: opens a little past its rest, then settles
+   push(pct(T.t+T.shut+T.open*0.78+lag), Math.max(0,base-0.06*reach),
+        'cubic-bezier(0.2,'+(0.5+0.42*ez).toFixed(3)+',0.25,1)');
+   push(pct(T.t+T.shut+T.open+lag), base, null);
+  });
+  push(100, coverOf(emAt(total),fromTop), null);
 
- stops.sort(function(x,y){ return x.p-y.p });
- // A blink and an expression can want the same instant. The blink wins:
- // it is the bigger movement and the expression has the rest of the
- // glance to arrive in.
- var kf='', seen=-1;
- stops.forEach(function(st){
-  if(st.p<=seen) return;
-  seen=st.p;
-  kf+=st.p.toFixed(2)+'%{'+st.d+(st.e?';animation-timing-function:'+st.e:'')+'}';
+  stops.sort(function(a,b){ return a.p-b.p });
+  var kf='';
+  stops.forEach(function(st){
+   if(st.p<=seen) return; seen=st.p;
+   kf+=st.p.toFixed(2)+'%{transform:translateY('+st.y.toFixed(2)+'px)'
+    +(st.e?';animation-timing-function:'+st.e:'')+'}';
+  });
+  out+='@keyframes '+cls+i+'{'+kf+'}'
+   +'.'+cls+i+'{transform-box:view-box;animation:'+cls+i+' '+Math.round(total)+'ms linear both}';
  });
- return '@keyframes eyP'+i+'{'+kf+'}'
-  +'.eyP'+i+'{animation:eyP'+i+' '+Math.round(total)+'ms linear both}'
-  // size and oval are a plain transform on the group around it — they do
-  // not change over the run, so they have no business in the keyframes
-  +pupilScaleCSS(i,total,g);
+ return out;
 }
+
+function eyeBlinkCSS(i, total){
+ var g=eyeGeom(i); if(!g||!B[i].hp) return '';
+ // The pupil holds its shape now. It used to carry the blink by
+ // squashing, which shrinks the eye rather than covering it and leaves a
+ // sliver with nothing recognisable inside — see lidCSS. The lids do the
+ // blinking; this stays round and full behind them, which is what lets
+ // a three-quarters-covered eye still read as an eye.
+ //
+ // Only the expression's tilt is left here, because that is the pupil
+ // turning rather than closing.
+ var em=emoAt(0);
+ return '.eyP'+i+'{d:path("'+lidPath(i,1,em)+'")}';
+}
+
 
 /**
  * The catchlight's shape.
@@ -2584,7 +2673,7 @@ function eyesCSS(total, step){
  // what "the numbers mean nothing" was.
  var span=P.sleep?Math.max(600,P.eyeCycle):total;
  B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,span)+eyeDomeCSS(i,span)
-  +eyeBlinkCSS(i,span)+eyeGlintCSS(i,span)+glintFadeCSS(i,span)
+  +eyeBlinkCSS(i,span)+lidCSS(i,span)+eyeGlintCSS(i,span)+glintFadeCSS(i,span)
   +emoPupilCSS(i,span)+eyeUprightCSS(i,total,step) } });
  return out;
 }
@@ -2788,7 +2877,7 @@ function viewCSS(){
  // parked at its rest pose, and the Resting view showed a mark that
  // never moved while every number said it should.
  var live=[];
- B.forEach(function(b,i){ if(b.hp) live.push('.eyM'+i) });
+ B.forEach(function(b,i){ if(b.hp) live.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i) });
  LCEN.forEach(function(c,li){ if(isO(li)) live.push('.emoL'+li) });
  B.forEach(function(b,i){ if(b.hp) live.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i,'.eyS'+i);
   glintSet().forEach(function(sh,n){ live.push('.eyGs'+i+'_'+n) }) });
@@ -2831,7 +2920,7 @@ function sleepCSS(){
     // state as much as the eyes do — an expression that bounces once and
     // then holds still is not an expression, it is a thing that happened.
     var sel=[];
-    B.forEach(function(b,i){ if(b.hp) sel.push('.eyM'+i) });
+    B.forEach(function(b,i){ if(b.hp) sel.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i) });
     LCEN.forEach(function(c,li){ if(isO(li)) sel.push('.emoL'+li) });
     B.forEach(function(b,i){ if(b.hp){
      sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i);
@@ -3293,13 +3382,18 @@ function svgRaw(){
      +'<rect x="-600" y="-800" width="2200" height="2000" fill="#fff"/>'
      +'<g class="eyR'+i+'"><g class="eyS'+i+'"><g class="eyM'+i+'">'
      +'<g class="eyL'+i+'"><g class="eyD'+i+'"><g class="eyB'+i+'">'
-     // black is cut away: this is the pupil, and its own path animates
-     // so the lid closes along a curve
+     // black is cut away: the pupil, at full size and staying that way
      +'<path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000"/>'
      // white is kept: a piece of ink left standing inside the pupil,
      // which reads as a catchlight
      +(P.eyeGlint>0 ? '<g class="eyG'+i+'">'+glintLayers(i)+'</g>' : '')
-     +'</g></g></g></g></g></g></mask>';
+     +'</g></g>'
+     // The lids, OUTSIDE the pupil's own transforms so they do not move
+     // with the glance — a lid belongs to the face, not to the eyeball,
+     // and an eye looking left keeps the same lid. White is ink, so each
+     // disc covers whatever it overlaps.
+     +lidDiscs(i)
+     +'</g></g></g></g></mask>';
     batt+=' mask="url(#ey'+i+')"';
    }
    if(lp(i,'lgw')>0) for(var q=0;q<P.lgbris;q++){
@@ -4009,7 +4103,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeBow','eyeShut','eyeSpeed','eyeGlint',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','emoAmt','emoMove','emoSpeed','emoReps','emoLead',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','eyeLidR','eyeLidRest','emoAmt','emoMove','emoSpeed','emoReps','emoLead',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
@@ -4022,7 +4116,7 @@ function sync(){syncSleep();drawGlints();drawEmos();drawSleepPickers();
  });
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
 function labels(){
- var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeEdge:2,emoAmt:2,emoMove:2,emoSpeed:2,emoLead:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
+ var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeEdge:2,eyeLidR:2,eyeLidRest:2,emoAmt:2,emoMove:2,emoSpeed:2,emoLead:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
   lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
@@ -4423,6 +4517,8 @@ eyeSwell:'Size change while moving. Positive swells, negative shrinks. 0 keeps i
 eyeVia:'Returns to centre and pauses between glances instead of sliding corner to corner. Higher holds longer.',
 eyeSeed:'A different set of glances from the same settings. Nothing else changes.',
 eyeEdge:'How much of the clear space between pupil and ring the eye may use. At 1 it reaches the inside of the ring.',
+eyeLidR:'Curvature of the lid edge. Low is a tight arc and reads cartoonish; high is nearly straight and reads deadpan.',
+eyeLidRest:'How low the upper lid sits when the eye is otherwise open. A little is knowing; a lot is half asleep.',
 emoAmt:'How far the expressions push. 0 holds a neutral face whichever are selected.',
 emoMove:'How far the pupils move with each face — happy bounces, sad sinks, angry trembles. 0 keeps them still.',
 emoSpeed:'How quickly that movement plays. Higher gets it over with early and leaves the eye settled for the rest of the glance.',
