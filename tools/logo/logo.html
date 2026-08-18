@@ -235,6 +235,7 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Emotions</label></div>
   <div class="row" id="emopicker"></div>
   <div class="row"><label>Expression strength <b id="vemoAmt"></b></label><input id="emoAmt" type="range" min="0" max="1.6" step=".05"></div>
+  <div class="row"><label>Body movement <b id="vemoMove"></b></label><input id="emoMove" type="range" min="0" max="2.5" step=".05"></div>
   <p class="note">Pick as many as you like — the eyes wear them in turn, a new
    face on each glance. More than one is what stops the loop reading as a loop.
    Each changes the lids, the pupil, the catchlight and where it tends to look.</p>
@@ -1679,12 +1680,12 @@ function eyeLookCSS(i, total){
  var tr=function(x,y){ return 'transform:translate('+x.toFixed(1)+'px,'+y.toFixed(1)+'px)' };
  var kf='0%{'+tr(0,0)+'}', prev=[0,0];
  for(var k=1;k<=n;k++){
-  // Each face has somewhere it tends to look — sad downward, suspicious
-  // off to one side. Added to the glance rather than replacing it, so
-  // the randomised targets still do the work and the expression only
-  // leans them.
+  // Each face carries a gaze — where it looks while it is worn. Added to
+  // the glance rather than replacing it, so the randomised targets still
+  // do the work and the expression only leans them.
   var em=emoAt(k), amt=(P.emoAmt===undefined?1:P.emoAmt);
-  var bias=[(em.look[0]||0)*T.reach*amt, (em.look[1]||0)*T.reach*amt];
+  var gz=emoGaze(em);
+  var bias=[(gz[0][1]||0)*T.reach*amt, (gz[0][2]||0)*T.reach*amt];
   var pos=[T.pts[k][0]+bias[0], T.pts[k][1]+bias[1]], t0=k*span;
   // two creep stops through the hold, so it is never parked
   var c1=[prev[0]+(rnd(T.seed+k*7)-0.5)*T.reach*0.09, prev[1]+(rnd(T.seed+k*17)-0.5)*T.reach*0.09];
@@ -1703,6 +1704,20 @@ function eyeLookCSS(i, total){
   }
   kf+=at(t0-moveP+overP).toFixed(2)+'%{'+tr(pos[0]*ov,pos[1]*ov)+';animation-timing-function:cubic-bezier(.18,.72,.28,1)}';
   kf+=at(t0-moveP+setP).toFixed(2)+'%{'+tr(pos[0],pos[1])+';animation-timing-function:linear}';
+  // The rest of the gaze track plays out across the hold — a face that
+  // drops its eyes and then looks back up needs the time between
+  // glances to do it in, which is exactly the stretch that used to be
+  // dead air.
+  if(gz.length>2){
+   var h0=t0-moveP+setP, h1=(k<n?(k+1)*span-moveP-span*0.28:100-homeP);
+   var hs=Math.max(0.01,h1-h0);
+   for(var q=1;q<gz.length;q++){
+    var gp=[T.pts[k][0]+(gz[q][1]||0)*T.reach*amt, T.pts[k][1]+(gz[q][2]||0)*T.reach*amt];
+    kf+=at(h0+hs*gz[q][0]).toFixed(2)+'%{'+tr(gp[0],gp[1])
+     +';animation-timing-function:cubic-bezier(.4,0,.3,1)}';
+    if(q===gz.length-1) pos=gp;
+   }
+  }
   prev=pos;
  }
  // Coming home is a glance like any other, and gets the same shape: a
@@ -1874,6 +1889,104 @@ var EMOTIONS={
  dazed:     {lidTop:.08, lidBot:.08, tilt:0,   sx:1.30, sy:1.30, glint:'crescent', gs:1.0,  look:[0,0],     hold:1.3}
 };
 var EMO_LIST=['neutral','happy','angry','sad','surprised','sleepy','suspicious','dazed'];
+
+
+/**
+ * What the whole mark does while a face is worn.
+ *
+ * The lids and the pupil say what the expression IS; this is the body
+ * language that sells it. A face on a still mark reads as a drawing of
+ * an emotion — the same face on something that bounces, or sinks, or
+ * cannot keep still, reads as a creature having one.
+ *
+ * Each returns stops as fractions of that face's slice, so the same
+ * recipe works whether it has half a second or five. Written 0 and 1
+ * identical, because a face has to hand the mark back where it found it
+ * or the next one starts from somewhere unpredictable and the whole
+ * sequence walks off across the stage.
+ *
+ * `a` is the expression strength, so all of it turns down together.
+ */
+var EMO_MOVE={
+ // pleased and cannot keep still: two bounces, the second smaller
+ happy:function(a){ return [[0,0,0,0],[.16,0,-3.6*a,0],[.30,0,0,0],
+   [.44,0,-2.0*a,0],[.56,0,0,0],[1,0,0,0]] },
+ // the weight goes out of it
+ sad:function(a){ return [[0,0,0,0],[.55,0,2.2*a,0],[1,0,0,0]] },
+ // a tremble it is trying to hold in
+ angry:function(a){ return [[0,0,0,0],[.10,-1.1*a,0,0],[.18,1.1*a,0,0],
+   [.26,-.8*a,0,0],[.34,.8*a,0,0],[.42,0,0,0],[1,0,0,0]] },
+ // a jolt up, then the recoil
+ surprised:function(a){ return [[0,0,0,0],[.10,0,-5.4*a,0],[.22,0,1.4*a,0],
+   [.34,0,-.5*a,0],[.46,0,0,0],[1,0,0,0]] },
+ // sinking, and a slow lean with it
+ sleepy:function(a){ return [[0,0,0,0],[.5,0,2.6*a,1.2*a],[1,0,0,0]] },
+ // leaning in to get a better look
+ suspicious:function(a){ return [[0,0,0,0],[.4,-2.4*a,0,-1.6*a],[.85,-2.4*a,0,-1.6*a],[1,0,0,0]] },
+ // a slow wobble that never quite settles
+ dazed:function(a){ return [[0,0,0,0],[.25,1.6*a,-.8*a,2.2*a],[.5,0,.6*a,0],
+   [.75,-1.6*a,-.8*a,-2.2*a],[1,0,0,0]] },
+ neutral:function(){ return [[0,0,0,0],[1,0,0,0]] }
+};
+
+/**
+ * Where the pupil goes while a face is worn, as fractions of its reach.
+ *
+ * A single bias makes an expression stare. A short sequence gives it an
+ * attitude: sad drops its gaze and then looks back up from under the
+ * lid, which is the whole of that expression and cannot be said with one
+ * position.
+ */
+var EMO_GAZE={
+ sad:[[0,0,.42],[.45,0,-.30],[1,0,-.22]],
+ suspicious:[[0,.55,.05],[.5,.55,.05],[.7,-.5,.05],[1,-.5,.05]],
+ sleepy:[[0,0,.26],[.6,-.18,.30],[1,0,.26]],
+ dazed:[[0,-.3,-.1],[.35,.3,.12],[.7,-.2,.14],[1,-.3,-.1]],
+ surprised:[[0,0,-.12],[.2,0,-.12],[1,0,-.05]]
+};
+
+/** The gaze track for a face, falling back to its single resting bias. */
+function emoGaze(em){
+ var name=Object.keys(EMOTIONS).filter(function(n){return EMOTIONS[n]===em})[0];
+ return EMO_GAZE[name] || [[0,em.look[0],em.look[1]],[1,em.look[0],em.look[1]]];
+}
+
+/**
+ * The body movement, over the whole run.
+ *
+ * One keyframe set covering every face in turn, because they share an
+ * element — emitting one animation per face would mean the last one
+ * written wins and the rest never play.
+ */
+function emoBodyCSS(total){
+ if(!EYES()) return '';
+ var on=emoOn(); if(!on.length) return '';
+ var S=lookSchedule(1,total); if(!S) return '';
+ var a=(P.emoAmt===undefined?1:P.emoAmt)*(P.emoMove===undefined?1:P.emoMove);
+ if(a<=0) return '';
+ var kf='', seen=-1;
+ var at=function(p,x,y,rot){
+  p=Math.max(0,Math.min(100,p));
+  if(p<=seen) return; seen=p;
+  kf+=p.toFixed(2)+'%{transform:translate('+x.toFixed(2)+'px,'+y.toFixed(2)+'px) rotate('
+   +rot.toFixed(2)+'deg)}';
+ };
+ at(0,0,0,0);
+ for(var k=1;k<=S.n;k++){
+  var em=emoAt(k);
+  var name=Object.keys(EMOTIONS).filter(function(n){return EMOTIONS[n]===em})[0];
+  var fn=EMO_MOVE[name]||EMO_MOVE.neutral;
+  // the slice this face owns: from landing the glance to leaving it
+  var t0=k*S.span-S.moveP+S.setP, t1=(k+1)*S.span-S.moveP;
+  if(k===S.n) t1=100-S.homeP;
+  var span=Math.max(0.01,t1-t0);
+  fn(a).forEach(function(st){ at(t0+span*st[0], st[1], st[2], st[3]) });
+ }
+ at(100,0,0,0);
+ return '@keyframes emoBody{'+kf+'}'
+  +'.emoBody{transform-box:view-box;transform-origin:'+markOrigin()[0].toFixed(1)+'px '
+  +markOrigin()[1].toFixed(1)+'px;animation:emoBody '+Math.round(total)+'ms linear both}';
+}
 
 /** The faces actually in play, always at least one. */
 function emoOn(){
@@ -2574,8 +2687,14 @@ function eyeWakeCSS(){
  */
 function viewCSS(){
  if(!P.sleep || P.slpView==='full') return '';
- var live=[];
- B.forEach(function(b,i){ if(b.hp) live.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i,'.eyS'+i) });
+ // Everything that belongs to the RESTING state and must keep running
+ // when the arrival is parked. The body movement is part of the
+ // expression, so it belongs here — left out, it matched `.xl *`, got
+ // parked at its rest pose, and the Resting view showed a mark that
+ // never moved while every number said it should.
+ var live=['.emoBody'];
+ B.forEach(function(b,i){ if(b.hp) live.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i,'.eyS'+i);
+  glintSet().forEach(function(sh,n){ live.push('.eyGs'+i+'_'+n) }) });
  LCEN.forEach(function(c,li){ live.push('.slr'+li) });
 
  if(P.slpView==='in')
@@ -2611,9 +2730,15 @@ function sleepCSS(){
   // counter-rotation that holds the eye level against the entrance has
   // to hold, not rewind.
   +(function(){
-    var sel=[];
-    B.forEach(function(b,i){ if(b.hp) sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i) });
-    return sel.length?sel.join(',')+'{animation-iteration-count:infinite}':'';
+    // The body movement and the catchlight fades belong to the resting
+    // state as much as the eyes do — an expression that bounces once and
+    // then holds still is not an expression, it is a thing that happened.
+    var sel=['.emoBody'];
+    B.forEach(function(b,i){ if(b.hp){
+     sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i);
+     glintSet().forEach(function(sh,n){ sel.push('.eyGs'+i+'_'+n) });
+    }});
+    return sel.join(',')+'{animation-iteration-count:infinite}';
    })()
   // The eyes are not optional here. Whatever the mark does or does not
   // do around them, a face with still eyes reads as switched off — so
@@ -2666,6 +2791,7 @@ function css(){
  out+=startCSS(step)+tiltCSS(step)+extrudeCSS(step)+jiggleCSS(step);
  out+=scoreCSS(totalRun());
  out+=eyesCSS(totalRun(),step);
+ out+=emoBodyCSS(totalRun());
 
  // One shared sweep: offset 1000 parks the dash just before the path
  // start, 0 lays the whole length down. Marks made of separate strokes
@@ -3002,7 +3128,11 @@ function svgRaw(){
   +LETTERS.map(function(L,li){var sf=lp(L[0],'lgSoft');
      return sf>0?'<filter id="soft'+li+'" x="-40%" y="-40%" width="180%" height="180%">'
       +'<feGaussianBlur stdDeviation="'+(sf*30).toFixed(1)+'"/></filter>':''}).join('')
-  +'</defs>'+(P.jitter>0?'<g class="jit">':'');
+  // A group the expression can move the whole mark with. Separate from
+  // .jit and from .xl because both of those are already animated, and a
+  // second `animation` on the same element silently replaces the first.
+  +'</defs>'+(emoOn().length&&EYES()?'<g class="emoBody">':'')
+  +(P.jitter>0?'<g class="jit">':'');
  var defs='';
 
  // back halves of every arc, behind the letters
@@ -3161,7 +3291,7 @@ function svgRaw(){
  // not woven into it.
  var sp=scorePath();
  if(sp) s+='<path class="sc" pathLength="1000" d="'+sp+'"/>';
- return s+(P.jitter>0?'</g>':'')+'</svg>';
+ return s+(P.jitter>0?'</g>':'')+((emoOn().length&&EYES())?'</g>':'')+'</svg>';
 }
 
 
@@ -3781,7 +3911,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeBow','eyeShut','eyeSpeed','eyeGlint',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','emoAmt',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','emoAmt','emoMove',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
@@ -3794,7 +3924,7 @@ function sync(){syncSleep();drawGlints();drawEmos();drawSleepPickers();
  });
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
 function labels(){
- var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeEdge:2,emoAmt:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
+ var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeEdge:2,emoAmt:2,emoMove:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
   lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
@@ -4196,6 +4326,7 @@ eyeVia:'Returns to centre and pauses between glances instead of sliding corner t
 eyeSeed:'A different set of glances from the same settings. Nothing else changes.',
 eyeEdge:'How much of the clear space between pupil and ring the eye may use. At 1 it reaches the inside of the ring.',
 emoAmt:'How far the expressions push. 0 holds a neutral face whichever are selected.',
+emoMove:'How much the whole mark moves with each face — happy bounces, sad sinks, angry trembles. 0 keeps it still.',
 slpRotX:'How far the X letterforms turn over one ambient loop. Per-letter overrides beat this.',
 slpRotO:'How far the O letterforms turn over one ambient loop. The eyes stay level either way.',
 eyeGlint:'Size of the catchlight. 0 removes it.',
