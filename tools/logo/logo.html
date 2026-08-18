@@ -1875,18 +1875,22 @@ function eyeDomeCSS(i, total){
  *  hold    how long it dwells, relative to the others
  */
 var EMOTIONS={
- neutral:   {lidTop:0,   lidBot:0,   tilt:0,   sx:1,    sy:1,    glint:'dot',      gs:1,    look:[0,0],     hold:1},
- happy:     {lidTop:0,   lidBot:.44, tilt:0,   sx:1.04, sy:.94,  glint:'pair',     gs:1.1,  look:[0,-.12],  hold:1.1},
- angry:     {lidTop:.40, lidBot:.06, tilt:17,  sx:.98,  sy:.88,  glint:'dot',      gs:.7,   look:[0,.14],   hold:1.2},
- sad:       {lidTop:.30, lidBot:0,   tilt:-15, sx:.96,  sy:1.02, glint:'oval',     gs:.9,   look:[0,.34],   hold:1.5},
+ //  o        what the LETTERFORM does: [scaleX, scaleY, lean degrees].
+ //           The counter alone can only say so much before it stops
+ //           being smooth; letting the O itself squash and lean says the
+ //           rest, and reads from much further away.
+ neutral:   {lidTop:0,   lidBot:0,   tilt:0,   sx:1,    sy:1,    glint:'dot',      gs:1,    look:[0,0],     hold:1,   o:[1,1,0]},
+ happy:     {lidTop:0,   lidBot:.44, tilt:0,   sx:1.04, sy:.94,  glint:'pair',     gs:1.1,  look:[0,-.12],  hold:1.1,  o:[1.06,.93,0]},
+ angry:     {lidTop:.40, lidBot:.06, tilt:17,  sx:.98,  sy:.88,  glint:'dot',      gs:.7,   look:[0,.14],   hold:1.2,  o:[1.02,.94,7]},
+ sad:       {lidTop:.30, lidBot:0,   tilt:-15, sx:.96,  sy:1.02, glint:'oval',     gs:.9,   look:[0,.34],   hold:1.5,  o:[.94,1.06,-5]},
  // Startled is a PINPRICK, not a bigger pupil. The counter is the dark
  // of the eye, so shrinking it leaves a wide white O with a dot in it —
  // which is the shocked eye on the reference sheet, and unmistakable
  // next to neutral. Making it larger only read as "slightly rounder".
- surprised: {lidTop:-.10,lidBot:-.10,tilt:0,   sx:.52,  sy:.52,  glint:'dot',      gs:.9,   look:[0,-.05],  hold:.7},
- sleepy:    {lidTop:.58, lidBot:.06, tilt:5,   sx:.90,  sy:.84,  glint:'',         gs:0,    look:[0,.24],   hold:1.9},
- suspicious:{lidTop:.46, lidBot:.24, tilt:9,   sx:.84,  sy:.72,  glint:'pill',     gs:.8,   look:[.55,.05], hold:1.6},
- dazed:     {lidTop:.08, lidBot:.08, tilt:0,   sx:1.30, sy:1.30, glint:'crescent', gs:1.0,  look:[0,0],     hold:1.3}
+ surprised: {lidTop:-.10,lidBot:-.10,tilt:0,   sx:.52,  sy:.52,  glint:'dot',      gs:.9,   look:[0,-.05],  hold:.7,  o:[1.10,1.12,0]},
+ sleepy:    {lidTop:.58, lidBot:.06, tilt:5,   sx:.90,  sy:.84,  glint:'',         gs:0,    look:[0,.24],   hold:1.9,  o:[1.05,.86,3]},
+ suspicious:{lidTop:.46, lidBot:.24, tilt:9,   sx:.84,  sy:.72,  glint:'pill',     gs:.8,   look:[.55,.05], hold:1.6,  o:[1.08,.82,5]},
+ dazed:     {lidTop:.08, lidBot:.08, tilt:0,   sx:1.30, sy:1.30, glint:'crescent', gs:1.0,  look:[0,0],     hold:1.3,  o:[1.04,1.04,0]}
 };
 var EMO_LIST=['neutral','happy','angry','sad','surprised','sleepy','suspicious','dazed'];
 
@@ -1958,6 +1962,49 @@ function emoGaze(em){
  * element — emitting one animation per face would mean the last one
  * written wins and the rest never play.
  */
+/**
+ * What the letterform does while a face is worn.
+ *
+ * The counter can only say so much before it stops being smooth — past a
+ * point, squashing it harder just makes a thinner sliver. Letting the O
+ * itself squash and lean carries the rest of the expression, and it
+ * reads from across a room where a change inside the counter does not.
+ *
+ * Applied to every letter, not only the O's: an X that leans with the
+ * face it is standing next to belongs to the same creature. The eyes
+ * are inside this wrapper, so they come along with it — which is right,
+ * an eye set in a squashed head is squashed.
+ */
+function emoLetterCSS(total){
+ if(!EYES()) return '';
+ var amt=(P.emoAmt===undefined?1:P.emoAmt);
+ if(amt<=0) return '';
+ var S=lookSchedule(1,total); if(!S) return '';
+ var out='';
+ LCEN.forEach(function(c,li){
+  var kf='', seen=-1;
+  var at=function(p,o){
+   p=Math.max(0,Math.min(100,p));
+   if(p<=seen) return; seen=p;
+   var sx=1+((o[0]||1)-1)*amt, sy=1+((o[1]||1)-1)*amt, rot=(o[2]||0)*amt;
+   kf+=p.toFixed(2)+'%{transform:scale('+sx.toFixed(3)+','+sy.toFixed(3)+') rotate('
+    +rot.toFixed(2)+'deg)}';
+  };
+  var base=emoAt(0).o||[1,1,0];
+  at(0, base);
+  for(var k=1;k<=S.n;k++){
+   var prev=emoAt(k-1).o||[1,1,0], now=emoAt(k).o||[1,1,0];
+   at(k*S.span-S.moveP, prev);
+   at(k*S.span-S.moveP+S.setP, now);
+  }
+  at(100, emoAt(S.n).o||[1,1,0]);
+  out+='@keyframes emoL'+li+'{'+kf+'}'
+   +'.emoL'+li+'{transform-box:view-box;transform-origin:'+c[0].toFixed(1)+'px '
+   +c[1].toFixed(1)+'px;animation:emoL'+li+' '+Math.round(total)+'ms linear both}';
+ });
+ return out;
+}
+
 function emoBodyCSS(total){
  if(!EYES()) return '';
  var on=emoOn(); if(!on.length) return '';
@@ -2025,33 +2072,51 @@ function lidPath(i, k, em){
  var b=B[i], g=eyeGeom(i); if(!b.hp||!g) return '';
  var r=g.r||1, bow=P.eyeBow;
  em=em||EMOTIONS.neutral;
+ var amt=(P.emoAmt===undefined?1:P.emoAmt);
  // Which side of the face this eye is on, so a tilt points inward on
  // both rather than the same way on both.
  var side=(g.cx<MIDX)?1:-1;
- var tilt=(em.tilt||0)*side*(P.emoAmt===undefined?1:P.emoAmt);
- var amt=(P.emoAmt===undefined?1:P.emoAmt);
- var top=(em.lidTop||0)*amt, bot=(em.lidBot||0)*amt;
+ var tilt=(em.tilt||0)*side*amt*Math.PI/180;
+ // Each half of the eye is squashed toward the middle. A lid coming down
+ // flattens the top half; a lid coming up flattens the bottom.
+ var top=1-(em.lidTop||0)*amt;
+ var bot=1-(em.lidBot||0)*amt;
+ var ca=Math.cos(tilt), sa=Math.sin(tilt);
  var pts=b.hp.map(function(q){
   var dx=q[0]-g.cx, dy=q[1]-g.cy;
-  var u=dx/r;
+  // SQUASHED, never cut.
+  //
+  // The first version clamped every point to a horizontal line, which is
+  // what a lid looks like on paper and is wrong here: clamping a curve
+  // to a line puts a hard corner wherever it crosses, and two of them
+  // facing each other made a bowtie. Scaling a half cannot produce a
+  // corner — every point keeps its neighbours, so the outline stays as
+  // smooth as the letterform it came from.
+  // Blended across the seam, not switched at it.
+  //
+  // Picking `top` above the middle and `bot` below leaves the POSITION
+  // continuous but not the direction: approaching the seam from above
+  // the curve is scaled by one factor and from below by another, so the
+  // tangent jumps and you get a kink at each side of the eye. Measured
+  // at 45 degrees on the sleepy face, which is a visible crease.
+  //
+  // A smooth ramp between them over a band around the middle removes it,
+  // and the far ends of the eye still reach their own factor exactly.
+  var t=Math.max(-1,Math.min(1,dy/(r*0.55)));
+  var w=0.5+0.5*(t*(1.5-0.5*t*t));
+  dy *= (top+(bot-top)*w)*k;
   // the bow: ends ride up as it closes, so the sliver curves instead of
   // going flat. Centred on u^2 - 1/2 so the shape bends without also
   // sliding down the letterform.
-  var bend=bow*r*(1-k)*(u*u-0.5);
-  var y=g.cy+dy*k+bend;
-  // The lids cut the shape rather than scaling it: a lid is a straight
-  // edge coming across, and scaling the ring just makes a smaller eye.
-  // Tilt rides on u so the edge is a slope, not a step.
-  // The top lid is a sloped edge: its height varies across the eye by
-  // the tilt, so one corner sits lower than the other.
-  var topY=g.cy-r*k*(1-2*top)+tilt*u*r*0.026;
-  var botY=g.cy+r*k*(1-2*bot);
-  if(y<topY) y=topY;
-  if(y>botY) y=botY;
-  return [g.cx+dx, y];
+  var u=dx/r;
+  dy += bow*r*(1-k)*(u*u-0.5);
+  // Tilt the whole shape rather than sloping an edge — the lens turns,
+  // which is what an angry or worried eye actually does.
+  return [g.cx + dx*ca - dy*sa, g.cy + dx*sa + dy*ca];
  });
  return ring(pts);
 }
+
 
 /**
  * Blink timing.
@@ -2693,6 +2758,7 @@ function viewCSS(){
  // parked at its rest pose, and the Resting view showed a mark that
  // never moved while every number said it should.
  var live=['.emoBody'];
+ LCEN.forEach(function(c,li){ live.push('.emoL'+li) });
  B.forEach(function(b,i){ if(b.hp) live.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i,'.eyS'+i);
   glintSet().forEach(function(sh,n){ live.push('.eyGs'+i+'_'+n) }) });
  LCEN.forEach(function(c,li){ live.push('.slr'+li) });
@@ -2734,6 +2800,7 @@ function sleepCSS(){
     // state as much as the eyes do — an expression that bounces once and
     // then holds still is not an expression, it is a thing that happened.
     var sel=['.emoBody'];
+    LCEN.forEach(function(c,li){ sel.push('.emoL'+li) });
     B.forEach(function(b,i){ if(b.hp){
      sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i);
      glintSet().forEach(function(sh,n){ sel.push('.eyGs'+i+'_'+n) });
@@ -2792,6 +2859,7 @@ function css(){
  out+=scoreCSS(totalRun());
  out+=eyesCSS(totalRun(),step);
  out+=emoBodyCSS(totalRun());
+ out+=emoLetterCSS(totalRun());
 
  // One shared sweep: offset 1000 parks the dash just before the path
  // start, 0 lays the whole length down. Marks made of separate strokes
@@ -3165,14 +3233,16 @@ function svgRaw(){
   var lho=lHome(li), lmoves=!!(stv[0]||stv[1]||lho[0]||lho[1]||letterRot(li));
   var _lo=P.letters[li];
   var slpSpin=P.sleep&&((_lo&&_lo.slpRot!==undefined)?_lo.slpRot:(isO(li)?P.slpRotO:P.slpRotX));
+  var wantEmoL=EYES()&&emoOn().length>0&&(P.emoAmt===undefined?1:P.emoAmt)>0;
   var lo=(lmoves?'<g class="lt'+li+'">':'')
    +(slpSpin?'<g class="slr'+li+'">':'')
+   +(wantEmoL?'<g class="emoL'+li+'">':'')
    +(wantJ?'<g class="jg'+li+'">':'')+ex
    +(wantT?'<g class="tl'+li+'">':'')
    +(wantS?'<g class="ls'+li+'">':'')
    +(P.target==='letter'?'<g class="sqL'+li+'">':'');
   var lc=(P.target==='letter'?'</g>':'')+(wantS?'</g>':'')+(wantT?'</g>':'')
-   +(wantJ?'</g>':'')+(slpSpin?'</g>':'')+(lmoves?'</g>':'');
+   +(wantJ?'</g>':'')+(wantEmoL?'</g>':'')+(slpSpin?'</g>':'')+(lmoves?'</g>':'');
   body+=lo;
   L.forEach(function(i){
    var so=P.target==='shape'?'<g class="sqS'+i+'">':'', sc2=P.target==='shape'?'</g>':'';
