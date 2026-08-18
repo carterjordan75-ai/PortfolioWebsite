@@ -3627,6 +3627,20 @@ function LoadersAdminPanel() {
   // Loaders carry no background, so a preview has to supply one — and
   // which one matters: a mono mark inverts, so it needs checking on both.
   const [previewBg, setPreviewBg] = useState<'dark' | 'light' | 'none'>('dark')
+  /**
+   * Where the mark sits in the preview, and how big.
+   *
+   * Inspecting a loader means getting close to it — the pupils, the edge
+   * of the shading — and at that size the interesting part is rarely in
+   * the middle. So it can be dragged.
+   *
+   * Deliberately not stored with the loader. It is how closely someone
+   * is looking at the artwork, not a property of the artwork, and the
+   * same rule the tuner's viewer zoom follows: nothing here should be
+   * able to reach the file.
+   */
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
   const [replay, setReplay] = useState(0)
 
   const load = useCallback(() => {
@@ -3689,6 +3703,9 @@ function LoadersAdminPanel() {
   const preview = async (id: string) => {
     if (previewId === id) { setPreviewId(null); setPreviewArt(null); return }
     setPreviewId(id); setPreviewArt(null)
+    // A fresh loader starts framed, rather than wherever the last one
+    // happened to be left.
+    setPan({ x: 0, y: 0 })
     const res = await fetch(`/api/loaders?id=${encodeURIComponent(id)}`, { cache: 'no-store' })
     if (res.ok) setPreviewArt(await res.json())
     setReplay(r => r + 1)
@@ -3881,13 +3898,20 @@ function LoadersAdminPanel() {
                     <label className="flex items-center gap-2 text-white/40 text-[8px] uppercase tracking-[0.12em]">
                       Size
                       <input
-                        type="range" min={80} max={900} step={10}
+                        type="range" min={80} max={2400} step={10}
                         value={previewW}
                         onChange={e => setPreviewW(Number(e.target.value))}
                         className="w-40"
                       />
-                      <span className="tabular-nums text-white/30 w-10">{previewW}px</span>
+                      <span className="tabular-nums text-white/30 w-12">{previewW}px</span>
                     </label>
+                    <button
+                      onClick={() => { setPreviewW(320); setPan({ x: 0, y: 0 }) }}
+                      className="text-white/50 hover:text-white text-[8px] uppercase tracking-[0.12em]"
+                      title="Back to the framing the site will actually use"
+                    >
+                      Fit
+                    </button>
                     <div className="flex items-center gap-1">
                       {(['dark', 'light', 'none'] as const).map(b => (
                         <button
@@ -3911,8 +3935,20 @@ function LoadersAdminPanel() {
                     </button>
                   </div>
                   <div
-                    className="rounded-md p-5 flex items-center justify-center min-h-[140px] overflow-hidden"
+                    className="rounded-md p-5 flex items-center justify-center min-h-[140px] overflow-hidden select-none"
+                    onPointerDown={e => {
+                      drag.current = { x: e.clientX, y: e.clientY, ox: pan.x, oy: pan.y }
+                      ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+                    }}
+                    onPointerMove={e => {
+                      const d = drag.current
+                      if (!d) return
+                      setPan({ x: d.ox + (e.clientX - d.x), y: d.oy + (e.clientY - d.y) })
+                    }}
+                    onPointerUp={() => { drag.current = null }}
+                    onPointerCancel={() => { drag.current = null }}
                     style={{
+                      cursor: drag.current ? 'grabbing' : 'grab',
                       background:
                         previewBg === 'dark' ? '#0a0a0a'
                         : previewBg === 'light' ? '#f2f2ef'
@@ -3922,7 +3958,16 @@ function LoadersAdminPanel() {
                     }}
                   >
                     {previewArt ? (
-                      <div style={{ width: previewW, maxWidth: '100%' }}>
+                      <div
+                        style={{
+                          width: previewW,
+                          // No maxWidth: capping it here would silently
+                          // undo the zoom the moment it passed the panel
+                          // width, which is exactly when it is wanted.
+                          transform: `translate(${pan.x}px, ${pan.y}px)`,
+                          flexShrink: 0,
+                        }}
+                      >
                         <XoxoBrandLoader
                           key={`${item.id}-${replay}-${previewBg}`}
                           art={{ ...previewArt, duration: item.duration }}

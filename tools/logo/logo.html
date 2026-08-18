@@ -134,6 +134,8 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Hold at ends <b id="vslpHold"></b></label><input id="slpHold" type="range" min="0" max=".4" step=".02"></div>
   <div class="row"><label>Eye cycle <b id="veyeCycle"></b></label><input id="eyeCycle" type="range" min="600" max="30000" step="100"></div>
   <div class="row"><label>Wake after arrival <b id="vslpWake"></b></label><input id="slpWake" type="range" min="0" max="10000" step="50"></div>
+  <div class="row"><label>Spin X per loop <b id="vslpRotX"></b></label><input id="slpRotX" type="range" min="-720" max="720" step="15"></div>
+  <div class="row"><label>Spin O per loop <b id="vslpRotO"></b></label><input id="slpRotO" type="range" min="-720" max="720" step="15"></div>
   <p class="note">What it does once it has landed, for as long as it is up.
    Ambient cycle is how long one breath takes, Eye cycle how long one round
    of looking takes. Separate on purpose, and neither governs the other —
@@ -230,6 +232,12 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
    <button id="eyOn" onclick="setEyes(1)">Eyes</button></div>
   <div class="row"><label>Look around <b id="veyeLook"></b></label><input id="eyeLook" type="range" min="0" max="1" step=".01"></div>
   <div class="row"><label>Reach to rim <b id="veyeEdge"></b></label><input id="eyeEdge" type="range" min="0" max="1" step=".02"></div>
+  <div class="row"><label>Emotions</label></div>
+  <div class="row" id="emopicker"></div>
+  <div class="row"><label>Expression strength <b id="vemoAmt"></b></label><input id="emoAmt" type="range" min="0" max="1.6" step=".05"></div>
+  <p class="note">Pick as many as you like — the eyes wear them in turn, a new
+   face on each glance. More than one is what stops the loop reading as a loop.
+   Each changes the lids, the pupil, the catchlight and where it tends to look.</p>
   <div class="row"><label>Glances <b id="veyeDart"></b></label><input id="eyeDart" type="range" min="1" max="10" step="1"></div>
   <div class="row"><label>Blinks <b id="veyeBlink"></b></label><input id="eyeBlink" type="range" min="0" max="6" step="1"></div>
   <div class="row"><label>Pupil size <b id="veyeSize"></b></label><input id="eyeSize" type="range" min=".3" max="3.4" step=".01"></div>
@@ -687,7 +695,7 @@ function lp(i,k){
  return (o&&o[k]!==undefined)?o[k]:P[k];
 }
 function loff(i){var o=P.letters[LOF[i]];return o&&o.delay?o.delay:0}
-var LDEF={delay:0,squash:1,stretch:1,sx:0,sy:0,ty:1,tx:1};
+var LDEF={delay:0,squash:1,stretch:1,sx:0,sy:0,ty:1,tx:1,slpRot:0};
 function ease(){var s=P.smooth;return 'cubic-bezier('+(.34+.34*s).toFixed(3)+','
  +(P.curve*(1-.55*s)).toFixed(3)+','+(.64-.22*s).toFixed(3)+',1)'}
 function lerp(a,b,t){var o=[];for(var k=0;k<a.length;k++)
@@ -1315,11 +1323,30 @@ function svg(){
  hold.remove();
  if(!bb||!bb.width||!bb.height) return str;
 
+ // Centred on the LETTERS, not on the measured content.
+ //
+ // Fitting the box to the content's own bounds centres it on the
+ // artwork's centre of mass, and arcs and accent marks are rarely
+ // symmetrical — one throwing further left than right drags the box with
+ // it and the wordmark sits off to one side of its own viewBox. Every
+ // container downstream then centres that box perfectly and the mark
+ // still looks wrong, which is the confusing part: nothing is centring
+ // it incorrectly, it is off-centre inside the thing being centred.
+ //
+ // So the wordmark's middle is the box's middle, and the box grows
+ // outward from there by whatever the furthest thing needs — symmetric
+ // by construction. Decoration gets the same room on both sides even
+ // when it only uses one.
+ var mb=markBox();
+ var cx=mb[0]+mb[2]/2, cy=mb[1]+mb[3]/2;
+ var hx=Math.max(cx-bb.x, bb.x+bb.width-cx);
+ var hy=Math.max(cy-bb.y, bb.y+bb.height-cy);
+ // Overshoot and the ambient breathe are CSS transforms, so no
+ // measurement of the static mark can see them.
  var grow=Math.max(1,P.over);
  if(P.sleep) grow*=1+Math.max(0,P.slpAmt)*0.03;
- var padX=bb.width*(grow-1)/2 + bb.width*0.02;
- var padY=bb.height*(grow-1)/2 + bb.height*0.02;
- var vb=[bb.x-padX, bb.y-padY, bb.width+padX*2, bb.height+padY*2];
+ hx=hx*grow*1.02; hy=hy*grow*1.02;
+ var vb=[cx-hx, cy-hy, hx*2, hy*2];
  return str.replace(/viewBox="[^"]*"/,
   'viewBox="'+vb.map(function(n){return n.toFixed(1)}).join(' ')+'"');
 }
@@ -1652,7 +1679,13 @@ function eyeLookCSS(i, total){
  var tr=function(x,y){ return 'transform:translate('+x.toFixed(1)+'px,'+y.toFixed(1)+'px)' };
  var kf='0%{'+tr(0,0)+'}', prev=[0,0];
  for(var k=1;k<=n;k++){
-  var pos=T.pts[k], t0=k*span;
+  // Each face has somewhere it tends to look — sad downward, suspicious
+  // off to one side. Added to the glance rather than replacing it, so
+  // the randomised targets still do the work and the expression only
+  // leans them.
+  var em=emoAt(k), amt=(P.emoAmt===undefined?1:P.emoAmt);
+  var bias=[(em.look[0]||0)*T.reach*amt, (em.look[1]||0)*T.reach*amt];
+  var pos=[T.pts[k][0]+bias[0], T.pts[k][1]+bias[1]], t0=k*span;
   // two creep stops through the hold, so it is never parked
   var c1=[prev[0]+(rnd(T.seed+k*7)-0.5)*T.reach*0.09, prev[1]+(rnd(T.seed+k*17)-0.5)*T.reach*0.09];
   var c2=[c1[0]+(rnd(T.seed+k*23)-0.5)*T.reach*0.07, c1[1]+(rnd(T.seed+k*31)-0.5)*T.reach*0.07];
@@ -1804,9 +1837,87 @@ function eyeDomeCSS(i, total){
  * k is how open it is: 1 fully, eyeShut at its narrowest. It never
  * reaches zero — a sliver is what keeps a shut eye reading as an eye.
  */
-function lidPath(i, k){
+/**
+ * The faces the eyes can wear, and what each one does to them.
+ *
+ * Read off the reference sheet rather than invented: the vocabulary
+ * there is a top lid coming down at an angle, a bottom lid coming up,
+ * the pupil changing size, and the catchlight changing with both. All
+ * four are here and nothing else is, because anything past that stops
+ * being an expression and starts being a different mark.
+ *
+ *  lidTop  how far the upper lid closes over the eye, 0..1
+ *  lidBot  how far the lower lid comes up — this is the one that makes a
+ *          squint read as pleased rather than as tired
+ *  tilt    angle of the lid, mirrored between the eyes so it points in
+ *          or out. Inward is angry, outward is worried; it is the single
+ *          strongest cue on the sheet
+ *  sx,sy   pupil size. Wide is startled, small is cold
+ *  glint   catchlight shape for this face
+ *  gs      catchlight size, 0 removes it — a dead or sleeping eye has no
+ *          highlight, which is most of why it reads as switched off
+ *  look    where this face tends to look, as a share of its reach
+ *  hold    how long it dwells, relative to the others
+ */
+var EMOTIONS={
+ neutral:   {lidTop:0,   lidBot:0,   tilt:0,   sx:1,    sy:1,    glint:'dot',      gs:1,    look:[0,0],     hold:1},
+ happy:     {lidTop:0,   lidBot:.44, tilt:0,   sx:1.04, sy:.94,  glint:'pair',     gs:1.1,  look:[0,-.12],  hold:1.1},
+ angry:     {lidTop:.40, lidBot:.06, tilt:17,  sx:.98,  sy:.88,  glint:'dot',      gs:.7,   look:[0,.14],   hold:1.2},
+ sad:       {lidTop:.30, lidBot:0,   tilt:-15, sx:.96,  sy:1.02, glint:'oval',     gs:.9,   look:[0,.34],   hold:1.5},
+ // Startled is a PINPRICK, not a bigger pupil. The counter is the dark
+ // of the eye, so shrinking it leaves a wide white O with a dot in it —
+ // which is the shocked eye on the reference sheet, and unmistakable
+ // next to neutral. Making it larger only read as "slightly rounder".
+ surprised: {lidTop:-.10,lidBot:-.10,tilt:0,   sx:.52,  sy:.52,  glint:'dot',      gs:.9,   look:[0,-.05],  hold:.7},
+ sleepy:    {lidTop:.58, lidBot:.06, tilt:5,   sx:.90,  sy:.84,  glint:'',         gs:0,    look:[0,.24],   hold:1.9},
+ suspicious:{lidTop:.46, lidBot:.24, tilt:9,   sx:.84,  sy:.72,  glint:'pill',     gs:.8,   look:[.55,.05], hold:1.6},
+ dazed:     {lidTop:.08, lidBot:.08, tilt:0,   sx:1.30, sy:1.30, glint:'crescent', gs:1.0,  look:[0,0],     hold:1.3}
+};
+var EMO_LIST=['neutral','happy','angry','sad','surprised','sleepy','suspicious','dazed'];
+
+/** The faces actually in play, always at least one. */
+function emoOn(){
+ var on=(P.emos||[]).filter(function(n){return EMOTIONS[n]});
+ return on.length?on:['neutral'];
+}
+
+/**
+ * Which face the k-th glance wears.
+ *
+ * Walked in order rather than picked at random: a sequence you can
+ * predict from the buttons is one you can design with, and the variety
+ * that stops the loop reading as a loop comes from there being several
+ * faces at all, not from the order being a surprise.
+ */
+function emoAt(k){
+ var on=emoOn();
+ return EMOTIONS[on[((k%on.length)+on.length)%on.length]];
+}
+
+/**
+ * The pupil's outline at a given openness, wearing a given face.
+ *
+ * `k` is the blink: 1 fully open, eyeShut at its narrowest. `em` is the
+ * expression, which closes the eye from the top and the bottom
+ * independently — that independence is the whole thing. A lid coming
+ * down alone is tired; a lid coming UP alone is pleased; both together
+ * is a squint. One openness figure cannot say which of those it is,
+ * which is why an expression cannot just be a smaller k.
+ *
+ * The tilt mirrors between the eyes so the lids angle in or out as a
+ * pair. Angling them both the same way makes the face look askew rather
+ * than cross, and it is the single strongest cue on the reference sheet.
+ */
+function lidPath(i, k, em){
  var b=B[i], g=eyeGeom(i); if(!b.hp||!g) return '';
  var r=g.r||1, bow=P.eyeBow;
+ em=em||EMOTIONS.neutral;
+ // Which side of the face this eye is on, so a tilt points inward on
+ // both rather than the same way on both.
+ var side=(g.cx<MIDX)?1:-1;
+ var tilt=(em.tilt||0)*side*(P.emoAmt===undefined?1:P.emoAmt);
+ var amt=(P.emoAmt===undefined?1:P.emoAmt);
+ var top=(em.lidTop||0)*amt, bot=(em.lidBot||0)*amt;
  var pts=b.hp.map(function(q){
   var dx=q[0]-g.cx, dy=q[1]-g.cy;
   var u=dx/r;
@@ -1814,7 +1925,17 @@ function lidPath(i, k){
   // going flat. Centred on u^2 - 1/2 so the shape bends without also
   // sliding down the letterform.
   var bend=bow*r*(1-k)*(u*u-0.5);
-  return [g.cx+dx, g.cy+dy*k+bend];
+  var y=g.cy+dy*k+bend;
+  // The lids cut the shape rather than scaling it: a lid is a straight
+  // edge coming across, and scaling the ring just makes a smaller eye.
+  // Tilt rides on u so the edge is a slope, not a step.
+  // The top lid is a sloped edge: its height varies across the eye by
+  // the tilt, so one corner sits lower than the other.
+  var topY=g.cy-r*k*(1-2*top)+tilt*u*r*0.026;
+  var botY=g.cy+r*k*(1-2*bot);
+  if(y<topY) y=topY;
+  if(y>botY) y=botY;
+  return [g.cx+dx, y];
  });
  return ring(pts);
 }
@@ -1889,41 +2010,122 @@ function blinkTimes(i, total){
  return out;
 }
 
+/**
+ * The pupil's size over the run: its own proportion, the wake, and the
+ * expression, as one animation.
+ *
+ * Three things wanted to scale this element and only one can — a second
+ * `animation` on the same property silently wins and the others simply
+ * stop happening. So they are composed here instead of competing: the
+ * base size and oval are the proportion everything else multiplies, the
+ * wake is the first arrival at it, and each expression is a change to it
+ * on the glance that carries it.
+ *
+ * The oval holds throughout. It is what the eye IS, so a face that
+ * narrows the pupil narrows an oval one rather than turning it round.
+ */
+function pupilScaleCSS(i, total, g){
+ var base=[P.eyeSize/Math.sqrt(P.eyeOval), P.eyeSize*Math.sqrt(P.eyeOval)];
+ var org='transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;';
+ var sc=function(m){ return 'transform:scale('+(base[0]*m[0]).toFixed(3)+','
+   +(base[1]*m[1]).toFixed(3)+')' };
+ var amt=(P.emoAmt===undefined?1:P.emoAmt);
+ var mul=function(em){ return [1+(em.sx-1)*amt, 1+(em.sy-1)*amt] };
+ var S=lookSchedule(i,total), many=emoOn().length>1;
+ var wake=eyeWakeAt();
+
+ // Nothing changing it: one static rule, no keyframes to carry.
+ if(!wake && !many) return '.eyB'+i+'{'+org+sc(mul(emoAt(0)))+'}';
+
+ var kf='', seen=-1;
+ var at=function(p,m,e){
+  p=Math.max(0,Math.min(100,p));
+  if(p<=seen) return; seen=p;
+  kf+=p.toFixed(2)+'%{'+sc(m)+(e?';animation-timing-function:'+e:'')+'}';
+ };
+ var wakeP=total?wake/total*100:0;
+ if(wake){
+  // grows into its own proportion, never through a different one
+  at(0,[mul(emoAt(0))[0]*0.58, mul(emoAt(0))[1]*0.58],'cubic-bezier(.2,.8,.25,1)');
+  at(Math.max(0.01,wakeP), [mul(emoAt(0))[0]*0.58, mul(emoAt(0))[1]*0.58],'cubic-bezier(.2,.8,.25,1)');
+  at(wakeP+(total?520/total*100:0), mul(emoAt(0)), null);
+ } else {
+  at(0, mul(emoAt(0)), null);
+ }
+ if(S && many) for(var k=1;k<=S.n;k++){
+  at(k*S.span-S.moveP, mul(emoAt(k-1)), 'cubic-bezier(.4,0,.3,1)');
+  at(k*S.span-S.moveP+S.setP, mul(emoAt(k)), null);
+ }
+ at(100, mul(emoAt(S?S.n:0)), null);
+ return '@keyframes eyB'+i+'{'+kf+'}'
+  +'.eyB'+i+'{'+org+'animation:eyB'+i+' '+Math.round(total)+'ms linear both'
+  +(wake?'':'')+';animation-iteration-count:1}';
+}
+
 function eyeBlinkCSS(i, total){
  var g=eyeGeom(i); if(!g||!B[i].hp) return '';
- var openD='d:path("'+lidPath(i,1)+'")';
+ var S=lookSchedule(i,total);
+ // Which face is worn when. A glance and an expression change together —
+ // the eye settles somewhere new wearing a new face, which is how a
+ // reaction reads. Changing them independently makes two things happen
+ // at once for no reason and neither lands.
+ var emOf=function(t){
+  if(!S) return emoAt(0);
+  var k=Math.floor((t/total*100)/Math.max(0.01,S.span));
+  return emoAt(k);
+ };
+ var openAt=function(em){ return 'd:path("'+lidPath(i,1,em)+'")' };
  var times=blinkTimes(i,total);
- if(!times.length) return '.eyP'+i+'{'+openD+'}';
  var pct=function(ms){ return Math.max(0,Math.min(100,ms/total*100)) };
- // How softly it lands back open. The close is always a snap — that is
- // what a blink is — but the return is where the shape has to settle
- // into a clean O, and a linear finish reads as the animation being cut
- // rather than as an eye opening.
  var ez=Math.max(0,Math.min(1,P.eyeEase));
  var land='cubic-bezier(0.2,'+(0.5+0.42*ez).toFixed(3)+',0.25,1)';
- var kf='0%{'+openD+'}', last=0;
+
+ // Every moment the lid has to be somewhere, from both causes at once:
+ // an expression arriving, and a blink running. Built as one sorted list
+ // rather than two passes, because a blink landing inside an expression
+ // change needs the shape of BOTH, and two independent keyframe sets on
+ // the same property would simply overwrite each other.
+ var stops=[];
+ var push=function(p,d,e){ stops.push({p:Math.max(0,Math.min(100,p)), d:d, e:e}) };
+ push(0, openAt(emOf(0)), null);
+ if(S && emoOn().length>1){
+  for(var k=1;k<=S.n;k++){
+   var tAt=k*S.span;
+   // arrives with the glance, eased so the face changes rather than cuts
+   push(tAt-S.moveP, openAt(emoAt(k-1)), 'cubic-bezier(.4,0,.3,1)');
+   push(tAt-S.moveP+S.setP, openAt(emoAt(k)), null);
+  }
+ }
  times.forEach(function(T){
+  var em=emOf(T.t);
   var a=pct(T.t-T.close), b=pct(T.t-T.close*0.45), c=pct(T.t), d=pct(T.t+T.shut),
       e=pct(T.t+T.shut+T.open*0.55), f=pct(T.t+T.shut+T.open);
-  if(a<=last) return;
-  kf+= a.toFixed(2)+'%{'+openD+';animation-timing-function:cubic-bezier(.35,0,.65,.5)}'
-   +   b.toFixed(2)+'%{d:path("'+lidPath(i,0.46)+'");animation-timing-function:cubic-bezier(.45,0,.8,.7)}'
-   +   c.toFixed(2)+'%{d:path("'+lidPath(i,P.eyeShut)+'")}'
-   // Slow out of the shut, then gathering pace — the ramp — and only
-   // then the eased landing above.
-   +   d.toFixed(2)+'%{d:path("'+lidPath(i,P.eyeShut)+'");animation-timing-function:cubic-bezier(.7,0,.85,.35)}'
-   +   e.toFixed(2)+'%{d:path("'+lidPath(i,0.40)+'");animation-timing-function:'+land+'}'
-   +   f.toFixed(2)+'%{'+openD+'}';
-  last=f;
+  push(a, openAt(em), 'cubic-bezier(.35,0,.65,.5)');
+  push(b, 'd:path("'+lidPath(i,0.46,em)+'")', 'cubic-bezier(.45,0,.8,.7)');
+  push(c, 'd:path("'+lidPath(i,P.eyeShut,em)+'")', null);
+  // Slow out of the shut, then gathering pace — the ramp — and only
+  // then the eased landing above.
+  push(d, 'd:path("'+lidPath(i,P.eyeShut,em)+'")', 'cubic-bezier(.7,0,.85,.35)');
+  push(e, 'd:path("'+lidPath(i,0.40,em)+'")', land);
+  push(f, openAt(em), null);
  });
- kf+='100%{'+openD+'}';
+ push(100, openAt(emOf(total)), null);
+
+ stops.sort(function(x,y){ return x.p-y.p });
+ // A blink and an expression can want the same instant. The blink wins:
+ // it is the bigger movement and the expression has the rest of the
+ // glance to arrive in.
+ var kf='', seen=-1;
+ stops.forEach(function(st){
+  if(st.p<=seen) return;
+  seen=st.p;
+  kf+=st.p.toFixed(2)+'%{'+st.d+(st.e?';animation-timing-function:'+st.e:'')+'}';
+ });
  return '@keyframes eyP'+i+'{'+kf+'}'
   +'.eyP'+i+'{animation:eyP'+i+' '+Math.round(total)+'ms linear both}'
   // size and oval are a plain transform on the group around it — they do
   // not change over the run, so they have no business in the keyframes
-  +'.eyB'+i+'{transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;'
-  +'transform:scale('+(P.eyeSize/Math.sqrt(P.eyeOval)).toFixed(3)+','
-  +(P.eyeSize*Math.sqrt(P.eyeOval)).toFixed(3)+')}';
+  +pupilScaleCSS(i,total,g);
 }
 
 /**
@@ -1936,26 +2138,27 @@ function eyeBlinkCSS(i, total){
  * Sized off the eye radius rather than in absolute units, so a glint
  * stays in proportion when the eyes are scaled or made oval.
  */
-function glintShape(i){
+function glintShape(i, shape, size){
  var g=eyeGeom(i); if(!g) return '';
- var cx=g.cx-g.r*0.34, cy=g.cy-g.r*0.36, r=g.r*0.30*P.eyeGlint;
+ var cx=g.cx-g.r*0.34, cy=g.cy-g.r*0.36, r=g.r*0.30*P.eyeGlint*(size===undefined?1:size);
  var f=' fill="#fff"';
- if(P.glintShape==='dot')
+ shape=shape||P.glintShape;
+ if(shape==='dot')
   return '<circle'+f+' cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+r.toFixed(1)+'"/>';
- if(P.glintShape==='oval')
+ if(shape==='oval')
   // Tipped along the direction light would run round a sphere, rather
   // than sitting square — an upright ellipse reads as a printing error.
   return '<ellipse'+f+' cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" rx="'+(r*1.35).toFixed(1)
    +'" ry="'+(r*0.62).toFixed(1)+'" transform="rotate(-28 '+cx.toFixed(1)+' '+cy.toFixed(1)+')"/>';
- if(P.glintShape==='pill')
+ if(shape==='pill')
   return '<rect'+f+' x="'+(cx-r*1.25).toFixed(1)+'" y="'+(cy-r*0.46).toFixed(1)
    +'" width="'+(r*2.5).toFixed(1)+'" height="'+(r*0.92).toFixed(1)
    +'" rx="'+(r*0.46).toFixed(1)+'" transform="rotate(-28 '+cx.toFixed(1)+' '+cy.toFixed(1)+')"/>';
- if(P.glintShape==='square')
+ if(shape==='square')
   return '<rect'+f+' x="'+(cx-r*0.82).toFixed(1)+'" y="'+(cy-r*0.82).toFixed(1)
    +'" width="'+(r*1.64).toFixed(1)+'" height="'+(r*1.64).toFixed(1)
    +'" rx="'+(r*0.22).toFixed(1)+'" transform="rotate(-18 '+cx.toFixed(1)+' '+cy.toFixed(1)+')"/>';
- if(P.glintShape==='star'){
+ if(shape==='star'){
   var pts=[];
   for(var k=0;k<8;k++){
    var a=k*Math.PI/4-Math.PI/2, rad=(k%2?r*0.34:r*1.45);
@@ -1963,13 +2166,13 @@ function glintShape(i){
   }
   return '<polygon'+f+' points="'+pts.join(' ')+'"/>';
  }
- if(P.glintShape==='pair')
+ if(shape==='pair')
   // The classic cartoon eye: a big highlight with a small one trailing
   // it, which reads as a second, weaker light source.
   return '<circle'+f+' cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+r.toFixed(1)+'"/>'
    +'<circle'+f+' cx="'+(cx+r*1.5).toFixed(1)+'" cy="'+(cy+r*1.5).toFixed(1)
    +'" r="'+(r*0.45).toFixed(1)+'"/>';
- if(P.glintShape==='crescent')
+ if(shape==='crescent')
   // Two circles, the second cut back out — a rim of light round the top
   // left rather than a blob sitting on it.
   return '<path'+f+' fill-rule="evenodd" d="'
@@ -1980,6 +2183,37 @@ function glintShape(i){
    +'a'+(r*0.82).toFixed(1)+','+(r*0.82).toFixed(1)+' 0 1,0 '+(r*1.64).toFixed(1)+',0'
    +'a'+(r*0.82).toFixed(1)+','+(r*0.82).toFixed(1)+' 0 1,0 -'+(r*1.64).toFixed(1)+',0z"/>';
  return '<circle'+f+' cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="'+r.toFixed(1)+'"/>';
+}
+
+/**
+ * One catchlight per distinct shape the chosen faces ask for, stacked.
+ *
+ * A shape cannot be tweened into a different shape without both being
+ * the same kind of path with the same number of points, and a star and
+ * a crescent are never going to be. So they are all drawn and faded
+ * between instead — which costs a few hidden elements and buys a real
+ * change of shape rather than a scale pretending to be one.
+ *
+ * With one face selected there is one layer and no fading at all.
+ */
+function glintLayers(i){
+ var shapes=glintSet();
+ return shapes.map(function(sh,n){
+  return '<g class="eyGs'+i+'_'+n+'">'+glintShape(i, sh.shape, sh.gs)+'</g>';
+ }).join('');
+}
+
+/** The distinct catchlights in play, in a stable order. */
+function glintSet(){
+ var seen={}, out=[];
+ emoOn().forEach(function(n){
+  var em=EMOTIONS[n];
+  var key=(em.glint||'none')+'@'+em.gs;
+  if(seen[key]) return;
+  seen[key]=1;
+  out.push({shape:em.glint||P.glintShape, gs:em.gs, key:key});
+ });
+ return out;
 }
 
 /**
@@ -2049,7 +2283,13 @@ function eyeUprightCSS(i, total, step){
    +'.eyR'+i+'{'+org+'animation:eyR'+i+' '+P.dur+'ms '+ease()
    +' both;animation-delay:'+dly+'ms}';
  }
- var spin=P.sleep?(isO(li)?P.slpRotO:P.slpRotX):0;
+ // Cancels the spin this letter actually has, per-letter override
+ // included — reading the kind default here would leave an overridden
+ // letter's eyes tumbling with it.
+ var lo=P.letters[li];
+ var spin=P.sleep
+  ? ((lo&&lo.slpRot!==undefined)?lo.slpRot:(isO(li)?P.slpRotO:P.slpRotX))
+  : 0;
  if(spin){
   out+='@keyframes eyS'+i+'{0%{transform:rotate(0deg)}100%{transform:rotate('
    +(-spin).toFixed(1)+'deg)}}'
@@ -2068,12 +2308,55 @@ function sleepSpinCSS(){
  if(!P.sleep) return '';
  var out='', d=Math.max(2000,P.slpDur);
  LCEN.forEach(function(c,li){
-  var amt=isO(li)?P.slpRotO:P.slpRotX;
+  // A letter with an override spins by its own figure; everything else
+  // follows the setting for its kind.
+  var o=P.letters[li];
+  var amt=(o&&o.slpRot!==undefined)?o.slpRot:(isO(li)?P.slpRotO:P.slpRotX);
   if(!amt) return;
   out+='@keyframes slr'+li+'{0%{transform:rotate(0deg)}100%{transform:rotate('
    +amt.toFixed(1)+'deg)}}'
    +'.slr'+li+'{transform-box:view-box;transform-origin:'+c[0].toFixed(1)+'px '
    +c[1].toFixed(1)+'px;animation:slr'+li+' '+d+'ms linear infinite}';
+ });
+ return out;
+}
+
+/**
+ * Fades the catchlight layers so the one belonging to the current face
+ * is the one you see.
+ *
+ * Stepped, not smoothed: two catchlights cross-fading through each other
+ * reads as a double reflection, which is a defect rather than a
+ * transition. Each swaps at the moment the glance lands, under cover of
+ * the pupil moving, which is when nobody is looking at the highlight.
+ *
+ * Nothing is emitted at all for a single face — the one layer is simply
+ * left visible, and a stylesheet full of "opacity stays 1" rules would
+ * be noise in every export that does not use expressions.
+ */
+function glintFadeCSS(i, total){
+ var set=glintSet();
+ if(set.length<2) return '';
+ var S=lookSchedule(i,total); if(!S) return '';
+ var on=emoOn();
+ var keyAt=function(k){ var em=emoAt(k); return (em.glint||'none')+'@'+em.gs };
+ var out='';
+ set.forEach(function(sh,n){
+  var kf='', seen=-1;
+  var at=function(p,v){
+   p=Math.max(0,Math.min(100,p));
+   if(p<=seen) return; seen=p;
+   kf+=p.toFixed(2)+'%{opacity:'+v+'}';
+  };
+  at(0, keyAt(0)===sh.key?1:0);
+  for(var k=1;k<=S.n;k++){
+   var t=k*S.span-S.moveP+S.setP*0.5;
+   at(t-0.01, keyAt(k-1)===sh.key?1:0);
+   at(t, keyAt(k)===sh.key?1:0);
+  }
+  at(100, keyAt(S.n)===sh.key?1:0);
+  out+='@keyframes eyGs'+i+'_'+n+'{'+kf+'}'
+   +'.eyGs'+i+'_'+n+'{animation:eyGs'+i+'_'+n+' '+Math.round(total)+'ms linear both}';
  });
  return out;
 }
@@ -2093,7 +2376,8 @@ function eyesCSS(total, step){
  // what "the numbers mean nothing" was.
  var span=P.sleep?Math.max(600,P.eyeCycle):total;
  B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,span)+eyeDomeCSS(i,span)
-  +eyeBlinkCSS(i,span)+eyeGlintCSS(i,span)+eyeUprightCSS(i,total,step) } });
+  +eyeBlinkCSS(i,span)+eyeGlintCSS(i,span)+glintFadeCSS(i,span)
+  +eyeUprightCSS(i,total,step) } });
  return out;
 }
 
@@ -2217,6 +2501,11 @@ function ambientKF(kind, a){
  * changing the stagger or the duration moves the wake with it instead of
  * leaving the face to open its eyes while letters are still landing.
  */
+/** When the eyes open, in ms. Sleep only; a loader has them from the start. */
+function eyeWakeAt(){
+ return P.sleep ? Math.round(entranceEnd()+Math.max(0,P.slpWake)) : 0;
+}
+
 function entranceEnd(){
  return P.dur + Math.max(0,(LETTERS.length-1))*P.stag;
 }
@@ -2251,26 +2540,11 @@ function eyeWakeCSS(){
   // The catchlight is the tell that it IS an eye, so it is not there
   // before the eyes are. Opacity rather than the transform the blink
   // already owns, so the two can share one element without fighting.
-  // The pupil grows into its eye size as it wakes. Before this the
-  // counter was already eye-sized during the arrival, so the mark never
-  // read as a plain XOXO first — it arrived as a face with its eyes
-  // shut. Scaled from the counter's own size, so the growth starts from
-  // exactly the O the letterform draws.
-  // The oval is what the eye IS, so it holds from the first frame of the
-  // wake to the last. Growing from scale(1) meant starting round and
-  // ending oval, and anything that replayed that animation ran the pupil
-  // between a circle and an oval on a loop — which is not a thing an eye
-  // does. It grows within its own proportion instead: same shape
-  // throughout, only the size changes.
-  var sx=(P.eyeSize/Math.sqrt(P.eyeOval)), sy=(P.eyeSize*Math.sqrt(P.eyeOval));
-  var k=0.58;
-  out+='@keyframes eyBw'+i+'{0%{transform:scale('+(sx*k).toFixed(3)+','+(sy*k).toFixed(3)+')}'
-   +'100%{transform:scale('+sx.toFixed(3)+','+sy.toFixed(3)+')}}'
-   // iteration-count spelled out rather than left to the shorthand's
-   // default: the sleep sheet lifts that count on the eye groups, and
-   // this one must never be caught by it.
-   +'.eyB'+i+'{animation:eyBw'+i+' 520ms cubic-bezier(.2,.8,.25,1) '+wake+'ms both;'
-   +'animation-iteration-count:1}'
+  //
+  // The pupil's scale is deliberately NOT set here — pupilScaleCSS owns
+  // that element, composing its proportion, this wake and the expression
+  // into one animation. A second `animation` on the same transform
+  // silently wins and the other two stop happening.
   +'@keyframes eyGw'+i+'{0%{opacity:0}100%{opacity:1}}'
    +'.eyG'+i+'{animation:eyG'+i+' '+blink+'ms linear '+wake+'ms infinite,'
    +'eyGw'+i+' 420ms ease '+wake+'ms both}';
@@ -2759,7 +3033,8 @@ function svgRaw(){
    }
   }
   var lho=lHome(li), lmoves=!!(stv[0]||stv[1]||lho[0]||lho[1]||letterRot(li));
-  var slpSpin=P.sleep&&(isO(li)?P.slpRotO:P.slpRotX);
+  var _lo=P.letters[li];
+  var slpSpin=P.sleep&&((_lo&&_lo.slpRot!==undefined)?_lo.slpRot:(isO(li)?P.slpRotO:P.slpRotX));
   var lo=(lmoves?'<g class="lt'+li+'">':'')
    +(slpSpin?'<g class="slr'+li+'">':'')
    +(wantJ?'<g class="jg'+li+'">':'')+ex
@@ -2795,7 +3070,7 @@ function svgRaw(){
      +'<path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000"/>'
      // white is kept: a piece of ink left standing inside the pupil,
      // which reads as a catchlight
-     +(P.eyeGlint>0 ? '<g class="eyG'+i+'">'+glintShape(i)+'</g>' : '')
+     +(P.eyeGlint>0 ? '<g class="eyG'+i+'">'+glintLayers(i)+'</g>' : '')
      +'</g></g></g></g></g></mask>';
     batt+=' mask="url(#ey'+i+')"';
    }
@@ -3266,6 +3541,20 @@ function drawSleepPickers(){
   return '<option value="'+n+'"'+(P.slpEntrance===n?' selected':'')+'>'+n+'</option>'}).join('');
 }
 function setGlint(v){P.glintShape=v;drawGlints();build();sch()}
+function toggleEmo(n){
+ var a=P.emos||(P.emos=[]), i=a.indexOf(n);
+ // Never empty: with nothing selected there is no face to draw, and the
+ // eye has to be wearing something.
+ if(i>=0){ if(a.length>1) a.splice(i,1) } else a.push(n);
+ drawEmos(); build(); sch();
+}
+function drawEmos(){
+ var e=document.getElementById('emopicker'); if(!e) return;
+ e.innerHTML=EMO_LIST.map(function(n){
+  return '<button class="'+((P.emos||[]).indexOf(n)>=0?'on':'')
+   +'" onclick="toggleEmo(\''+n+'\')">'+n+'</button>'
+ }).join('');
+}
 function drawGlints(){
  var e=document.getElementById('glintpicker'); if(!e) return;
  e.innerHTML=GLINTS.map(function(n){
@@ -3492,12 +3781,12 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeBow','eyeShut','eyeSpeed','eyeGlint',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','emoAmt',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
-function sync(){syncSleep();drawGlints();drawSleepPickers();
+function sync(){syncSleep();drawGlints();drawEmos();drawSleepPickers();
  KEYS.forEach(function(k){var e=document.getElementById(k);if(e)e.value=P[k]});
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
   e.value=P[e.dataset.p];
@@ -3505,7 +3794,7 @@ function sync(){syncSleep();drawGlints();drawSleepPickers();
  });
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
 function labels(){
- var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeEdge:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
+ var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeEdge:2,emoAmt:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
   lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
@@ -3552,14 +3841,21 @@ var REVEALS=[['fade','Fade'],['rise','Rise'],['liquid','Liquid'],['ink','Ink'],
 var LKEYS=[['delay','Time offset',-400,800,10,0],
  ['squash','Squash',0,1.6,.05,2],['stretch','Stretch',0,1.6,.05,2],
  ['sx','Start offset X',-320,320,5,0],['sy','Start offset Y',-220,220,5,0],
- ['ty','Tilt Y start',-90,90,5,0],['tx','Tilt X start',-90,90,5,0]];
+ ['ty','Tilt Y start',-90,90,5,0],['tx','Tilt X start',-90,90,5,0],
+ ['slpRot','Ambient spin',-720,720,15,0]];
 function selLetter(i){LSEL=i;drawLetters()}
 function ovrLetter(on){
  // seeded from the globals, so enabling an override changes nothing
  // until a dial is actually moved
  if(!on) P.letters[LSEL]=null;
  else{var o={};Object.keys(LDEF).forEach(function(k){
-   o[k]=LDEF[k]===1?P[k]:LDEF[k]});P.letters[LSEL]=o}
+   o[k]=LDEF[k]===1?P[k]:LDEF[k]});
+  // The ambient spin has no single global to seed from — the default
+  // depends on whether this is an X or an O, which the LDEF convention
+  // cannot say. Seeded explicitly so overriding a letter to change its
+  // squash does not silently stop it spinning.
+  o.slpRot=isO(LSEL)?P.slpRotO:P.slpRotX;
+  P.letters[LSEL]=o}
  drawLetters();build();sch();
 }
 function setLetterStyle(v){P.letters[LSEL].lgfStyle=v;drawLetters();build();sch()}
@@ -3899,6 +4195,9 @@ eyeSwell:'Size change while moving. Positive swells, negative shrinks. 0 keeps i
 eyeVia:'Returns to centre and pauses between glances instead of sliding corner to corner. Higher holds longer.',
 eyeSeed:'A different set of glances from the same settings. Nothing else changes.',
 eyeEdge:'How much of the clear space between pupil and ring the eye may use. At 1 it reaches the inside of the ring.',
+emoAmt:'How far the expressions push. 0 holds a neutral face whichever are selected.',
+slpRotX:'How far the X letterforms turn over one ambient loop. Per-letter overrides beat this.',
+slpRotO:'How far the O letterforms turn over one ambient loop. The eyes stay level either way.',
 eyeGlint:'Size of the catchlight. 0 removes it.',
 // --- shape ---
 squash:'Squashes on impact.',
