@@ -657,7 +657,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
  eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeVia:.5,
- eyeEdge:.68,eyeLidR:1.9,eyeLidRest:0,emos:['neutral'],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
+ eyeEdge:.68,eyeLidR:1.9,eyeLidRest:0,emos:[],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -1339,9 +1339,22 @@ function lHalf(li){
  * ambient breathe are CSS transforms that are not in the geometry at all,
  * so no measurement of the static mark can see them.
  */
+var BBCACHE={key:null, bb:null};
 function svg(){
  var str=svgRaw();
  if(typeof document==='undefined') return str;
+ // Measuring means inserting the whole mark into the document and asking
+ // for its bounding box, which measured at 41ms — and svg() is called
+ // several times per build. The answer only changes when the geometry
+ // does, so it is cached against the things that move it. Everything
+ // else — timings, easings, colour, the entire animation — cannot alter
+ // a bounding box and must not cost a re-measure.
+ var key=[P.layout,P.lgap,P.lspread,P.lscat,P.lshuffle,P.lturn,P.lsettle,P.rotX,P.rotO,
+  P.lrot,P.startSpread,P.arcs,P.orbSize,P.orbvary,P.orbtilt,P.orbtvary,P.orbarc,
+  P.acc,P.asize,P.spread,P.place,P.jit,P.eyes,P.eyeSize,P.eyeOval,P.eyeGlint,
+  P.glintShape,(P.emos||[]).join('|'),P.emoAmt,P.extrude,P.lgw,P.lgsp,P.lgbris,
+  P.sleep,P.slpEntrance,P.marks.join('|'),str.length].join(',');
+ if(BBCACHE.key===key&&BBCACHE.bb) return fitViewBox(str, BBCACHE.bb);
  var hold=document.createElement('div');
  hold.setAttribute('style','position:fixed;left:-99999px;top:0;width:900px;opacity:0;pointer-events:none');
  hold.innerHTML=str;
@@ -1350,6 +1363,12 @@ function svg(){
  try{ bb=hold.querySelector('svg').getBBox() }catch(e){}
  hold.remove();
  if(!bb||!bb.width||!bb.height) return str;
+ BBCACHE.key=key; BBCACHE.bb={x:bb.x,y:bb.y,width:bb.width,height:bb.height};
+ return fitViewBox(str, BBCACHE.bb);
+}
+
+/** Fit the viewBox around a measured box, centred on the letters. */
+function fitViewBox(str, bb){
 
  // Centred on the LETTERS, not on the measured content.
  //
@@ -3882,7 +3901,10 @@ function toggleEmo(n){
  var a=P.emos||(P.emos=[]), i=a.indexOf(n);
  // Never empty: with nothing selected there is no face to draw, and the
  // eye has to be wearing something.
- if(i>=0){ if(a.length>1) a.splice(i,1) } else a.push(n);
+ // Turning them all off is allowed: no expression is the default and a
+ // perfectly good place to stay. emoOn() supplies neutral underneath, so
+ // the eye always has a face to wear even when none is chosen.
+ if(i>=0) a.splice(i,1); else a.push(n);
  drawEmos(); build(); sch();
 }
 function drawEmos(){
@@ -4094,7 +4116,35 @@ function sch(){
  clearInterval(timer);
  if(!auto||paused) return;
  if(P.sleep&&P.slpView!=='in') return;
- timer=setInterval(build, Math.max(1500,((P.dur+9*P.stag)/rate)+900));
+ timer=setInterval(replay, Math.max(1500,((P.dur+9*P.stag)/rate)+900));
+}
+
+/**
+ * Play it again, without rebuilding it.
+ *
+ * The replay used to call build(), which regenerates ~250KB of CSS and
+ * SVG and hands it to the parser. That measured at 140ms — a quarter of
+ * a second of frozen page, every 1.6 seconds, for the whole time the
+ * stage is running. It is exactly the stall in the recording: the motion
+ * stops dead, then jumps to where it should have got to.
+ *
+ * Nothing about a replay needs new markup. The animations are already
+ * there and already correct; they just need winding back. Seeking them
+ * to zero is a handful of microseconds and cannot stutter, because
+ * nothing is parsed and nothing is laid out.
+ */
+function replay(){
+ var els=document.querySelectorAll('#stage *');
+ for(var i=0;i<els.length;i++){
+  var as=els[i].getAnimations?els[i].getAnimations():[];
+  for(var k=0;k<as.length;k++){
+   // Infinite animations are the resting state and must not be yanked
+   // back — restarting them is what made a sleep mark look like a loader
+   // stuck on replay.
+   if(as[k].effect&&as[k].effect.getTiming().iterations===Infinity) continue;
+   try{ as[k].currentTime=0; as[k].play() }catch(e){}
+  }
+ }
 }
 
 var PRESETS={
