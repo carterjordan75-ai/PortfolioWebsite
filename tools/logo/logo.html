@@ -230,64 +230,78 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   <div class="row"><label>Counters</label>
    <button id="eyOff" onclick="setEyes(0)">Holes</button>
    <button id="eyOn" onclick="setEyes(1)">Eyes</button></div>
-  <div class="row"><label>Look around <b id="veyeLook"></b></label><input id="eyeLook" type="range" min="0" max="1" step=".01"></div>
-  <div class="row"><label>Reach to rim <b id="veyeEdge"></b></label><input id="eyeEdge" type="range" min="0" max="1" step=".02"></div>
-  <div class="row"><label>Lid curve <b id="veyeLidR"></b></label><input id="eyeLidR" type="range" min="1.05" max="6" step=".05"></div>
-  <div class="row"><label>Lid at rest <b id="veyeLidRest"></b></label><input id="eyeLidRest" type="range" min="0" max=".6" step=".02"></div>
-  <div class="row"><label>Emotions</label></div>
-  <div class="row" id="emopicker"></div>
-  <div class="row"><label>Expression strength <b id="vemoAmt"></b></label><input id="emoAmt" type="range" min="0" max="1.6" step=".05"></div>
-  <div class="row"><label>Secondary amount <b id="vemoMove"></b></label><input id="emoMove" type="range" min="0" max="3" step=".05"></div>
-  <div class="row"><label>Secondary speed <b id="vemoSpeed"></b></label><input id="emoSpeed" type="range" min=".2" max="4" step=".1"></div>
-  <div class="row"><label>Secondary repeats <b id="vemoReps"></b></label><input id="emoReps" type="range" min="1" max="6" step="1"></div>
-  <div class="row"><label>Secondary delay <b id="vemoLead"></b></label><input id="emoLead" type="range" min="0" max=".8" step=".05"></div>
-  <p class="note">Pick as many as you like — the eyes wear them in turn, a new
-   face on each glance. More than one is what stops the loop reading as a loop.
-   Each changes the lids, the pupil, the catchlight and where it tends to look.</p>
-  <div class="row"><label>Glances <b id="veyeDart"></b></label><input id="eyeDart" type="range" min="1" max="10" step="1"></div>
-  <div class="row"><label>Blinks <b id="veyeBlink"></b></label><input id="eyeBlink" type="range" min="0" max="6" step="1"></div>
+
+  <details><summary>1 &mdash; The eye</summary>
   <div class="row"><label>Pupil size <b id="veyeSize"></b></label><input id="eyeSize" type="range" min=".3" max="3.4" step=".01"></div>
   <div class="row"><label>Oval <b id="veyeOval"></b></label><input id="eyeOval" type="range" min=".45" max="2.2" step=".01"></div>
   <div class="row"><label>Dome <b id="veyeDome"></b></label><input id="eyeDome" type="range" min="0" max="1" step=".01"></div>
-  <div class="row"><label>Lid curve <b id="veyeBow"></b></label><input id="eyeBow" type="range" min="-1" max="1.4" step=".01"></div>
+  <div class="row"><label>Reach to rim <b id="veyeEdge"></b></label><input id="eyeEdge" type="range" min="0" max="1" step=".02"></div>
+  <div class="row"><label>Glint shape</label></div>
+  <div class="row" id="glintpicker"></div>
+  <div class="row"><label>Glint size <b id="veyeGlint"></b></label><input id="eyeGlint" type="range" min="0" max="1" step=".01"></div>
+  <p class="note">What the eye IS, before it does anything. Reach to rim is
+   capped by the letterform and follows Pupil size and Oval, so a bigger pupil
+   gets less room and still stops short of the ring rather than walking out
+   through it. Dome is the fish-eye: a pupil sits on a curved surface, so it
+   foreshortens along the way it travelled and is fattest facing you.</p>
+  </details>
+
+  <details><summary>2 &mdash; The lids</summary>
+  <div class="row"><label>Lid curve <b id="veyeLidR"></b></label><input id="eyeLidR" type="range" min="1.05" max="6" step=".05"></div>
+  <div class="row"><label>Lid at rest <b id="veyeLidRest"></b></label><input id="eyeLidRest" type="range" min="0" max=".6" step=".02"></div>
   <div class="row"><label>Shut to <b id="veyeShut"></b></label><input id="eyeShut" type="range" min=".02" max=".4" step=".01"></div>
-  <div class="row"><label>Blink speed <b id="veyeSpeed"></b></label><input id="eyeSpeed" type="range" min=".35" max="2.2" step=".05"></div>
+  <p class="note">A lid covers the eye rather than shrinking it, so the pupil
+   stays full size behind it and an eye three-quarters closed still reads as an
+   eye. Lid curve is the shape of its edge &mdash; a tight arc reads cartoonish,
+   a wide one deadpan.</p>
+  </details>
+
+  <details><summary>3 &mdash; Expression</summary>
+  <div class="row" id="emopicker"></div>
+  <div class="row"><label>Expression strength <b id="vemoAmt"></b></label><input id="emoAmt" type="range" min="0" max="1.6" step=".05"></div>
+  <p class="note">Pick as many as you like &mdash; the eyes wear them in turn, a
+   new face on each glance, which is what stops the loop reading as a loop. Each
+   sets the lids, the pupil, the catchlight and where it tends to look.</p>
+  </details>
+
+  <details><summary>4 &mdash; Looking around</summary>
+  <div class="row"><label>Look around <b id="veyeLook"></b></label><input id="eyeLook" type="range" min="0" max="1" step=".01"></div>
+  <div class="row"><label>Glances <b id="veyeDart"></b></label><input id="eyeDart" type="range" min="1" max="10" step="1"></div>
+  <div class="row"><label>Glance seed <b id="veyeSeed"></b></label><input id="eyeSeed" type="range" min="0" max="40" step="1"></div>
+  <div class="row"><label>Via centre <b id="veyeVia"></b></label><input id="eyeVia" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Glance overshoot <b id="veyeOver"></b></label><input id="eyeOver" type="range" min="1" max="1.6" step=".01"></div>
   <div class="row"><label>Look back <b id="veyeHome"></b></label><input id="eyeHome" type="range" min="80" max="6000" step="20"></div>
   <div class="row"><label>Stretch in motion <b id="veyeStretch"></b></label><input id="eyeStretch" type="range" min="0" max="1.5" step=".05"></div>
   <div class="row"><label>Swell in motion <b id="veyeSwell"></b></label><input id="eyeSwell" type="range" min="-.4" max=".4" step=".02"></div>
-  <div class="row"><label>Via centre <b id="veyeVia"></b></label><input id="eyeVia" type="range" min="0" max="1" step=".05"></div>
-  <div class="row"><label>Glance seed <b id="veyeSeed"></b></label><input id="eyeSeed" type="range" min="0" max="40" step="1"></div>
+  <p class="note">They dart and hold rather than drifting &mdash; a pupil that
+   slides smoothly reads as drowsy, one that snaps and then sits still reads as
+   looking at something. Stretch and swell are what it does WHILE travelling,
+   and are gone again once it lands.</p>
+  </details>
+
+  <details><summary>5 &mdash; Blinking</summary>
+  <div class="row"><label>Blinks <b id="veyeBlink"></b></label><input id="eyeBlink" type="range" min="0" max="6" step="1"></div>
+  <div class="row"><label>Blink speed <b id="veyeSpeed"></b></label><input id="eyeSpeed" type="range" min=".35" max="2.2" step=".05"></div>
   <div class="row"><label>Close <b id="veyeClose"></b></label><input id="eyeClose" type="range" min="60" max="4000" step="20"></div>
   <div class="row"><label>Hold shut <b id="veyeHold"></b></label><input id="eyeHold" type="range" min="0" max="4000" step="20"></div>
   <div class="row"><label>Reopen <b id="veyeOpen"></b></label><input id="eyeOpen" type="range" min="80" max="6000" step="20"></div>
   <div class="row"><label>Settle open <b id="veyeSettle"></b></label><input id="eyeSettle" type="range" min="0" max="6000" step="20"></div>
   <div class="row"><label>Landing ease <b id="veyeEase"></b></label><input id="eyeEase" type="range" min="0" max="1" step=".05"></div>
-  <p class="note">Close, hold and reopen are the blink itself; blink speed scales
-   all three. Settle is open time guaranteed before the run ends, so the mark
-   never finishes part way through a blink — the last blink is placed backwards
-   from there rather than at a fixed fraction of the run.</p>
-  <div class="row"><label>Glint shape</label></div>
-  <div class="row" id="glintpicker"></div>
-  <div class="row"><label>Glint <b id="veyeGlint"></b></label><input id="eyeGlint" type="range" min="0" max="1" step=".01"></div>
-  <p class="note">The O's counters become eyes. They dart and hold rather than
-  drifting — a pupil that slides smoothly reads as drowsy, one that snaps and
-  then sits still reads as looking at something. Blinks shut fast and open
-  slower, the way a lid actually moves, and the two eyes are offset by a few
-  frames so the pair reads as a face rather than one object with two holes.</p>
-  <p class="note">The lid closes by rebuilding the counter's own outline, not by
-  squashing it — a squash flattens to a line, a rebuilt path can bow. Lid curve
-  is how much it bows and which way; Shut to is how much sliver is left, because
-  a shut eye that closes to nothing reads as the hole vanishing. Blink speed
-  slows the whole gesture: it is deliberate going down and through the shut, then
-  accelerates open.</p>
-  <p class="note">Dome is the fish-eye. A pupil is not a sticker sliding across a
-  flat disc — it sits on a curved surface, so it foreshortens along the direction
-  it travelled and reads fattest when facing you. Turning it off is what makes the
-  eye look flat.</p>
-  <p class="note">Look around is capped by the letterform, and the cap follows
-  Pupil size and Oval — a bigger pupil gets less room, so it still stops short of
-  the rim rather than walking out through it.</p>
+  <p class="note">Close, hold and reopen are the blink itself; Blink speed scales
+   all three. The close is meant to be quicker than the open &mdash; an even
+   blink reads mechanical. Settle is open time guaranteed before the run ends,
+   so the mark never finishes part way through a blink.</p>
+  </details>
+
+  <details><summary>6 &mdash; Secondary motion</summary>
+  <div class="row"><label>Secondary amount <b id="vemoMove"></b></label><input id="emoMove" type="range" min="0" max="3" step=".05"></div>
+  <div class="row"><label>Secondary speed <b id="vemoSpeed"></b></label><input id="emoSpeed" type="range" min=".2" max="4" step=".1"></div>
+  <div class="row"><label>Secondary repeats <b id="vemoReps"></b></label><input id="emoReps" type="range" min="1" max="6" step="1"></div>
+  <div class="row"><label>Secondary delay <b id="vemoLead"></b></label><input id="emoLead" type="range" min="0" max=".8" step=".05"></div>
+  <p class="note">What the pupils do on top of everything else while a face is
+   worn &mdash; happy bounces, sad sinks, angry trembles. Needs an expression
+   selected above to have anything to express.</p>
+  </details>
   </details>
 
   <details class="grp"><summary>Letters</summary>
@@ -640,7 +654,7 @@ var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 
 var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
  eyes:0,eyeLook:.6,eyeDart:4,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
- eyeBow:.55,eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
+ eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
  eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeVia:.5,
  eyeEdge:.68,eyeLidR:1.9,eyeLidRest:0,emos:['neutral'],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
@@ -2156,7 +2170,7 @@ function lidOffset(i, cover, fromTop){
 
 function lidPath(i, k, em){
  var b=B[i], g=eyeGeom(i); if(!b.hp||!g) return '';
- var r=g.r||1, bow=P.eyeBow;
+ var r=g.r||1;
  em=em||EMOTIONS.neutral;
  var amt=(P.emoAmt===undefined?1:P.emoAmt);
  // Which side of the face this eye is on, so a tilt points inward on
@@ -2192,11 +2206,6 @@ function lidPath(i, k, em){
   var t=Math.max(-1,Math.min(1,dy/(r*0.55)));
   var w=0.5+0.5*(t*(1.5-0.5*t*t));
   dy *= (top+(bot-top)*w)*k;
-  // the bow: ends ride up as it closes, so the sliver curves instead of
-  // going flat. Centred on u^2 - 1/2 so the shape bends without also
-  // sliding down the letterform.
-  var u=dx/r;
-  dy += bow*r*(1-k)*(u*u-0.5);
   // Tilt the whole shape rather than sloping an edge — the lens turns,
   // which is what an angry or worried eye actually does.
   return [g.cx + dx*ca - dy*sa, g.cy + dx*sa + dy*ca];
@@ -2421,7 +2430,13 @@ function eyeBlinkCSS(i, total){
  // Only the expression's tilt is left here, because that is the pupil
  // turning rather than closing.
  var em=emoAt(0);
- return '.eyP'+i+'{d:path("'+lidPath(i,1,em)+'")}';
+ // pupilScaleCSS owns .eyB — its size, its oval, the wake and each
+ // face's scale, composed into one animation. It is called from here
+ // because this is the function that owns the pupil; losing the call
+ // when this body was rewritten took pupil size, oval, the wake grow-in
+ // and every expression's scale with it, all silently.
+ return '.eyP'+i+'{d:path("'+lidPath(i,1,em)+'")}'
+  +pupilScaleCSS(i,total,g);
 }
 
 
@@ -4102,7 +4117,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 // nothing, which is how the whole Layout group shipped dead.
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
- 'eyeBow','eyeShut','eyeSpeed','eyeGlint',
+ 'eyeShut','eyeSpeed','eyeGlint',
  'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','eyeLidR','eyeLidRest','emoAmt','emoMove','emoSpeed','emoReps','emoLead',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
@@ -4502,7 +4517,6 @@ eyeBlink:'Blinks per run.',
 eyeSize:'Pupil size. A bigger pupil has less room to travel before it would break through the ring.',
 eyeOval:'Stretches the pupil from round towards an oval.',
 eyeDome:'Foreshortens the pupil as it moves, so it reads as sitting on a sphere.',
-eyeBow:'How much the lid curves as it closes. Flat reads as a shutter.',
 eyeShut:'How nearly closed a blink gets. 0 is fully shut.',
 eyeSpeed:'Scales close, hold and reopen together.',
 eyeOver:'How far past a target the pupil throws before settling.',
