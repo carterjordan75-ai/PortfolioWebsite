@@ -1706,25 +1706,166 @@ function lookSchedule(i, total){
  return {T:T, n:n, span:span, moveP:moveP, overP:overP, setP:setP, homeP:homeP};
 }
 
+/**
+ * Turns collected stops into a keyframe body that cannot jolt.
+ *
+ * Three rules, each of which was violated somewhere before this existed:
+ *
+ *  Sorted.     Stops are generated in whatever order the code finds
+ *              convenient, not in time order.
+ *  Separated.  Two stops closer together than a hundredth of a percent
+ *              are, at any real duration, the same instant — and if they
+ *              hold different values that is a teleport. Whichever
+ *              arrives second is dropped, because the first is the one
+ *              the motion was heading towards.
+ *  Continuous. A stop that repeats the previous position adds nothing
+ *              and can only introduce a dead patch.
+ *
+ * The gap is measured in MILLISECONDS, not percent. A percentage floor
+ * looked right and is not: 0.01% is 0.4ms on a four second cycle and
+ * 0.1ms on a one second one, so the same rule that held at a comfortable
+ * duration let a teleport straight through at a short one. Anything
+ * closer together than most of a frame is the same instant however long
+ * the run is, and two different values at the same instant is a jump.
+ *
+ * When stops do collide the LATER value wins, because it is where the
+ * motion was heading; keeping the earlier one would stop short.
+ */
+/**
+ * Sorts stops and removes any that are too close together to be separate
+ * moments. Returns what survives; the caller formats it.
+ *
+ * The one rule worth stating: normally the newcomer is dropped, but the
+ * FINAL stop has to land, so there the previous one goes instead. A run
+ * that ends with two stops in the same millisecond ends with a teleport,
+ * and the end is where it shows most.
+ */
+function thinStops(stops, durMs){
+ var sorted=stops.slice().sort(function(a,b){ return a.p-b.p });
+ // One frame at 60Hz. Two stops closer together than this cannot render
+ // as separate moments — the browser interpolates straight past one of
+ // them — so a pair inside the window is not a fast move, it is a jump
+ // with a wasted keyframe attached. Measured in milliseconds and then
+ // converted, because the same 0.5% is a comfortable beat in a four
+ // second run and half a frame in a two hundred millisecond one; the
+ // floor used to be written in percent, which is why short runs were the
+ // jolty ones.
+ var minPct=durMs? Math.max(0.01, 16.7/durMs*100) : 0.01;
+ var keep=[];
+ for(var i=0;i<sorted.length;i++){
+  var s=sorted[i];
+  if(i<sorted.length-1){
+   // Crowded by the one before: the newcomer is the one to drop.
+   if(keep.length && s.p-keep[keep.length-1].p<minPct) continue;
+  } else {
+   // The final stop has to land, so here the ones before it give way —
+   // and keep giving way until there is room, since removing one can
+   // easily leave the next still inside the window. Popping once was
+   // enough for most runs and not for the fast ones, which is exactly
+   // where it mattered.
+   while(keep.length && s.p-keep[keep.length-1].p<minPct) keep.pop();
+  }
+  keep.push(s);
+ }
+ return keep;
+}
+
+function emitStops(stops, durMs){
+ var out='', lastX=null, lastY=null;
+ thinStops(stops, durMs).forEach(function(s,i,all){
+  var x=+s.x.toFixed(1), y=+s.y.toFixed(1);
+  // an exact repeat of where we already are, with nothing to say
+  if(x===lastX && y===lastY && !s.e && i<all.length-1) return;
+  out+=s.p.toFixed(2)+'%{transform:translate('+x.toFixed(1)+'px,'+y.toFixed(1)+'px)'
+   +(s.e?';animation-timing-function:'+s.e:'')+'}';
+  lastX=x; lastY=y;
+ });
+ return out;
+}
+
+/**
+ * The eye's easing vocabulary.
+ *
+ * Every curve here starts and ends at rest — first control point on
+ * y=0, second on y=1 — so the only thing that ever varies is how the
+ * speed is distributed in between. That property is the whole point,
+ * because it makes smoothness structural rather than something to be
+ * tuned back in: a joint between two of these curves is always
+ * zero-to-zero, whatever the sliders say.
+ *
+ * It replaces a set of hand-picked beziers that were shaped for how
+ * each move looked on its own and not for how it joined the next one.
+ * Several of them arrived at two and a half times their average speed
+ * and handed over to one leaving at four times its own — and at the
+ * overshoot apex, where the pupil throws past its target and comes
+ * back, those two velocities point in OPPOSITE directions, so they
+ * added instead of cancelling. That single joint was most of the jolt:
+ * an apex is a turning point, and a turning point has no speed.
+ *
+ * `k` distributes the speed. Low is a dart that covers the ground early
+ * and spends the rest arriving; high is an even glide.
+ */
+function eyeEase(k){
+ k=Math.max(0,Math.min(1,k===undefined?0.5:k));
+ return 'cubic-bezier('+(0.30+0.22*k).toFixed(3)+',0,'+(0.22+0.34*k).toFixed(3)+',1)';
+}
+var EZ_DART=eyeEase(0.10),   // a flick: most of the distance up front
+    EZ_MOVE=eyeEase(0.40),   // an ordinary look
+    EZ_DRIFT=eyeEase(0.85),  // the creep through a hold, barely moving
+    EZ_SETTLE=eyeEase(0.25); // coming to rest on a target
+
 function eyeLookCSS(i, total){
  var S=lookSchedule(i,total); if(!S) return '';
  var T=S.T;
- // A tail reserved for coming home.
- //
- // Without it the last dart is placed at exactly 100% and then the
- // closing keyframe — which has to put the eye back at centre, because
- // the mark has to end as a clean O — lands on the same instant and
- // overwrites it. So the final glance was cut off and the pupil slid
- // home in whatever time was left, linearly, with none of the
- // character every other glance gets. That is the "too sudden".
- // Every timing below comes from lookSchedule, so the deformation on
- // the other element is guaranteed to be on the same beat. Computing
- // them here as well is what let the two drift apart.
  var n=S.n, span=S.span, moveP=S.moveP, overP=S.overP, setP=S.setP, homeP=S.homeP;
  var ov=P.eyeOver;
  var at=function(v){ return Math.max(0,Math.min(100,v)) };
- var tr=function(x,y){ return 'transform:translate('+x.toFixed(1)+'px,'+y.toFixed(1)+'px)' };
- var kf='0%{'+tr(0,0)+'}', prev=[0,0];
+
+ /**
+  * Collected first, sorted second, written last.
+  *
+  * These stops are NOT produced in time order. The via-centre pause
+  * belongs BEFORE a glance but is generated while handling that glance;
+  * the gaze track fills the hold AFTER one. Written out as they came,
+  * the rule ended up with percentages running backwards, and — far
+  * worse — pairs a hundredth of a percent apart holding values seven
+  * units apart. That is not a fast move, it is a teleport, and it is
+  * the jolt.
+  *
+  * Nothing complained because a keyframe rule is defined by its
+  * percentages and does not care what order they appear in. The browser
+  * dutifully sorted them and animated the mess.
+  */
+ var stops=[];
+ /**
+  * Every stop passes through here, and nothing gets out beyond the room
+  * the eye actually has.
+  *
+  * Reach is computed from the clear space between pupil and ring, and
+  * then overshoot MULTIPLIES a position and the expression's gaze ADDS
+  * to it — neither bounded by anything. At the ends of the sliders that
+  * put the pupil 174 units from centre inside a counter with a radius of
+  * 25: flung clean out of the letterform and snapped back, which is not
+  * a rough animation, it is the pupil leaving the eye.
+  *
+  * Clamped by magnitude rather than per-axis, so a diagonal is limited
+  * the same as a straight one and the direction it was heading is kept.
+  * Overshoot and bias still do their work — inside the room, which is
+  * the only place they were ever meant to.
+  */
+ var room=(T.g&&T.g.room)?T.g.room:T.reach;
+ var put=function(p,x,y,e){
+  var m=Math.hypot(x,y);
+  if(m>room && m>0){ var k2=room/m; x*=k2; y*=k2 }
+  stops.push({p:at(p), x:x, y:y, e:e||null});
+ };
+ var prev=[0,0];
+ // The opening stop carries an easing like every other. Left bare it
+ // defaults to linear, so a run that starts by moving started at full
+ // speed on frame one — the one jolt you cannot help but notice,
+ // because there is nothing before it to hide behind.
+ put(0,0,0,EZ_MOVE);
+
  for(var k=1;k<=n;k++){
   // Each face carries a gaze — where it looks while it is worn. Added to
   // the glance rather than replacing it, so the randomised targets still
@@ -1733,73 +1874,71 @@ function eyeLookCSS(i, total){
   var gz=emoGaze(em);
   var bias=[(gz[0][1]||0)*T.reach*amt, (gz[0][2]||0)*T.reach*amt];
   var pos=[T.pts[k][0]+bias[0], T.pts[k][1]+bias[1]], t0=k*span;
-  // two creep stops through the hold, so it is never parked
-  var c1=[prev[0]+(rnd(T.seed+k*7)-0.5)*T.reach*0.09, prev[1]+(rnd(T.seed+k*17)-0.5)*T.reach*0.09];
-  var c2=[c1[0]+(rnd(T.seed+k*23)-0.5)*T.reach*0.07, c1[1]+(rnd(T.seed+k*31)-0.5)*T.reach*0.07];
-  kf+=at(t0-moveP-span*0.28).toFixed(2)+'%{'+tr(c1[0],c1[1])+';animation-timing-function:linear}';
-  kf+=at(t0-moveP).toFixed(2)+'%{'+tr(c2[0],c2[1])+';animation-timing-function:cubic-bezier(.55,0,.7,.25)}';
+
   // Optionally back through centre first. A real eye does not slide from
   // one corner to the other along a straight line — it comes back and
-  // sets off again, with a beat in the middle. Placed before the move so
-  // the move itself keeps its full shape rather than being cut in half.
+  // sets off again, with a beat in the middle. Emitted before the creep
+  // now as well as happening before it, so the two cannot cross over.
   if(P.eyeVia>0 && k>1){
-   var viaAt=at(t0-moveP-span*0.5);
-   kf+=viaAt.toFixed(2)+'%{'+tr(0,0)+';animation-timing-function:cubic-bezier(.3,0,.28,1)}';
-   kf+=at(t0-moveP-span*0.5+span*0.30*P.eyeVia).toFixed(2)+'%{'+tr(0,0)
-    +';animation-timing-function:cubic-bezier(.55,0,.7,.25)}';
+   put(t0-moveP-span*0.62, prev[0]*0.45, prev[1]*0.45, EZ_MOVE);
+   put(t0-moveP-span*0.5, 0, 0, EZ_SETTLE);
+   put(t0-moveP-span*0.5+span*0.26*P.eyeVia, 0, 0, EZ_MOVE);
   }
-  kf+=at(t0-moveP+overP).toFixed(2)+'%{'+tr(pos[0]*ov,pos[1]*ov)+';animation-timing-function:cubic-bezier(.18,.72,.28,1)}';
-  kf+=at(t0-moveP+setP).toFixed(2)+'%{'+tr(pos[0],pos[1])+';animation-timing-function:linear}';
+  // two creep stops through the hold, so it is never parked
+  var from=(P.eyeVia>0&&k>1)?[0,0]:prev;
+  var c1=[from[0]+(rnd(T.seed+k*7)-0.5)*T.reach*0.09, from[1]+(rnd(T.seed+k*17)-0.5)*T.reach*0.09];
+  var c2=[c1[0]+(rnd(T.seed+k*23)-0.5)*T.reach*0.07, c1[1]+(rnd(T.seed+k*31)-0.5)*T.reach*0.07];
+  put(t0-moveP-span*0.28, c1[0], c1[1], EZ_DRIFT);
+  // Into the apex and out of it. Both are the throw, and the apex
+  // between them is where the pupil turns round, so both come to rest
+  // on it — that is what makes an overshoot read as weight rather than
+  // as the transform changing its mind.
+  put(t0-moveP, c2[0], c2[1], EZ_DART);
+  put(t0-moveP+overP, pos[0]*ov, pos[1]*ov, EZ_SETTLE);
+  put(t0-moveP+setP, pos[0], pos[1], EZ_DRIFT);
+
   // The rest of the gaze track plays out across the hold — a face that
   // drops its eyes and then looks back up needs the time between
   // glances to do it in, which is exactly the stretch that used to be
   // dead air.
   if(gz.length>2){
-   var h0=t0-moveP+setP, h1=(k<n?(k+1)*span-moveP-span*0.28:100-homeP);
+   var h0=t0-moveP+setP;
+   var h1=(k<n ? (k+1)*span-moveP-span*(P.eyeVia>0?0.62:0.28) : 100-homeP);
    var hs=Math.max(0.01,h1-h0);
    for(var q=1;q<gz.length;q++){
     var gp=[T.pts[k][0]+(gz[q][1]||0)*T.reach*amt, T.pts[k][1]+(gz[q][2]||0)*T.reach*amt];
-    kf+=at(h0+hs*gz[q][0]).toFixed(2)+'%{'+tr(gp[0],gp[1])
-     +';animation-timing-function:cubic-bezier(.4,0,.3,1)}';
+    put(h0+hs*gz[q][0], gp[0], gp[1], EZ_MOVE);
     if(q===gz.length-1) pos=gp;
    }
   }
   prev=pos;
  }
- // Coming home is a glance like any other, and gets the same shape: a
- // creep on the hold, a gathering start, a throw PAST centre, then the
- // settle back onto it. Overshooting the middle is what makes it read as
- // looking back rather than as a transform returning to zero — an eye
- // that arrives exactly on target and stops has no mass.
- // Four stops rather than two. The return used to be a hard push and a
- // single overshoot, which lands on centre still carrying speed and
- // stops dead — that is the rushed feeling, and no amount of duration
- // fixes it because the problem is the shape, not the length. Now it
- // eases out of the hold, crosses, overshoots, drifts back, and comes to
- // rest with almost nothing left to give up.
+
+ // Coming home is a glance like any other: a creep on the hold, a
+ // gathering start, a throw PAST centre, then the settle onto it.
+ // Overshooting the middle is what makes it read as looking back rather
+ // than as a transform returning to zero — an eye that arrives exactly
+ // on target and stops has no mass. The crossing is brisk and the settle
+ // gets the rest, because the long part should be the arrival.
  var ease=Math.max(0,Math.min(1,P.eyeEase));
  var back=[-prev[0]*(ov-1)*1.4, -prev[1]*(ov-1)*1.4];
  var hc=[prev[0]+(rnd(T.seed+91)-0.5)*T.reach*0.07, prev[1]+(rnd(T.seed+97)-0.5)*T.reach*0.07];
- // a short counter-lean before it sets off, so the move has a wind-up
  var lean=[prev[0]*1.045, prev[1]*1.045];
- kf+=at(100-homeP).toFixed(2)+'%{'+tr(hc[0],hc[1])+';animation-timing-function:cubic-bezier(.32,0,.68,.22)}';
- kf+=at(100-homeP*0.9).toFixed(2)+'%{'+tr(lean[0],lean[1])+';animation-timing-function:cubic-bezier(.55,0,.55,.32)}';
- // Overshoot early, then spend the REST of the return drifting onto
- // centre. The landing used to get the last 14% of the home time and
- // everything before it was travel, which is why it still read as rushed
- // however long the return was made — the long part was the journey, not
- // the arrival. It is the other way round now: the crossing is brisk and
- // the settle has two thirds of the return to give its speed up in.
- kf+=at(100-homeP*0.62).toFixed(2)+'%{'+tr(back[0],back[1])
-  +';animation-timing-function:cubic-bezier('+(0.02+0.06*(1-ease)).toFixed(3)
-  +','+(0.82+0.16*ease).toFixed(3)+',0.12,1)}';
- kf+=at(100-homeP*0.22).toFixed(2)+'%{'+tr(back[0]*0.10,back[1]*0.10)
-  +';animation-timing-function:cubic-bezier(0.1,'+(0.72+0.26*ease).toFixed(3)+',0.2,1)}';
- kf+='100%{'+tr(0,0)+'}';
- return '@keyframes eyL'+i+'{'+kf+'}'
+ // `back` is past centre — another turning point — so the throw ends
+ // on it at rest and the settle leaves it the same way. The slider
+ // moves the character between a flick and a glide; it cannot put a
+ // step back in, because none of these curves has one to give.
+ put(100-homeP, hc[0], hc[1], EZ_DRIFT);
+ put(100-homeP*0.9, lean[0], lean[1], eyeEase(0.10+0.30*ease));
+ put(100-homeP*0.62, back[0], back[1], eyeEase(0.20+0.40*ease));
+ put(100-homeP*0.22, back[0]*0.10, back[1]*0.10, eyeEase(0.30+0.45*ease));
+ put(100,0,0,null);
+
+ return '@keyframes eyL'+i+'{'+emitStops(stops,total)+'}'
   +'.eyL'+i+'{transform-box:view-box;transform-origin:'+T.g.cx.toFixed(1)+'px '+T.g.cy.toFixed(1)+'px;'
   +'animation:eyL'+i+' '+Math.round(total)+'ms linear both}';
 }
+
 
 /**
  * The dome.
@@ -1832,39 +1971,79 @@ function eyeDomeCSS(i, total){
  if(!S || (P.eyeDome<=0 && P.eyeStretch<=0 && P.eyeSwell===0)) return '';
  var T=S.T, span=S.span, moveP=S.moveP, setP=S.setP;
  var at=function(v){ return Math.max(0,Math.min(100,v)) };
+ /**
+  * The deformation, as plain axis scales with no rotation in it.
+  *
+  * It used to be rotate(a) scale(...) rotate(-a), which is the textbook
+  * way to squash along an arbitrary axis and is exactly wrong here. Each
+  * glance squashes along a different direction, so `a` genuinely differs
+  * between stops — by 175 degrees in the worst case — and CSS
+  * interpolates that angle while the scale is non-round. What you see is
+  * the pupil spinning on its way to the next shape. That is the wobble,
+  * and no amount of easing fixes it because the rotation should not be
+  * animating at all.
+  *
+  * Resolving the squash onto X and Y removes the angle from the
+  * animation entirely. Two numbers that both interpolate monotonically
+  * cannot produce a rotation, so the shape can only ever ease between
+  * one proportion and another. Slightly less exact than a true
+  * axis-aligned squash on a diagonal; completely immune to spinning,
+  * which is worth far more.
+  */
  function pose(p, from){
-  var m=Math.hypot(p[0],p[1]);
-  var f=T.reach? Math.min(1,m/T.reach) : 0;
-  var ang=(Math.atan2(p[1],p[0])*180/Math.PI);
-  var squash=1-P.eyeDome*f*f*0.34;      // foreshorten along travel
-  var bulge=1+P.eyeDome*(1-f)*0.10;     // fattest when facing you
-  // `from` is only passed for the mid-move stop. The stretch runs along
-  // the direction of TRAVEL, which is rarely the direction the pupil is
-  // offset in, so it needs its own angle — using the position angle here
-  // would stretch it sideways to the way it is actually going.
+  var r=T.reach||1;
+  var dx=p[0], dy=p[1];
   if(from){
-   var dx=p[0]-from[0], dy=p[1]-from[1], d=Math.hypot(dx,dy);
+   // mid-move: stretch along the direction of TRAVEL instead
+   var mx=p[0]-from[0], my=p[1]-from[1], d=Math.hypot(mx,my);
    if(d>0.01){
-    ang=Math.atan2(dy,dx)*180/Math.PI;
-    var trav=T.reach? Math.min(1,d/(T.reach*1.4)) : 0;
-    squash=1+P.eyeStretch*trav*0.42;          // drawn out along the move
-    bulge=(1-P.eyeStretch*trav*0.16)*(1+P.eyeSwell*trav);
+    var trav=Math.min(1,d/(r*1.4));
+    var ux=Math.abs(mx)/d, uy=Math.abs(my)/d;
+    var st=P.eyeStretch*trav*0.42, sw=1+P.eyeSwell*trav;
+    return { sx:(1+st*ux)*(1-st*uy*0.38)*sw, sy:(1+st*uy)*(1-st*ux*0.38)*sw };
    }
   }
-  return 'transform:rotate('+ang.toFixed(1)+'deg) scale('
-   +(squash*bulge).toFixed(3)+','+bulge.toFixed(3)+') rotate('+(-ang).toFixed(1)+'deg)';
+  // at rest: foreshorten along whichever way it is offset, and be
+  // fattest when facing you
+  var fx=Math.min(1,Math.abs(dx)/r), fy=Math.min(1,Math.abs(dy)/r);
+  var f=Math.min(1,Math.hypot(dx,dy)/r);
+  var bulge=1+P.eyeDome*(1-f)*0.10;
+  return { sx:(1-P.eyeDome*fx*fx*0.34)*bulge, sy:(1-P.eyeDome*fy*fy*0.34)*bulge };
  }
- var kf='0%{'+pose([0,0])+'}';
+ // Two passes, because an angle needs to know its neighbours.
+ //
+ // A stop with no deformation has no meaningful direction — scale is
+ // 1,1 and the rotation is a no-op. But CSS interpolates the ANGLE
+ // between that stop and the next while the scale is also ramping, so
+ // what you see is a squash rotating into place: the pupil spins. It
+ // measured at a 175 degree swing between adjacent stops.
+ //
+ // So every stop is computed first, then the neutral ones are given the
+ // angle of the nearest stop that HAS one. The angle is then constant
+ // across the transition and only the scale moves, which is a squash
+ // appearing in place — what it should have been all along.
+ var raw=[];
+ var add=function(p,pt,from,e){
+  var q=pose(pt,from);
+  raw.push({p:at(p), sx:q.sx, sy:q.sy, e:e||null});
+ };
+ add(0,[0,0],null,EZ_MOVE);
  for(var k=1;k<=S.n;k++){
   var t0=k*span;
-  kf+=at(t0-moveP).toFixed(2)+'%{'+pose(T.pts[k-1])+';animation-timing-function:cubic-bezier(.3,0,.5,1)}';
+  add(t0-moveP, T.pts[k-1], null, EZ_DRIFT);
   // part way across, at speed
   if(P.eyeStretch>0||P.eyeSwell!==0)
-   kf+=at(t0-moveP+setP*0.40).toFixed(2)+'%{'+pose(T.pts[k],T.pts[k-1])
-    +';animation-timing-function:cubic-bezier(.25,.1,.3,1)}';
-  kf+=at(t0-moveP+setP).toFixed(2)+'%{'+pose(T.pts[k])+'}';
+   add(t0-moveP+setP*0.40, T.pts[k], T.pts[k-1], EZ_SETTLE);
+  add(t0-moveP+setP, T.pts[k], null, EZ_DRIFT);
  }
- kf+='100%{'+pose([0,0])+'}';
+ add(100,[0,0],null,EZ_MOVE);
+
+
+ var kf='';
+ thinStops(raw, total).forEach(function(r2){
+  kf+=r2.p.toFixed(2)+'%{transform:scale('+r2.sx.toFixed(3)+','+r2.sy.toFixed(3)+')'
+   +(r2.e?';animation-timing-function:'+r2.e:'')+'}';
+ });
  return '@keyframes eyD'+i+'{'+kf+'}'
   +'.eyD'+i+'{transform-box:view-box;transform-origin:'+T.g.cx.toFixed(1)+'px '+T.g.cy.toFixed(1)+'px;'
   +'animation:eyD'+i+' '+Math.round(total)+'ms linear both}';
@@ -2069,12 +2248,22 @@ function emoPupilCSS(i, total){
  var speed=Math.max(0.2,P.emoSpeed===undefined?1:P.emoSpeed);
  var reps=Math.max(1,Math.round(P.emoReps===undefined?1:P.emoReps));
  var lead=Math.max(0,P.emoLead===undefined?0:P.emoLead);
- var kf='', seen=-1;
- var at=function(p,x,y,rot){
-  p=Math.max(0,Math.min(100,p));
-  if(p<=seen) return; seen=p;
-  kf+=p.toFixed(2)+'%{transform:translate('+x.toFixed(2)+'px,'+y.toFixed(2)+'px) rotate('
-   +rot.toFixed(2)+'deg)}';
+ // Collected and clamped, then sorted and thinned, for the same reasons
+ // as the glance: these stops are not generated in time order, and the
+ // secondary rides on top of a pupil that is already at the edge of its
+ // room. Left unbounded it pushes the eye out of the letterform, and two
+ // stops landing in the same millisecond is a jump rather than a move.
+ var raw=[];
+ var g2=eyeGeom(i), room=(g2&&g2.room)?g2.room*0.5:12;
+ // Carries an easing like everything else. This track had none at all,
+ // so a happy bob was a triangle wave — up at a constant speed, reverse
+ // instantly at the top, down at a constant speed. That reversal is the
+ // single roughest joint in the whole eye, and it is on the one track
+ // whose entire job is to give the face some life.
+ var at=function(p,x,y,rot,e){
+  var m=Math.hypot(x,y);
+  if(m>room && m>0){ var k2=room/m; x*=k2; y*=k2 }
+  raw.push({p:Math.max(0,Math.min(100,p)), x:x, y:y, r:rot, e:e||EZ_MOVE});
  };
  at(0,0,0,0);
  for(var k=1;k<=S.n;k++){
@@ -2094,6 +2283,11 @@ function emoPupilCSS(i, total){
   at(t1,0,0,0);
  }
  at(100,0,0,0);
+ var kf='';
+ thinStops(raw, total).forEach(function(st){
+  kf+=st.p.toFixed(2)+'%{transform:translate('+st.x.toFixed(2)+'px,'+st.y.toFixed(2)+'px) rotate('
+   +st.r.toFixed(2)+'deg)'+(st.e?';animation-timing-function:'+st.e:'')+'}';
+ });
  return '@keyframes eyM'+i+'{'+kf+'}'
   +'.eyM'+i+'{transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '
   +g.cy.toFixed(1)+'px;animation:eyM'+i+' '+Math.round(total)+'ms linear both}';
@@ -2330,26 +2524,28 @@ function pupilScaleCSS(i, total, g){
  // Nothing changing it: one static rule, no keyframes to carry.
  if(!wake && !many) return '.eyB'+i+'{'+org+sc(mul(emoAt(0)))+'}';
 
- var kf='', seen=-1;
+ var raw2=[];
  var at=function(p,m,e){
-  p=Math.max(0,Math.min(100,p));
-  if(p<=seen) return; seen=p;
-  kf+=p.toFixed(2)+'%{'+sc(m)+(e?';animation-timing-function:'+e:'')+'}';
+  raw2.push({p:Math.max(0,Math.min(100,p)), m:m, e:e||null});
  };
  var wakeP=total?wake/total*100:0;
  if(wake){
   // grows into its own proportion, never through a different one
-  at(0,[mul(emoAt(0))[0]*0.58, mul(emoAt(0))[1]*0.58],'cubic-bezier(.2,.8,.25,1)');
-  at(Math.max(0.01,wakeP), [mul(emoAt(0))[0]*0.58, mul(emoAt(0))[1]*0.58],'cubic-bezier(.2,.8,.25,1)');
-  at(wakeP+(total?520/total*100:0), mul(emoAt(0)), null);
+  at(0,[mul(emoAt(0))[0]*0.58, mul(emoAt(0))[1]*0.58],EZ_DRIFT);
+  at(Math.max(0.01,wakeP), [mul(emoAt(0))[0]*0.58, mul(emoAt(0))[1]*0.58],EZ_SETTLE);
+  at(wakeP+(total?520/total*100:0), mul(emoAt(0)), EZ_DRIFT);
  } else {
-  at(0, mul(emoAt(0)), null);
+  at(0, mul(emoAt(0)), EZ_DRIFT);
  }
  if(S && many) for(var k=1;k<=S.n;k++){
-  at(k*S.span-S.moveP, mul(emoAt(k-1)), 'cubic-bezier(.4,0,.3,1)');
-  at(k*S.span-S.moveP+S.setP, mul(emoAt(k)), null);
+  at(k*S.span-S.moveP, mul(emoAt(k-1)), EZ_MOVE);
+  at(k*S.span-S.moveP+S.setP, mul(emoAt(k)), EZ_DRIFT);
  }
- at(100, mul(emoAt(S?S.n:0)), null);
+ at(100, mul(emoAt(S?S.n:0)), EZ_MOVE);
+ var kf='';
+ thinStops(raw2, total).forEach(function(st){
+  kf+=st.p.toFixed(2)+'%{'+sc(st.m)+(st.e?';animation-timing-function:'+st.e:'')+'}';
+ });
  return '@keyframes eyB'+i+'{'+kf+'}'
   +'.eyB'+i+'{'+org+'animation:eyB'+i+' '+Math.round(total)+'ms linear both'
   +(wake?'':'')+';animation-iteration-count:1}';
@@ -2398,37 +2594,46 @@ function lidCSS(i, total){
  var out='';
  [true,false].forEach(function(fromTop){
   var cls=fromTop?'eyTop':'eyBot';
-  var stops=[], seen=-1;
+  var stops=[];
   var push=function(p,cover,e){
    stops.push({p:Math.max(0,Math.min(100,p)), y:lidOffset(i,cover,fromTop), e:e});
   };
-  push(0, coverOf(emAt(0),fromTop), null);
+  push(0, coverOf(emAt(0),fromTop), EZ_MOVE);
   // the face's resting lid arrives with its glance
   if(S && emoOn().length>1) for(var k=1;k<=S.n;k++){
-   push(k*S.span-S.moveP, coverOf(emoAt(k-1),fromTop), 'cubic-bezier(.4,0,.3,1)');
-   push(k*S.span-S.moveP+S.setP, coverOf(emoAt(k),fromTop), null);
+   push(k*S.span-S.moveP, coverOf(emoAt(k-1),fromTop), EZ_MOVE);
+   push(k*S.span-S.moveP+S.setP, coverOf(emoAt(k),fromTop), EZ_DRIFT);
   }
   times.forEach(function(T){
    var em=emAt(T.t), base=coverOf(em,fromTop);
    // the lower lid does less of the work and starts a little later
    var reach=fromTop?1:0.42, lag=fromTop?0:T.close*0.22;
    var shut=Math.max(base, base+(1-base)*reach*(1-P.eyeShut));
-   push(pct(T.t-T.close-T.close*0.55+lag), base, 'cubic-bezier(.3,0,.7,1)');
+   // Every one of these rests at both ends. The blink is still twice as
+   // fast closing as opening — that asymmetry lives in the DURATIONS the
+   // schedule hands out, which is where it belongs, and not in curves
+   // that hand over mid-swing. The old open began at two and a half
+   // times its own average speed straight out of a held-shut lid, which
+   // is a lid being yanked rather than one letting go.
+   push(pct(T.t-T.close-T.close*0.55+lag), base, EZ_DRIFT);
    // anticipation: a small lift before the drop
-   push(pct(T.t-T.close+lag), Math.max(0,base-0.07*reach), 'cubic-bezier(.5,0,.75,.9)');
-   push(pct(T.t+lag), shut, null);
-   push(pct(T.t+T.shut+lag), shut, 'cubic-bezier(.25,0,.5,.65)');
-   // overshoot: opens a little past its rest, then settles
-   push(pct(T.t+T.shut+T.open*0.78+lag), Math.max(0,base-0.06*reach),
-        'cubic-bezier(0.2,'+(0.5+0.42*ez).toFixed(3)+',0.25,1)');
-   push(pct(T.t+T.shut+T.open+lag), base, null);
+   push(pct(T.t-T.close+lag), Math.max(0,base-0.07*reach), EZ_SETTLE);
+   push(pct(T.t+lag), shut, EZ_DRIFT);
+   push(pct(T.t+T.shut+lag), shut, EZ_MOVE);
+   // overshoot: opens a little past its rest, then settles. Past-rest is
+   // a turning point, so it is reached at rest like any other.
+   push(pct(T.t+T.shut+T.open*0.78+lag), Math.max(0,base-0.06*reach), eyeEase(0.25+0.45*ez));
+   push(pct(T.t+T.shut+T.open+lag), base, EZ_SETTLE);
   });
-  push(100, coverOf(emAt(total),fromTop), null);
+  push(100, coverOf(emAt(total),fromTop), EZ_MOVE);
 
   stops.sort(function(a,b){ return a.p-b.p });
+  // A minimum gap in MILLISECONDS, not just "not equal". Two lid stops a
+  // thousandth of a percent apart are the same instant, and if they hold
+  // different heights the lid teleports — which is what a blink at the
+  // far end of the timing sliders was doing.
   var kf='';
-  stops.forEach(function(st){
-   if(st.p<=seen) return; seen=st.p;
+  thinStops(stops, total).forEach(function(st){
    kf+=st.p.toFixed(2)+'%{transform:translateY('+st.y.toFixed(2)+'px)'
     +(st.e?';animation-timing-function:'+st.e:'')+'}';
   });
@@ -2566,18 +2771,29 @@ function eyeGlintCSS(i, total){
  var times=blinkTimes(i,total);
  if(!times.length) return base+full+'}';
  var pct=function(ms){ return Math.max(0,Math.min(100,ms/total*100)) };
- var kf='0%{'+full+'}', last=0;
  // The same schedule the lid uses, so the catchlight cannot go out of
  // step with the thing it hides behind.
+ //
+ // How long it takes to go out is its own decision though, and it used
+ // to be a fraction of the close — 48% of it. That reads fine on a slow
+ // blink and is nonsense on a fast one: a 10ms close gave the highlight
+ // five milliseconds to disappear, which is not a fade, it is a pop, and
+ // it was the last jolt left in the eye. A catchlight is a reflection
+ // going out; it wants a real duration, so it gets a floor and simply
+ // starts earlier when the lid is quick.
+ var FADE=48;
+ var stops=[{p:0,v:full}];
  times.forEach(function(T){
-  var a=pct(T.t-T.close*0.6), c=pct(T.t-T.close*0.12), d=pct(T.t+T.shut),
-      f=pct(T.t+T.shut+T.open*0.7);
-  if(a<=last) return;
-  kf+=a.toFixed(2)+'%{'+full+'}'+c.toFixed(2)+'%{'+gone+'}'
-    + d.toFixed(2)+'%{'+gone+'}'+f.toFixed(2)+'%{'+full+'}';
-  last=f;
+  var c=T.t-T.close*0.12, a=Math.min(c-FADE, T.t-T.close*0.6);
+  var d=T.t+T.shut, f=Math.max(d+FADE, T.t+T.shut+T.open*0.7);
+  stops.push({p:pct(a),v:full},{p:pct(c),v:gone},{p:pct(d),v:gone},{p:pct(f),v:full});
  });
- kf+='100%{'+full+'}';
+ stops.push({p:100,v:full});
+ var kf='';
+ thinStops(stops, total).forEach(function(st){
+  kf+=st.p.toFixed(2)+'%{'+st.v+';animation-timing-function:'+EZ_MOVE+'}';
+ });
+
  return '@keyframes eyG'+i+'{'+kf+'}'+base+'animation:eyG'+i+' '+Math.round(total)+'ms linear both}';
 }
 
@@ -2677,13 +2893,16 @@ function glintFadeCSS(i, total){
   var at=function(p,v){
    p=Math.max(0,Math.min(100,p));
    if(p<=seen) return; seen=p;
-   kf+=p.toFixed(2)+'%{opacity:'+v+'}';
+   kf+=p.toFixed(2)+'%{opacity:'+v+';animation-timing-function:steps(1,end)}';
   };
+  // One stop per change, switched with steps(). The swap is meant to be
+  // instant — two catchlights cross-fading through each other reads as a
+  // double reflection — but "instant" was written as two keyframes a
+  // hundredth of a percent apart, which is a degenerate pair rather than
+  // a discrete change. steps(1,end) says it properly: hold, then switch.
   at(0, keyAt(0)===sh.key?1:0);
   for(var k=1;k<=S.n;k++){
-   var t=k*S.span-S.moveP+S.setP*0.5;
-   at(t-0.01, keyAt(k-1)===sh.key?1:0);
-   at(t, keyAt(k)===sh.key?1:0);
+   at(k*S.span-S.moveP+S.setP*0.5, keyAt(k)===sh.key?1:0);
   }
   at(100, keyAt(S.n)===sh.key?1:0);
   out+='@keyframes eyGs'+i+'_'+n+'{'+kf+'}'
@@ -4713,6 +4932,43 @@ scrub:'Scrub the timeline. Pause first to hold a frame.'
  *
  * Cheap to check, so it is checked on every load.
  */
+
+/**
+ * Every joint in the eye must be continuous.
+ *
+ * The eye is built from a dozen keyframe tracks, and for a long while
+ * each one picked its own easing for how that move looked in isolation.
+ * Two curves can both be lovely and still hand over badly: one arriving
+ * at two and a half times its average speed into one leaving at four
+ * times its own is a step change in velocity, and a step change in
+ * velocity is exactly what "jolty" means. At an overshoot apex — where
+ * the pupil throws past its target and comes back — the two point in
+ * OPPOSITE directions and add rather than cancel.
+ *
+ * So the rule is structural, not tuned: every curve in eyeEase() rests
+ * at both ends, and this checks that nothing has crept in that doesn't.
+ * It runs on the generated CSS at boot, which means it sees what the
+ * browser sees rather than what the source intended.
+ */
+function checkEasing(){
+ var sheet=''; try{ sheet=css() }catch(e){ return }
+ if(!sheet) return;
+ var bad=[], re=/@keyframes (ey[\w-]+)\{([\s\S]*?)\}(?=@keyframes|\.|$)/g, m;
+ while((m=re.exec(sheet))!==null){
+  var body=m[2], sre=/animation-timing-function:([^;}]+)/g, e;
+  while((e=sre.exec(body))!==null){
+   var v=e[1].trim();
+   if(v==='linear'||/steps\(/.test(v)) continue;  // a hold or a deliberate swap
+   var cb=/cubic-bezier\(([^)]+)\)/.exec(v); if(!cb) continue;
+   var n=cb[1].split(',').map(Number);
+   // first control point on y=0, second on y=1: starts and ends at rest
+   if(Math.abs(n[1])>1e-6 || Math.abs(1-n[3])>1e-6) bad.push(m[1]+': '+v);
+  }
+ }
+ if(bad.length) console.warn('Easing that does not rest at both ends — this is what jolt looks like:\n  '
+  +bad.slice(0,8).join('\n  ')+(bad.length>8?'\n  ...and '+(bad.length-8)+' more':''));
+}
+
 function checkDefaults(){
  var missing=KEYS.filter(function(k){ return BASE[k]===undefined });
  if(missing.length) console.warn('[tuner] controls with no default:', missing.join(', '));
@@ -4736,7 +4992,7 @@ function applyHelp(){
  });
 }
 
-sync();build();sch();pullSaved();applyHelp();checkDefaults();
+sync();build();sch();pullSaved();applyHelp();checkDefaults();checkEasing();
 </script>
 </div>
 </body></html>
