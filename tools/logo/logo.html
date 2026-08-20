@@ -1658,7 +1658,13 @@ function eyeTrack(i){
  // and you get a different set of glances out of the same settings.
  var seed=11+Math.round(P.eyeSeed)*7.3, drift=(i%2?1:-1)*0.06;
  var pts=[[0,0]];
- for(var k=1;k<darts;k++){
+ // <= darts, not < darts. It used to stop one short, so the last entry
+ // before the terminator was the centre itself and "Glances: 4" bought
+ // three. At the slider's minimum it bought NONE: the track was centre
+ // to centre, the pupil never left the middle, and raising Look around
+ // did nothing you could see — which is a headline control that appears
+ // simply not to work.
+ for(var k=1;k<=darts;k++){
   var a=rnd(seed+k*13)*Math.PI*2, rr=Math.sqrt(rnd(seed+k*29))*reach;
   // Not too close to the last place it looked, or two glances in a row
   // land almost on top of each other and read as one long stare.
@@ -1706,9 +1712,9 @@ function lookSchedule(i, total){
  // control every time it was pushed past halfway.
  var homeP=Math.max(8, Math.min(66, 100*(P.eyeHome/sp)/total));
  var live=100-homeP;
- // The track's own last point is already the centre, so the real look
- // positions are everything before that terminator.
- var n=Math.max(1, T.darts-1);
+ // The track is centre, then one point per glance, then the centre
+ // again as a terminator. The glances are the count, no adjustment.
+ var n=Math.max(1, T.darts);
  var span0=live/n;
  var moveP=Math.min(span0*0.44, 100*280/total);
  var overP=moveP*0.58;
@@ -4218,10 +4224,13 @@ function drawBlinks(){
  * "add as I wish" would mean finding two sliders to get one effect; and
  * the cycle is a duration, which cannot be 0 without stopping time. The
  * blink timings keep their milliseconds too, since they do nothing at
- * all until Blinks is raised above zero.
+ * all until Blinks is raised above zero. Glances is the same kind of
+ * thing — a count, inert while Look is 0 — so it keeps a usable value
+ * rather than sitting at its minimum, where raising Look alone would
+ * look like nothing happening.
  */
 var EYE_BLANK={
- eyeLook:0, eyeDart:1, eyeBlink:0, eyeDome:0, eyeGlint:0,
+ eyeLook:0, eyeDart:4, eyeBlink:0, eyeDome:0, eyeGlint:0,
  eyeStretch:0, eyeSwell:0, eyeVia:0, eyeOver:1, eyeSeed:0,
  eyeLidRest:0, eyeAnt:0, eyeBounce:0, eyeLower:0, eyeLag:0,
  emoAmt:0, emoMove:0, emoReps:1, emoLead:0
