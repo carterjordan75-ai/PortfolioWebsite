@@ -137,8 +137,14 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Loop ease <b id="vslpEase"></b></label><input id="slpEase" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Hold at ends <b id="vslpHold"></b></label><input id="slpHold" type="range" min="0" max=".4" step=".02"></div>
   <div class="row"><label>Wake after arrival <b id="vslpWake"></b></label><input id="slpWake" type="range" min="0" max="10000" step="50"></div>
+  <div class="row"><label>Redraw outlines <b id="vslpRedraw"></b></label><input id="slpRedraw" type="range" min="0" max="20000" step="100"></div>
+  <div class="row"><label>Redraw stagger <b id="vslpRedrawStag"></b></label><input id="slpRedrawStag" type="range" min="0" max="2000" step="10"></div>
   <div class="row"><label>Spin X per loop <b id="vslpRotX"></b></label><input id="slpRotX" type="range" min="-720" max="720" step="15"></div>
   <div class="row"><label>Spin O per loop <b id="vslpRotO"></b></label><input id="slpRotO" type="range" min="-720" max="720" step="15"></div>
+  <p class="note">Redraw sends the outline drawing itself on again, over and
+   over, at that period &mdash; the same stroke the entrance uses, handed a
+   cycle and told to repeat. 0 is off. It needs an outline to draw: set a weight
+   under Letters first, or there is no stroke for it to work on.</p>
   <p class="note">What it does once it has landed, for as long as it is up.
    Ambient cycle is how long one breath takes, Eye cycle how long one round
    of looking takes. Separate on purpose, and neither governs the other —
@@ -283,6 +289,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <details><summary>4 &mdash; Looking around</summary>
   <div class="row"><label>Look around <b id="veyeLook"></b></label><input id="eyeLook" type="range" min="0" max="1" step=".01"></div>
   <div class="row"><label>Glances <b id="veyeDart"></b></label><input id="eyeDart" type="range" min="1" max="10" step="1"></div>
+  <div class="row"><label>Glance speed <b id="veyeGlance"></b></label><input id="eyeGlance" type="range" min=".25" max="3" step=".05"></div>
   <div class="row"><label>Glance seed <b id="veyeSeed"></b></label><input id="eyeSeed" type="range" min="0" max="40" step="1"></div>
   <div class="row"><label>Via centre <b id="veyeVia"></b></label><input id="eyeVia" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Glance overshoot <b id="veyeOver"></b></label><input id="eyeOver" type="range" min="1" max="1.6" step=".01"></div>
@@ -320,6 +327,28 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
    small lift before the drop, bounce is how far past its rest it opens &mdash;
    the two that make a blink read as flesh rather than a shutter. Settle is open
    time guaranteed before the run ends, so the mark never finishes mid-blink.</p>
+  </details>
+
+  <details><summary>7 &mdash; Eyebrows</summary>
+  <div class="row"><label>Brows</label>
+   <button id="brOff" onclick="setBrows(0)">None</button>
+   <button id="brOn" onclick="setBrows(1)">Brows</button></div>
+  <div class="row"><label>Shape</label></div>
+  <div class="row" id="browpicker"></div>
+  <div class="row"><label>Length <b id="vbrowLen"></b></label><input id="browLen" type="range" min=".2" max="1.8" step=".02"></div>
+  <div class="row"><label>Weight <b id="vbrowW"></b></label><input id="browW" type="range" min=".15" max="3" step=".05"></div>
+  <div class="row"><label>Height above eye <b id="vbrowLift"></b></label><input id="browLift" type="range" min="0" max="2.4" step=".05"></div>
+  <div class="row"><label>Base tilt <b id="vbrowTilt"></b></label><input id="browTilt" type="range" min="-30" max="30" step="1"></div>
+  <div class="row"><label>Follows the eye <b id="vbrowFollow"></b></label><input id="browFollow" type="range" min="0" max="1" step=".02"></div>
+  <p class="note">The most expressive part of a face, and the one thing the mark
+   had no way to say anything with &mdash; every expression had to be carried by
+   the lids and the pupil, which is why several of them read as the same squint
+   at different depths. Each expression sets its own brow angle and height.</p>
+  <p class="note">Height is measured from the top of the PUPIL, so a bigger eye
+   pushes its brows up rather than growing into them. Follows the eye is
+   deliberately partial: a brow that tracked the pupil one for one would read as
+   being dragged along by it rather than belonging to the same face. Brows only
+   ever appear over an O &mdash; an X has no eye to have one over.</p>
   </details>
 
   <details><summary>6 &mdash; Secondary motion</summary>
@@ -682,16 +711,16 @@ var LO=Math.min.apply(null,AREAS), HI=Math.max.apply(null,AREAS);
 var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 
 var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
- eyes:0,eyeLook:.6,eyeDart:4,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
+ eyes:0,eyeLook:.6,eyeDart:4,eyeGlance:1,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
  eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
  eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeVia:.5,
- eyeEdge:.68,lids:1,eyeOwnLoop:0,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,emos:[],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
+ eyeEdge:.68,lids:1,eyeOwnLoop:0,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,emos:[],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
  lgAlign:'centre',lgTex:0,startSpread:0,
- sleep:0,slpAmt:1,slpDur:7000,slpRotX:0,slpRotO:0,
+ sleep:0,slpAmt:1,slpDur:7000,slpRotX:0,slpRotO:0,slpRedraw:0,slpRedrawStag:120,
  slpAmbient:'float',slpEntrance:'row',slpView:'full',started:0,
  slpEase:.6,slpHold:0,eyeCycle:3400,slpWake:500,
  rotX:0,rotO:0,
@@ -1382,7 +1411,8 @@ function svg(){
   P.lrot,P.startSpread,P.arcs,P.orbSize,P.orbvary,P.orbtilt,P.orbtvary,P.orbarc,
   P.acc,P.asize,P.spread,P.place,P.jit,P.eyes,P.eyeSize,P.eyeOval,P.eyeGlint,
   P.glintShape,(P.emos||[]).join('|'),P.emoAmt,P.extrude,P.lgw,P.lgsp,P.lgbris,
-  P.sleep,P.slpEntrance,P.marks.join('|'),str.length].join(',');
+  P.sleep,P.slpEntrance,P.brows,P.browShape,P.browLen,P.browW,P.browLift,P.browTilt,
+  P.marks.join('|'),str.length].join(',');
  if(BBCACHE.key===key&&BBCACHE.bb) return fitViewBox(str, BBCACHE.bb);
  var hold=document.createElement('div');
  hold.setAttribute('style','position:fixed;left:-99999px;top:0;width:900px;opacity:0;pointer-events:none');
@@ -1732,9 +1762,15 @@ function lookSchedule(i, total){
  // again as a terminator. The glances are the count, no adjustment.
  var n=Math.max(1, T.darts);
  var span0=live/n;
- var moveP=Math.min(span0*0.44, 100*280/total);
+ // How long the pupil takes to get somewhere, and to stop having got
+ // there. 280ms and 230ms were the measured shape of a real dart and
+ // were written in as constants; the slider scales both together so the
+ // relationship between them — travel, then settle for about four
+ // fifths as long — survives being made faster or slower.
+ var gs=Math.max(0.2, P.eyeGlance===undefined?1:P.eyeGlance);
+ var moveP=Math.min(span0*0.44, 100*(280/gs)/total);
  var overP=moveP*0.58;
- var setP=Math.min(span0*0.66, moveP+100*230/total);
+ var setP=Math.min(span0*0.66, moveP+100*(230/gs)/total);
  // A glance finishes settling AFTER the instant it is timed to, so the
  // last one starts early enough that its tail lands before the return.
  var span=(live-Math.max(0,setP-moveP))/n;
@@ -2139,18 +2175,18 @@ var EMOTIONS={
  //           The counter alone can only say so much before it stops
  //           being smooth; letting the O itself squash and lean says the
  //           rest, and reads from much further away.
- neutral:   {lidTop:0,   lidBot:0,   tilt:0,   sx:1,    sy:1,    glint:'dot',      gs:1,    look:[0,0],     hold:1,   o:[1,1,0]},
- happy:     {lidTop:0,   lidBot:.44, tilt:0,   sx:1.04, sy:.94,  glint:'pair',     gs:1.1,  look:[0,-.12],  hold:1.1,  o:[1.06,.93,0]},
- angry:     {lidTop:.40, lidBot:.06, tilt:17,  sx:.98,  sy:.88,  glint:'dot',      gs:.7,   look:[0,.14],   hold:1.2,  o:[1.02,.94,7]},
- sad:       {lidTop:.30, lidBot:0,   tilt:-15, sx:.96,  sy:1.02, glint:'oval',     gs:.9,   look:[0,.34],   hold:1.5,  o:[.94,1.06,-5]},
+ neutral:   {lidTop:0,   lidBot:0,   tilt:0,   sx:1,    sy:1,    glint:'dot',      gs:1,    look:[0,0],     hold:1,   o:[1,1,0], brow:[0,0]},
+ happy:     {lidTop:0,   lidBot:.44, tilt:0,   sx:1.04, sy:.94,  glint:'pair',     gs:1.1,  look:[0,-.12],  hold:1.1,  o:[1.06,.93,0], brow:[.12,-5]},
+ angry:     {lidTop:.40, lidBot:.06, tilt:17,  sx:.98,  sy:.88,  glint:'dot',      gs:.7,   look:[0,.14],   hold:1.2,  o:[1.02,.94,7], brow:[-.30,22]},
+ sad:       {lidTop:.30, lidBot:0,   tilt:-15, sx:.96,  sy:1.02, glint:'oval',     gs:.9,   look:[0,.34],   hold:1.5,  o:[.94,1.06,-5], brow:[.14,-19]},
  // Startled is a PINPRICK, not a bigger pupil. The counter is the dark
  // of the eye, so shrinking it leaves a wide white O with a dot in it —
  // which is the shocked eye on the reference sheet, and unmistakable
  // next to neutral. Making it larger only read as "slightly rounder".
- surprised: {lidTop:-.10,lidBot:-.10,tilt:0,   sx:.52,  sy:.52,  glint:'dot',      gs:.9,   look:[0,-.05],  hold:.7,  o:[1.10,1.12,0]},
- sleepy:    {lidTop:.58, lidBot:.06, tilt:5,   sx:.90,  sy:.84,  glint:'',         gs:0,    look:[0,.24],   hold:1.9,  o:[1.05,.86,3]},
- suspicious:{lidTop:.46, lidBot:.24, tilt:9,   sx:.84,  sy:.72,  glint:'pill',     gs:.8,   look:[.55,.05], hold:1.6,  o:[1.08,.82,5]},
- dazed:     {lidTop:.08, lidBot:.08, tilt:0,   sx:1.30, sy:1.30, glint:'crescent', gs:1.0,  look:[0,0],     hold:1.3,  o:[1.04,1.04,0]}
+ surprised: {lidTop:-.10,lidBot:-.10,tilt:0,   sx:.52,  sy:.52,  glint:'dot',      gs:.9,   look:[0,-.05],  hold:.7,  o:[1.10,1.12,0], brow:[.36,-2]},
+ sleepy:    {lidTop:.58, lidBot:.06, tilt:5,   sx:.90,  sy:.84,  glint:'',         gs:0,    look:[0,.24],   hold:1.9,  o:[1.05,.86,3], brow:[-.12,5]},
+ suspicious:{lidTop:.46, lidBot:.24, tilt:9,   sx:.84,  sy:.72,  glint:'pill',     gs:.8,   look:[.55,.05], hold:1.6,  o:[1.08,.82,5], brow:[.06,15]},
+ dazed:     {lidTop:.08, lidBot:.08, tilt:0,   sx:1.30, sy:1.30, glint:'crescent', gs:1.0,  look:[0,0],     hold:1.3,  o:[1.04,1.04,0], brow:[.18,-7]}
 };
 var EMO_LIST=['neutral','happy','angry','sad','surprised','sleepy','suspicious','dazed'];
 
@@ -2383,9 +2419,42 @@ function emoAt(k){
  * the face, not to the eyeball: an eye looking left keeps the same lid,
  * and a pupil darting under a steady lid is exactly the read wanted.
  */
+/**
+ * The pupil's real half-height, at the largest it will get.
+ *
+ * The lid used to open off `g.r * eyeSize` — the counter's MEAN radius,
+ * scaled by size alone. The pupil's actual height is not that: Oval
+ * stretches it (sqrt of the oval, by the same rule the pupil itself
+ * uses), an expression can scale it again, swell grows it in motion, and
+ * the counter is not a circle anyway, so parts of it already sit outside
+ * the mean. Every one of those puts the top of the pupil ABOVE where the
+ * lid thinks fully-open is, and a lid that stops short of fully open is
+ * a lid that clips the pupil while claiming to be out of the way.
+ *
+ * Measured off the path rather than the average, and taking the biggest
+ * value any expression in play will ask for, because the geometry is
+ * static and only the transform moves — it has to clear the worst case
+ * or it clips in that frame.
+ */
+function pupilRy(i){
+ var b=B[i], g=eyeGeom(i); if(!b||!b.hp||!g) return 0;
+ var ext=0;
+ b.hp.forEach(function(q){ ext=Math.max(ext, Math.abs(q[1]-g.cy)) });
+ var amt=(P.emoAmt===undefined?1:P.emoAmt), sy=1;
+ emoOn().forEach(function(n){
+  var em=EMOTIONS[n]; if(em) sy=Math.max(sy, 1+(em.sy-1)*amt);
+ });
+ // A few percent of daylight. The points are samples off the counter
+ // and the path curves BETWEEN them, so it bulges a little past every
+ // one of them; landing the lid exactly on the largest sample would sit
+ // it on the bulge rather than clear of it.
+ return ext*Math.max(P.eyeSize,0.2)*Math.sqrt(Math.max(0.05,P.eyeOval))
+  *sy*(1+Math.max(0,P.eyeSwell||0))*(1+Math.max(0,P.eyeStretch||0)*0.42)*1.04;
+}
+
 function lidGeom(i, cover, fromTop, tiltDeg){
  var g=eyeGeom(i); if(!g) return null;
- var r=g.r*Math.max(P.eyeSize,0.2), R=r*Math.max(1.05,P.eyeLidR);
+ var r=pupilRy(i), R=r*Math.max(1.05,P.eyeLidR);
  // Travel measured by where the lid's own edge sits: at 0 it is level
  // with the far side of the eye and covers nothing, at 1 it has crossed
  // the whole eye.
@@ -2411,7 +2480,7 @@ function lidDiscs(i){
 /** How far each lid is drawn back from full cover, in user units. */
 function lidOffset(i, cover, fromTop){
  var g=eyeGeom(i); if(!g) return 0;
- var r=g.r*Math.max(P.eyeSize,0.2);
+ var r=pupilRy(i);
  // full cover is 1; at `cover` it needs to sit (1-cover)*2r away
  return (fromTop?-1:1)*(1-Math.max(0,Math.min(1,cover)))*2*r;
 }
@@ -2969,6 +3038,7 @@ function eyeLoopSel(){
  LCEN.forEach(function(c,li){ if(isO(li)) sel.push('.emoL'+li) });
  B.forEach(function(b,i){ if(b.hp){
   sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i);
+  if(P.brows) sel.push('.brw'+i);
   glintSet().forEach(function(sh,n){ sel.push('.eyGs'+i+'_'+n) });
  }});
  return sel;
@@ -2992,6 +3062,133 @@ function eyeSpan(total){
  return (P.sleep || P.eyeOwnLoop) ? Math.max(600,P.eyeCycle) : total;
 }
 
+
+/**
+ * Eyebrows.
+ *
+ * The most expressive part of a face and the one thing the mark had no
+ * way to say anything with: every expression had to be carried by the
+ * lids and the pupil alone, which is why several of them read as the
+ * same squint at different depths. A brow costs two strokes and doubles
+ * the range.
+ *
+ * They sit OUTSIDE the eye mask, as ordinary ink above the letter,
+ * because that is what they are — marks on a face, not holes in a
+ * counter. Inside the mask they would have been cut out of the O.
+ *
+ * They are only ever drawn above an O. The X has no eye to have a brow
+ * over, and the standing rule is that nothing about the eyes touches an
+ * X's letterform.
+ */
+var BROWS=['bar','arc','wedge','comma'];
+function setBrowShape(v){ P.browShape=v; drawBrows(); build(); sch(); }
+function setBrows(v){ P.brows=v?1:0; build(); sync(); sch(); }
+function drawBrows(){
+ var e=document.getElementById('browpicker'); if(!e) return;
+ e.innerHTML=BROWS.map(function(n){
+  return '<button class="'+(P.browShape===n?'on':'')+'" onclick="setBrowShape(\''+n+'\')">'+n+'</button>'
+ }).join('');
+}
+
+/** Where a brow sits and how big it is, in the artwork's own units. */
+function browGeom(i){
+ var g=eyeGeom(i); if(!g||!P.brows||!B[i].hp) return null;
+ // Measured from the top of the LETTERFORM, not the pupil.
+ //
+ // The pupil was the obvious reference and the wrong one: the O's ring
+ // is thick, so a brow lifted clear of the pupil is still buried in the
+ // white of the letter — ink on ink, invisible, which is exactly how it
+ // first came out. What a brow has to clear is the whole letter.
+ //
+ // The pupil still gets a say, because a big enough eye could in
+ // principle reach past the letter: whichever is higher wins.
+ var b=B[i];
+ var top=Math.min(g.cy-pupilRy(i), b.cy-b.h/2);
+ return {
+  cx:g.cx, cy:top-Math.max(0,P.browLift===undefined?.5:P.browLift)*g.r,
+  len:Math.max(.15,P.browLen===undefined?.9:P.browLen)*g.r,
+  w:g.r*0.15*Math.max(.15,P.browW===undefined?1:P.browW),
+  side:(g.cx<MIDX)?1:-1, r:g.r
+ };
+}
+
+/** One brow, drawn about its own origin so the CSS only has to move it. */
+function browPath(i){
+ var b=browGeom(i); if(!b) return '';
+ var L=b.len, h=L*0.26, w=b.w.toFixed(2);
+ var cap='stroke-linecap="round" stroke-linejoin="round" fill="none"';
+ var x=b.cx, y=b.cy;
+ var d;
+ switch(P.browShape){
+  case 'arc':
+   d='M '+(x-L)+' '+(y+h*0.55)+' Q '+x+' '+(y-h*1.5)+' '+(x+L)+' '+(y+h*0.55);
+   break;
+  case 'comma':
+   // heavier at the outer end, tailing away inward — the drawn brow
+   d='M '+(x-L)+' '+(y+h*0.2)+' Q '+(x-L*0.2)+' '+(y-h*1.15)+' '+(x+L*0.85)+' '+(y+h*0.5);
+   break;
+  case 'wedge':
+   // A filled taper rather than a stroke: thick outside, a point inside.
+   return '<path class="brwS'+i+'" fill="currentColor" d="'
+    +'M '+(x-L)+' '+(y-b.w)+' Q '+x+' '+(y-b.w*1.35)+' '+(x+L)+' '+(y+b.w*0.1)
+    +' L '+(x+L)+' '+(y+b.w*0.5)+' Q '+x+' '+(y+b.w*0.55)+' '+(x-L)+' '+(y+b.w)
+    +' Z"/>';
+  default: // bar
+   d='M '+(x-L)+' '+y+' L '+(x+L)+' '+y;
+ }
+ return '<path class="brwS'+i+'" d="'+d+'" stroke="currentColor" stroke-width="'+w+'" '+cap+'/>';
+}
+
+/** The pair of groups a brow needs: one to place it, one to animate it. */
+function browMarkup(i){
+ var b=browGeom(i); if(!b) return '';
+ // The base tilt is part of the drawing, not the animation, so the
+ // keyframes only ever carry what the expression is doing.
+ var t=(P.browTilt===undefined?0:P.browTilt)*b.side;
+ return '<g class="brw'+i+'"><g transform="rotate('+t.toFixed(2)+' '
+  +b.cx.toFixed(1)+' '+b.cy.toFixed(1)+')">'+browPath(i)+'</g></g>';
+}
+
+/**
+ * How the brow moves: with the glance, and with the face being worn.
+ *
+ * It rides the same schedule as the pupil, so a brow cannot lift on a
+ * beat the eye does not also move on. Following is deliberately a
+ * fraction — a brow that tracked the pupil one for one would read as
+ * being dragged by it rather than belonging to the same face.
+ */
+function browCSS(i, total){
+ var b=browGeom(i); if(!b) return '';
+ var S=lookSchedule(i,total);
+ var amt=(P.emoAmt===undefined?1:P.emoAmt);
+ var fol=Math.max(0,P.browFollow===undefined?.5:P.browFollow)*0.30;
+ var org='transform-box:view-box;transform-origin:'+b.cx.toFixed(1)+'px '+b.cy.toFixed(1)+'px;';
+ var pose=function(em, pt){
+  var br=em.brow||[0,0];
+  return { x:(pt?pt[0]:0)*fol,
+           y:(pt?pt[1]:0)*fol - br[0]*amt*b.r,
+           r:br[1]*amt*b.side };
+ };
+ var xf=function(q){ return 'transform:translate('+q.x.toFixed(2)+'px,'+q.y.toFixed(2)
+  +'px) rotate('+q.r.toFixed(2)+'deg)' };
+ if(!S) return '.brw'+i+'{'+org+xf(pose(emoAt(0),null))+'}';
+ var stops=[];
+ var put=function(p,q,e){ stops.push({p:Math.max(0,Math.min(100,p)), q:q, e:e||EZ_MOVE}) };
+ put(0, pose(emoAt(0),[0,0]));
+ for(var k=1;k<=S.n;k++){
+  var pt=S.T.pts[k]||[0,0];
+  put(k*S.span-S.moveP, pose(emoAt(k-1), S.T.pts[k-1]||[0,0]), EZ_DRIFT);
+  put(k*S.span-S.moveP+S.setP, pose(emoAt(k), pt), EZ_SETTLE);
+ }
+ put(100, pose(emoAt(S.n),[0,0]), EZ_MOVE);
+ var kf='';
+ thinStops(stops, total).forEach(function(st){
+  kf+=st.p.toFixed(2)+'%{'+xf(st.q)+(st.e?';animation-timing-function:'+st.e:'')+'}';
+ });
+ return '@keyframes brw'+i+'{'+kf+'}'
+  +'.brw'+i+'{'+org+'animation:brw'+i+' '+Math.round(total)+'ms linear both}';
+}
+
 function eyesCSS(total, step){
  if(!EYES()) return '';
  var out='';
@@ -3008,7 +3205,7 @@ function eyesCSS(total, step){
  var span=eyeSpan(total);
  B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,span)+eyeDomeCSS(i,span)
   +eyeBlinkCSS(i,span)+lidCSS(i,span)+eyeGlintCSS(i,span)+glintFadeCSS(i,span)
-  +emoPupilCSS(i,span)+eyeUprightCSS(i,total,step) } });
+  +emoPupilCSS(i,span)+browCSS(i,span)+eyeUprightCSS(i,total,step) } });
  // On its own clock the round is no longer the run, so it has to be told
  // to come round again — otherwise the eye finishes early and holds, and
  // a loader that holds its last frame while the page loads holds a face
@@ -3222,9 +3419,10 @@ function viewCSS(){
  var live=[];
  B.forEach(function(b,i){ if(b.hp) live.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i) });
  LCEN.forEach(function(c,li){ if(isO(li)) live.push('.emoL'+li) });
- B.forEach(function(b,i){ if(b.hp) live.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i,'.eyS'+i);
+ B.forEach(function(b,i){ if(b.hp) live.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i,'.eyS'+i,'.brw'+i);
   glintSet().forEach(function(sh,n){ live.push('.eyGs'+i+'_'+n) }) });
  LCEN.forEach(function(c,li){ live.push('.slr'+li) });
+ if(P.slpRedraw>0) B.forEach(function(b,i){ if(lp(i,'lgw')>0) live.push('.p'+i) });
 
  if(P.slpView==='in')
   // The arrival on repeat, with the resting motion held off so it is not
@@ -3276,8 +3474,42 @@ function sleepCSS(){
   +((amb&&a>0)?'.xl{animation:xslp '+d+'ms cubic-bezier('
     +(0.5*P.slpEase).toFixed(3)+',0,'+(1-0.5*P.slpEase).toFixed(3)
     +',1) infinite}':'')
-  +sleepSpinCSS();
+  +sleepSpinCSS()
+  +redrawCSS();
 }
+
+/**
+ * The outline drawing itself on again, over and over, while the mark
+ * rests.
+ *
+ * The draw-on already exists — it is how an outline arrives — but it
+ * belonged entirely to the entrance, which happens once and is then
+ * parked. A resting mark that keeps redrawing its own edge is doing the
+ * one thing a still image cannot, and it costs nothing new: the same
+ * lgDraw keyframes, handed a period and told to repeat.
+ *
+ * It sets the dash pattern itself rather than relying on the entrance
+ * having set one, so it works on an outline that was faded in rather
+ * than drawn. It does need an outline to draw: with no weight there is
+ * no stroke, and the control says so.
+ */
+function redrawCSS(){
+ if(!P.sleep || !(P.slpRedraw>0)) return '';
+ var cyc=Math.max(300, P.slpRedraw), out='';
+ var wake=Math.round(entranceEnd());
+ var stag=Math.max(0, P.slpRedrawStag===undefined?0:P.slpRedrawStag);
+ B.forEach(function(b,i){
+  if(lp(i,'lgw')<=0) return;
+  // .xl .p{i} rather than .p{i}: the entrance's own rule is already
+  // there at lower specificity, and this has to replace it rather than
+  // race it.
+  out+='.xl .p'+i+'{stroke-dasharray:1000 4000;'
+   +'animation:lgDraw '+Math.round(cyc)+'ms cubic-bezier(.4,0,.3,1) infinite;'
+   +'animation-delay:'+Math.round(wake+i*stag)+'ms}';
+ });
+ return out;
+}
+
 function css(){
  var out='',o=order(),step={};o.forEach(function(b,n){step[b]=n});
  var back=(1-(P.over-1)*.55), total=P.dur+9*P.stag;
@@ -3789,7 +4021,10 @@ function svgRaw(){
    var sh=(P.d3d>0&&P.texMap==='shape');
    body+=so+(sh?'<g filter="url(#shade3d)">':'')
     +'<g class="bl b'+i+'"'+batt+'>'
-    +(P.lgfOver?outline+fillEl:fillEl+outline)+'</g>'+(sh?'</g>':'')+sc2;
+    +(P.lgfOver?outline+fillEl:fillEl+outline)+'</g>'+(sh?'</g>':'')
+    // Outside the mask and after the letter: a brow is ink ON the face,
+    // not a hole cut in it, and it belongs in front.
+    +(EYES()&&b2.hp?browMarkup(i):'')+sc2;
   });
   body+=lc;
  });
@@ -4346,7 +4581,14 @@ function toggleEmo(n){
  // perfectly good place to stay. emoOn() supplies neutral underneath, so
  // the eye always has a face to wear even when none is chosen.
  if(i>=0) a.splice(i,1); else a.push(n);
- drawEmos(); build(); sch();
+ // Choosing a face is a deliberate act, so it has to show. Expression
+ // strength is an amount and the blank slate zeroes it like every other
+ // amount — which left picking an expression doing nothing at all, in
+ // any of the five places an expression reaches. Same rule as picking a
+ // blink shape when Blinks is 0: the choice brings its own volume up
+ // off zero, once, and after that the slider is yours.
+ if(a.length && !(P.emoAmt>0)) P.emoAmt=1;
+ drawEmos(); build(); sync(); sch();
 }
 function drawEmos(){
  var e=document.getElementById('emopicker'); if(!e) return;
@@ -4607,15 +4849,15 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 // input listeners are attached from. Adding a control to the panel
 // without adding its key here produces a slider that moves and does
 // nothing, which is how the whole Layout group shipped dead.
-var KEYS=['slpAmt','slpDur','slpEase','slpHold','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
- 'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
+var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
+ 'eyeLook','eyeDart','eyeGlance','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeShut','eyeSpeed','eyeGlint',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','emoAmt','emoMove','emoSpeed','emoReps','emoLead',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browFollow','emoAmt','emoMove','emoSpeed','emoReps','emoLead',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
-function sync(){syncSleep();drawGlints();drawEmos();drawBlinks();drawSleepPickers();
+function sync(){syncSleep();drawGlints();drawEmos();drawBlinks();drawBrows();drawSleepPickers();
  KEYS.forEach(function(k){var e=document.getElementById(k);if(e)e.value=P[k]});
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
   e.value=P[e.dataset.p];
@@ -5015,6 +5257,14 @@ eyeEase:'How softly the lid lands back open.',
 eyeStretch:'Draws the pupil out along its direction of travel while it moves. Back to its own shape once parked.',
 eyeSwell:'Size change while moving. Positive swells, negative shrinks. 0 keeps it steady.',
 eyeVia:'Returns to centre and pauses between glances instead of sliding corner to corner. Higher holds longer.',
+eyeGlance:'How fast the pupil travels between glances. Higher is a quicker dart.',
+browLen:'How wide a brow is, against the eye it sits over.',
+browW:'Brow weight.',
+browLift:'How far above the pupil the brows sit.',
+browTilt:'A base angle on both brows, before any expression.',
+browFollow:'How much the brows travel with the pupil. Partial reads as one face; full reads as being dragged.',
+slpRedraw:'How long one redraw of the outline takes while resting. 0 is off.',
+slpRedrawStag:'Delay between letters redrawing.',
 eyeSeed:'A different set of glances from the same settings. Nothing else changes.',
 eyeEdge:'How much of the clear space between pupil and ring the eye may use. At 1 it reaches the inside of the ring.',
 lids:'Whether the eye has lids at all. None is an eye that cannot close.',
