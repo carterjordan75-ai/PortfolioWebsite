@@ -100,6 +100,14 @@ max-width:calc(440px * var(--zm,1));max-height:calc(440px * var(--zm,1))}
 font:10px/1.7 ui-monospace,monospace;opacity:.75;white-space:pre-wrap}
 textarea{width:100%;height:120px;margin-top:9px;background:transparent;color:var(--fg);
 border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-monospace,monospace;display:none}
+/* A group whose controls cannot do anything yet. Dimmed rather than
+   hidden: the controls stay where they were so the panel does not
+   reshuffle, and it is clear they exist and are simply not available. */
+details.off > *:not(summary){opacity:.34}
+/* Not summary::after — that pseudo-element is already the chevron, and
+   is rotated, so borrowing it printed the label on a diagonal. */
+.need{display:none}
+details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
 </style></head><body>
 <h1>XOXO loader — tuner 23</h1>
 <p class="sub">Round 9's move underneath. Controls are grouped by what they change — Timing, Letters, Decoration, Global effects — with presets and export either end. Pause and scrub under the stage to hold a frame while you tune.</p>
@@ -247,9 +255,17 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   </details>
 
   <details><summary>2 &mdash; The lids</summary>
+  <div class="row"><label>Lids</label>
+   <button id="ldOff" onclick="setLids(0)">None</button>
+   <button id="ldOn" onclick="setLids(1)">Lids</button></div>
   <div class="row"><label>Lid curve <b id="veyeLidR"></b></label><input id="eyeLidR" type="range" min="1.05" max="6" step=".05"></div>
   <div class="row"><label>Lid at rest <b id="veyeLidRest"></b></label><input id="eyeLidRest" type="range" min="0" max=".6" step=".02"></div>
   <div class="row"><label>Shut to <b id="veyeShut"></b></label><input id="eyeShut" type="range" min=".02" max=".4" step=".01"></div>
+  <p class="note">None gives an eye that cannot close &mdash; a pupil in an open
+   counter, looking about, which is a character in its own right and what most
+   marks want. It is not the same as setting Blinks to zero: that leaves the lids
+   there, resting out of sight, still able to take a resting cover from an
+   expression. With none, Blinking below has nothing to work with and goes dim.</p>
   <p class="note">A lid covers the eye rather than shrinking it, so the pupil
    stays full size behind it and an eye three-quarters closed still reads as an
    eye. Lid curve is the shape of its edge &mdash; a tight arc reads cartoonish,
@@ -279,7 +295,7 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
    and are gone again once it lands.</p>
   </details>
 
-  <details><summary>5 &mdash; Blinking</summary>
+  <details id="blinkgrp"><summary>5 &mdash; Blinking<i class="need"> &mdash; needs lids</i></summary>
   <div class="row"><label>Blink shape</label></div>
   <div class="row" id="blinkpicker"></div>
   <div class="row"><label>Blinks <b id="veyeBlink"></b></label><input id="eyeBlink" type="range" min="0" max="6" step="1"></div>
@@ -670,7 +686,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
  eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeVia:.5,
- eyeEdge:.68,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,emos:[],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
+ eyeEdge:.68,lids:1,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,emos:[],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -2380,7 +2396,7 @@ function lidGeom(i, cover, fromTop, tiltDeg){
 }
 
 function lidDiscs(i){
- var g=eyeGeom(i); if(!g) return '';
+ var g=eyeGeom(i); if(!g||!P.lids) return '';
  // Drawn at full cover and translated back out of the way, so the
  // animation is a plain transform on a group — cheap, interpolates
  // exactly, and never touches the geometry.
@@ -2592,7 +2608,7 @@ function pupilScaleCSS(i, total, g){
  * read as an eye when it is three-quarters covered.
  */
 function lidCSS(i, total){
- var g=eyeGeom(i); if(!g||!B[i].hp) return '';
+ var g=eyeGeom(i); if(!g||!B[i].hp||!P.lids) return '';
  var times=blinkTimes(i,total);
  var S=lookSchedule(i,total);
  var amt=(P.emoAmt===undefined?1:P.emoAmt);
@@ -2792,7 +2808,11 @@ function eyeGlintCSS(i, total){
  var full='transform:scale(1)', gone='transform:scale(0.01)';
  var base='.eyG'+i+'{transform-box:view-box;transform-origin:'
   +(g.cx-g.r*0.34).toFixed(1)+'px '+(g.cy-g.r*0.36).toFixed(1)+'px;';
- var times=blinkTimes(i,total);
+ // The catchlight ducks out of sight as the lid passes over it. With no
+ // lids there is nothing passing over it, so it stays lit — otherwise
+ // the glint would blink on its own, which reads as a flicker rather
+ // than as an eye closing.
+ var times=P.lids?blinkTimes(i,total):[];
  if(!times.length) return base+full+'}';
  var pct=function(ms){ return Math.max(0,Math.min(100,ms/total*100)) };
  // The same schedule the lid uses, so the catchlight cannot go out of
@@ -3969,6 +3989,18 @@ function build(){
  ['eyOff','eyOn'].forEach(function(id,n){
   var b=document.getElementById(id);
   if(b) b.classList.toggle('on', n===0 ? !P.eyes : !!P.eyes)});
+ ['ldOff','ldOn'].forEach(function(id,n){
+  var b=document.getElementById(id);
+  if(b) b.classList.toggle('on', n===0 ? !P.lids : !!P.lids)});
+ // Everything under Blinking needs a lid to do it with. Rather than
+ // leave a panel of controls that quietly do nothing, it goes dim and
+ // says why — the same information, delivered before the confusion
+ // instead of after it.
+ var bl=document.getElementById('blinkgrp');
+ if(bl){
+  bl.classList.toggle('off', !P.lids);
+  [].forEach.call(bl.querySelectorAll('input,button'),function(e){ e.disabled=!P.lids });
+ }
  ['loStay','loLine'].forEach(function(id,n){
   var b=document.getElementById(id);
   if(b) b.classList.toggle('on', n===0 ? P.lsettle<0.5 : P.lsettle>=0.5)});
@@ -4235,6 +4267,22 @@ var EYE_BLANK={
  eyeLidRest:0, eyeAnt:0, eyeBounce:0, eyeLower:0, eyeLag:0,
  emoAmt:0, emoMove:0, emoReps:1, emoLead:0
 };
+
+/**
+ * Whether the eye has lids at all.
+ *
+ * Not the same as never blinking. Without lids the eye is an open eye —
+ * a pupil in a white counter that looks about and cannot close, which is
+ * a whole character in itself and the one most marks actually want. With
+ * blinks set to zero you get the same stillness but the lids are still
+ * there, resting off-screen, ready to be given a resting cover by an
+ * expression. This decides whether they exist.
+ *
+ * It takes the geometry out too, not just the animation: two full-size
+ * discs per eye that are never drawn are two discs the exported file
+ * does not need.
+ */
+function setLids(v){ P.lids=v?1:0; build(); sync(); sch(); }
 
 function setGlint(v){P.glintShape=v;drawGlints();build();sch()}
 function toggleEmo(n){
@@ -4921,6 +4969,7 @@ eyeSwell:'Size change while moving. Positive swells, negative shrinks. 0 keeps i
 eyeVia:'Returns to centre and pauses between glances instead of sliding corner to corner. Higher holds longer.',
 eyeSeed:'A different set of glances from the same settings. Nothing else changes.',
 eyeEdge:'How much of the clear space between pupil and ring the eye may use. At 1 it reaches the inside of the ring.',
+lids:'Whether the eye has lids at all. None is an eye that cannot close.',
 eyeLidR:'Curvature of the lid edge. Low is a tight arc and reads cartoonish; high is nearly straight and reads deadpan.',
 eyeLidRest:'How low the upper lid sits when the eye is otherwise open. A little is knowing; a lot is half asleep.',
 emoAmt:'How far the expressions push. 0 holds a neutral face whichever are selected.',
