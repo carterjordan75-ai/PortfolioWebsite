@@ -140,7 +140,6 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Amount <b id="vslpAmt"></b></label><input id="slpAmt" type="range" min="0" max="3" step=".05"></div>
   <div class="row"><label>Loop ease <b id="vslpEase"></b></label><input id="slpEase" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Hold at ends <b id="vslpHold"></b></label><input id="slpHold" type="range" min="0" max=".4" step=".02"></div>
-  <div class="row"><label>Eye cycle <b id="veyeCycle"></b></label><input id="eyeCycle" type="range" min="600" max="30000" step="100"></div>
   <div class="row"><label>Wake after arrival <b id="vslpWake"></b></label><input id="slpWake" type="range" min="0" max="10000" step="50"></div>
   <div class="row"><label>Spin X per loop <b id="vslpRotX"></b></label><input id="slpRotX" type="range" min="-720" max="720" step="15"></div>
   <div class="row"><label>Spin O per loop <b id="vslpRotO"></b></label><input id="slpRotO" type="range" min="-720" max="720" step="15"></div>
@@ -238,6 +237,11 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Counters</label>
    <button id="eyOff" onclick="setEyes(0)">Holes</button>
    <button id="eyOn" onclick="setEyes(1)">Eyes</button></div>
+  <div class="row" id="looprow"><label>Loop</label>
+   <button id="lpRun" onclick="setOwnLoop(0)">Follow the run</button>
+   <button id="lpOwn" onclick="setOwnLoop(1)">Its own</button></div>
+  <div class="row"><label>Loop length <b id="veyeCycle"></b></label><input id="eyeCycle" type="range" min="600" max="30000" step="100"></div>
+  <p class="note" id="loopnote"></p>
 
   <details><summary>1 &mdash; The eye</summary>
   <div class="row"><label>Pupil size <b id="veyeSize"></b></label><input id="eyeSize" type="range" min=".3" max="3.4" step=".01"></div>
@@ -686,7 +690,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
  eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeVia:.5,
- eyeEdge:.68,lids:1,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,emos:[],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
+ eyeEdge:.68,lids:1,eyeOwnLoop:0,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,emos:[],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -2955,6 +2959,43 @@ function glintFadeCSS(i, total){
  return out;
 }
 
+/**
+ * Every track that belongs to one round of the eye — everything that
+ * should start again when the round does.
+ *
+ * eyUp is deliberately absent: it counter-rotates the eye against the
+ * entrance so the pupil stays level, and that has to HOLD rather than
+ * rewind. eyB is absent too — it carries the wake, which happens once.
+ */
+function eyeLoopSel(){
+ var sel=[];
+ B.forEach(function(b,i){ if(b.hp) sel.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i) });
+ LCEN.forEach(function(c,li){ if(isO(li)) sel.push('.emoL'+li) });
+ B.forEach(function(b,i){ if(b.hp){
+  sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i);
+  glintSet().forEach(function(sh,n){ sel.push('.eyGs'+i+'_'+n) });
+ }});
+ return sel;
+}
+
+/**
+ * How long one round of looking and blinking takes.
+ *
+ * A resting mark has no run to borrow from — it arrives and then stays —
+ * so it has always used its own cycle. A loader does have one, and used
+ * to be pinned to it with no say in the matter: the eye got exactly one
+ * round, stretched or squeezed to whatever length the letters happened
+ * to take. That is a reasonable default and a poor rule, because the two
+ * are unrelated — how long a mark takes to arrive says nothing about how
+ * often a face blinks.
+ *
+ * So a loader can now keep its own clock too. Following the run stays
+ * the default, which is what every loader made before this did.
+ */
+function eyeSpan(total){
+ return (P.sleep || P.eyeOwnLoop) ? Math.max(600,P.eyeCycle) : total;
+}
+
 function eyesCSS(total, step){
  if(!EYES()) return '';
  var out='';
@@ -2968,10 +3009,19 @@ function eyesCSS(total, step){
  // to 600ms and it came out as some unrelated fraction of a different
  // length: the controls moved and the result did not follow, which is
  // what "the numbers mean nothing" was.
- var span=P.sleep?Math.max(600,P.eyeCycle):total;
+ var span=eyeSpan(total);
  B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,span)+eyeDomeCSS(i,span)
   +eyeBlinkCSS(i,span)+lidCSS(i,span)+eyeGlintCSS(i,span)+glintFadeCSS(i,span)
   +emoPupilCSS(i,span)+eyeUprightCSS(i,total,step) } });
+ // On its own clock the round is no longer the run, so it has to be told
+ // to come round again — otherwise the eye finishes early and holds, and
+ // a loader that holds its last frame while the page loads holds a face
+ // that has stopped. Sleep already does this for its own reasons; here
+ // it is only when the loader has been given a clock of its own.
+ if(!P.sleep && P.eyeOwnLoop){
+  var sel=eyeLoopSel();
+  if(sel.length) out+=sel.join(',')+'{animation-iteration-count:infinite}';
+ }
  return out;
 }
 
@@ -3216,14 +3266,8 @@ function sleepCSS(){
     // The body movement and the catchlight fades belong to the resting
     // state as much as the eyes do — an expression that bounces once and
     // then holds still is not an expression, it is a thing that happened.
-    var sel=[];
-    B.forEach(function(b,i){ if(b.hp) sel.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i) });
-    LCEN.forEach(function(c,li){ if(isO(li)) sel.push('.emoL'+li) });
-    B.forEach(function(b,i){ if(b.hp){
-     sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i);
-     glintSet().forEach(function(sh,n){ sel.push('.eyGs'+i+'_'+n) });
-    }});
-    return sel.join(',')+'{animation-iteration-count:infinite}';
+    var sel=eyeLoopSel();
+    return sel.length?sel.join(',')+'{animation-iteration-count:infinite}':'';
    })()
   // The eyes are not optional here. Whatever the mark does or does not
   // do around them, a face with still eyes reads as switched off — so
@@ -3989,6 +4033,19 @@ function build(){
  ['eyOff','eyOn'].forEach(function(id,n){
   var b=document.getElementById(id);
   if(b) b.classList.toggle('on', n===0 ? !P.eyes : !!P.eyes)});
+ ['lpRun','lpOwn'].forEach(function(id,n){
+  var b=document.getElementById(id);
+  if(b) b.classList.toggle('on', n===0 ? !P.eyeOwnLoop : !!P.eyeOwnLoop)});
+ // A resting mark has no run to follow, so the choice does not exist
+ // there — rather than show two buttons where one is meaningless.
+ var lr=document.getElementById('looprow');
+ if(lr) lr.style.display=P.sleep?'none':'';
+ var ln=document.getElementById('loopnote');
+ if(ln) ln.textContent=P.sleep
+  ? 'How long one round of looking and blinking takes. Nothing to follow here — a resting mark arrives and then stays, so the eye always keeps its own clock. Unrelated to the ambient breath under Sleep: a long, slowly-shifting rest comes from the two being different lengths.'
+  : (P.eyeOwnLoop
+   ? 'The eye is on its own clock and comes round again for as long as the mark is up — so a loader holding its last frame while the page loads holds a face that is still alive, rather than one that has stopped.'
+   : 'The eye gets exactly one round, stretched to whatever length the letters take. Fine as a default, but the two are unrelated: how long a mark takes to arrive says nothing about how often a face blinks.');
  ['ldOff','ldOn'].forEach(function(id,n){
   var b=document.getElementById(id);
   if(b) b.classList.toggle('on', n===0 ? !P.lids : !!P.lids)});
@@ -4282,6 +4339,8 @@ var EYE_BLANK={
  * discs per eye that are never drawn are two discs the exported file
  * does not need.
  */
+function setOwnLoop(v){ P.eyeOwnLoop=v?1:0; build(); sync(); sch(); }
+
 function setLids(v){ P.lids=v?1:0; build(); sync(); sch(); }
 
 function setGlint(v){P.glintShape=v;drawGlints();build();sch()}
@@ -4926,7 +4985,7 @@ slpDur:'How long one breath of the ambient motion takes.',
 slpAmt:'How far the ambient motion travels. 0 holds still.',
 slpEase:'0 drifts evenly; 1 accents each end of the cycle.',
 slpHold:'Pauses at the extremes instead of turning round the moment it arrives.',
-eyeCycle:'How long one round of looking and blinking takes. Separate from the breath.',
+eyeCycle:'How long one round of looking and blinking takes. Separate from the ambient breath.',
 slpWake:'Beat after the mark lands before the eyes open and it becomes a face.',
 // --- loader timing ---
 dur:'How long the entrance takes.',
@@ -4970,6 +5029,7 @@ eyeVia:'Returns to centre and pauses between glances instead of sliding corner t
 eyeSeed:'A different set of glances from the same settings. Nothing else changes.',
 eyeEdge:'How much of the clear space between pupil and ring the eye may use. At 1 it reaches the inside of the ring.',
 lids:'Whether the eye has lids at all. None is an eye that cannot close.',
+eyeOwnLoop:'Whether the eye keeps its own clock or gets one round stretched across the run.',
 eyeLidR:'Curvature of the lid edge. Low is a tight arc and reads cartoonish; high is nearly straight and reads deadpan.',
 eyeLidRest:'How low the upper lid sits when the eye is otherwise open. A little is knowing; a lot is half asleep.',
 emoAmt:'How far the expressions push. 0 holds a neutral face whichever are selected.',
