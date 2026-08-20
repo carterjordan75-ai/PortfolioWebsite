@@ -280,17 +280,30 @@ border:1px solid var(--line);border-radius:10px;padding:9px;font:10px/1.5 ui-mon
   </details>
 
   <details><summary>5 &mdash; Blinking</summary>
+  <div class="row"><label>Blink shape</label></div>
+  <div class="row" id="blinkpicker"></div>
   <div class="row"><label>Blinks <b id="veyeBlink"></b></label><input id="eyeBlink" type="range" min="0" max="6" step="1"></div>
   <div class="row"><label>Blink speed <b id="veyeSpeed"></b></label><input id="eyeSpeed" type="range" min=".35" max="2.2" step=".05"></div>
   <div class="row"><label>Close <b id="veyeClose"></b></label><input id="eyeClose" type="range" min="60" max="4000" step="20"></div>
   <div class="row"><label>Hold shut <b id="veyeHold"></b></label><input id="eyeHold" type="range" min="0" max="4000" step="20"></div>
   <div class="row"><label>Reopen <b id="veyeOpen"></b></label><input id="eyeOpen" type="range" min="80" max="6000" step="20"></div>
   <div class="row"><label>Settle open <b id="veyeSettle"></b></label><input id="eyeSettle" type="range" min="0" max="6000" step="20"></div>
+  <div class="row"><label>Anticipation <b id="veyeAnt"></b></label><input id="eyeAnt" type="range" min="0" max=".3" step=".01"></div>
+  <div class="row"><label>Open past rest <b id="veyeBounce"></b></label><input id="eyeBounce" type="range" min="0" max=".3" step=".01"></div>
+  <div class="row"><label>Lower lid share <b id="veyeLower"></b></label><input id="eyeLower" type="range" min="0" max="1" step=".02"></div>
+  <div class="row"><label>Lower lid delay <b id="veyeLag"></b></label><input id="eyeLag" type="range" min="0" max=".6" step=".02"></div>
   <div class="row"><label>Landing ease <b id="veyeEase"></b></label><input id="eyeEase" type="range" min="0" max="1" step=".05"></div>
-  <p class="note">Close, hold and reopen are the blink itself; Blink speed scales
-   all three. The close is meant to be quicker than the open &mdash; an even
-   blink reads mechanical. Settle is open time guaranteed before the run ends,
-   so the mark never finishes part way through a blink.</p>
+  <p class="note">Six shapes to start from. Each sets the lid curve, how deep it
+   shuts, the anticipation and bounce, what the lower lid does, and how the time
+   splits between closing, holding and opening &mdash; then everything stays
+   editable. Picking one keeps the blink the LENGTH you already made it and only
+   changes the split inside, so it will not undo your work on speed.</p>
+  <p class="note">Snap comes from that split, not from a snappier curve: a lid
+   that shuts in 90ms and takes 400ms to open reads fast. Close, hold and reopen
+   are the blink itself and Blink speed scales all three. Anticipation is the
+   small lift before the drop, bounce is how far past its rest it opens &mdash;
+   the two that make a blink read as flesh rather than a shutter. Settle is open
+   time guaranteed before the run ends, so the mark never finishes mid-blink.</p>
   </details>
 
   <details><summary>6 &mdash; Secondary motion</summary>
@@ -657,7 +670,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
  eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeVia:.5,
- eyeEdge:.68,eyeLidR:1.9,eyeLidRest:0,emos:[],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
+ eyeEdge:.68,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,emos:[],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -2606,8 +2619,13 @@ function lidCSS(i, total){
   }
   times.forEach(function(T){
    var em=emAt(T.t), base=coverOf(em,fromTop);
-   // the lower lid does less of the work and starts a little later
-   var reach=fromTop?1:0.42, lag=fromTop?0:T.close*0.22;
+   // How much of the work the lower lid does, and how far behind it
+   // starts. These were 0.42 and 0.22 written into the line — good
+   // numbers, but a blink's whole character lives in them and there was
+   // no way to reach them. A lower lid doing almost nothing is a human
+   // blink; one doing as much as the top is a squint.
+   var reach=fromTop?1:Math.max(0,P.eyeLower===undefined?0.42:P.eyeLower),
+       lag=fromTop?0:T.close*(P.eyeLag===undefined?0.22:P.eyeLag);
    var shut=Math.max(base, base+(1-base)*reach*(1-P.eyeShut));
    // Every one of these rests at both ends. The blink is still twice as
    // fast closing as opening — that asymmetry lives in the DURATIONS the
@@ -2617,12 +2635,12 @@ function lidCSS(i, total){
    // is a lid being yanked rather than one letting go.
    push(pct(T.t-T.close-T.close*0.55+lag), base, EZ_DRIFT);
    // anticipation: a small lift before the drop
-   push(pct(T.t-T.close+lag), Math.max(0,base-0.07*reach), EZ_SETTLE);
+   push(pct(T.t-T.close+lag), Math.max(0,base-(P.eyeAnt===undefined?0.07:P.eyeAnt)*reach), EZ_SETTLE);
    push(pct(T.t+lag), shut, EZ_DRIFT);
    push(pct(T.t+T.shut+lag), shut, EZ_MOVE);
    // overshoot: opens a little past its rest, then settles. Past-rest is
    // a turning point, so it is reached at rest like any other.
-   push(pct(T.t+T.shut+T.open*0.78+lag), Math.max(0,base-0.06*reach), eyeEase(0.25+0.45*ez));
+   push(pct(T.t+T.shut+T.open*0.78+lag), Math.max(0,base-(P.eyeBounce===undefined?0.06:P.eyeBounce)*reach), eyeEase(0.25+0.45*ez));
    push(pct(T.t+T.shut+T.open+lag), base, EZ_SETTLE);
   });
   push(100, coverOf(emAt(total),fromTop), EZ_MOVE);
@@ -4078,7 +4096,15 @@ function setLayout(v){P.layout=v;build();sync()}
     wordmark. The slider under it is the same thing part way. */
 function setSettle(v){P.lsettle=v;build();sync()}
 /** Counters as plain holes, or as eyes that look and blink. */
-function setEyes(v){P.eyes=v;build();sync()}
+function setEyes(v){
+ // Only on the way IN, and only from off. Clicking Eyes while they are
+ // already on is not a request to throw the work away.
+ if(v && !P.eyes){
+  Object.keys(EYE_BLANK).forEach(function(k){ P[k]=EYE_BLANK[k] });
+  P.emos=[]; P.blinkShape='';
+ }
+ P.eyes=v; build(); sync();
+}
 function setTarget(t){P.target=t;build()}
 function setReveal(m){P.lgfStyle=m;build()}
 function setAlign(m){P.lgAlign=m;build()}
@@ -4115,6 +4141,92 @@ function drawSleepPickers(){
  if(e) e.innerHTML=ENTRANCES.map(function(n){
   return '<option value="'+n+'"'+(P.slpEntrance===n?' selected':'')+'>'+n+'</option>'}).join('');
 }
+
+/**
+ * Blink shapes.
+ *
+ * A blink's character is not one number, it is the relationship between
+ * six of them — how curved the lid is, how much the lower one joins in
+ * and how late, how far the eye anticipates before dropping, how far it
+ * opens past its rest, and how the time is split between closing,
+ * holding and opening. Those were spread across two panels and three of
+ * them were not reachable at all, so "make it snappier" meant guessing.
+ *
+ * Snap comes from the SPLIT, not from a curve that hands over
+ * mid-swing. A blink that shuts in 90ms and takes 400ms to open reads
+ * fast and stays continuous; the old one got its snap by accelerating
+ * out of the held-shut lid and straight through the overshoot, which is
+ * a step change in velocity — the thing that made it jolty. So every
+ * shape here is expressed in durations and distances, and none of them
+ * can reintroduce it.
+ *
+ * `r` is close : hold : open. It is a RATIO rather than milliseconds, so
+ * choosing a shape keeps the blink the length you already made it and
+ * only redistributes the time inside it.
+ */
+var BLINKS={
+ soft:    {lidR:2.4, shut:.10, ant:.06, bounce:.05, lower:.42, lag:.22, ease:.75, r:[1,.35,1.75]},
+ snap:    {lidR:1.9, shut:.02, ant:.11, bounce:.14, lower:.38, lag:.30, ease:.18, r:[.5,.25,2.2]},
+ shutter: {lidR:5.6, shut:.02, ant:0,   bounce:0,   lower:0,   lag:0,   ease:1,   r:[1,.5,1]},
+ squint:  {lidR:1.4, shut:.18, ant:.03, bounce:.02, lower:.95, lag:.02, ease:.9,  r:[1.6,1.4,1.6]},
+ flutter: {lidR:2.2, shut:.30, ant:.04, bounce:.09, lower:.30, lag:.32, ease:.35, r:[.55,0,.8]},
+ heavy:   {lidR:1.6, shut:.03, ant:.14, bounce:.02, lower:.55, lag:.12, ease:1,   r:[1.5,2.2,3.2]}
+};
+var BLINK_LIST=['soft','snap','shutter','squint','flutter','heavy'];
+
+function setBlink(n){
+ var b=BLINKS[n]; if(!b) return;
+ P.blinkShape=n;
+ P.eyeLidR=b.lidR; P.eyeShut=b.shut; P.eyeAnt=b.ant;
+ P.eyeBounce=b.bounce; P.eyeLower=b.lower; P.eyeLag=b.lag; P.eyeEase=b.ease;
+ // Keep the blink the length it already is and only change how the time
+ // is divided inside it — otherwise picking a shape silently undoes any
+ // work done on speed, which is the sort of thing that makes a preset
+ // something you stop trusting.
+ var span=Math.max(60,P.eyeClose)+Math.max(0,P.eyeHold)+Math.max(80,P.eyeOpen);
+ var sum=b.r[0]+b.r[1]+b.r[2], step=function(v,lo,hi){
+  return Math.max(lo,Math.min(hi,Math.round(v/20)*20));
+ };
+ P.eyeClose=step(span*b.r[0]/sum,60,4000);
+ P.eyeHold =step(span*b.r[1]/sum,0,4000);
+ P.eyeOpen =step(span*b.r[2]/sum,80,6000);
+ // A shape is no use with nothing to show it on.
+ if(!Math.round(P.eyeBlink)) P.eyeBlink=2;
+ drawBlinks(); build(); sync(); sch();
+}
+function drawBlinks(){
+ var e=document.getElementById('blinkpicker'); if(!e) return;
+ e.innerHTML=BLINK_LIST.map(function(n){
+  return '<button class="'+(P.blinkShape===n?'on':'')+'" onclick="setBlink(\''+n+'\')">'+n+'</button>'
+ }).join('');
+}
+
+/**
+ * Everything the eye DOES, set to nothing.
+ *
+ * Turning the eyes on used to hand over a face already looking about,
+ * blinking, domed, glinting and stretching, and the first job was
+ * always to undo whatever was in the way before anything could be
+ * judged. Starting from nothing means each slider is the only thing
+ * that changed when it moves, which is the only way to tell what it
+ * actually does.
+ *
+ * Four things are NOT zeroed, and it is worth being plain about why:
+ * the eye has to exist to be built on. Pupil size and Oval are
+ * proportions where 1 is "as drawn", not amounts; Reach to rim is the
+ * room the pupil is allowed, so at 0 the Look slider would be dead and
+ * "add as I wish" would mean finding two sliders to get one effect; and
+ * the cycle is a duration, which cannot be 0 without stopping time. The
+ * blink timings keep their milliseconds too, since they do nothing at
+ * all until Blinks is raised above zero.
+ */
+var EYE_BLANK={
+ eyeLook:0, eyeDart:1, eyeBlink:0, eyeDome:0, eyeGlint:0,
+ eyeStretch:0, eyeSwell:0, eyeVia:0, eyeOver:1, eyeSeed:0,
+ eyeLidRest:0, eyeAnt:0, eyeBounce:0, eyeLower:0, eyeLag:0,
+ emoAmt:0, emoMove:0, emoReps:1, emoLead:0
+};
+
 function setGlint(v){P.glintShape=v;drawGlints();build();sch()}
 function toggleEmo(n){
  var a=P.emos||(P.emos=[]), i=a.indexOf(n);
@@ -4387,12 +4499,12 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeShut','eyeSpeed','eyeGlint',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','eyeLidR','eyeLidRest','emoAmt','emoMove','emoSpeed','emoReps','emoLead',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','emoAmt','emoMove','emoSpeed','emoReps','emoLead',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
-function sync(){syncSleep();drawGlints();drawEmos();drawSleepPickers();
+function sync(){syncSleep();drawGlints();drawEmos();drawBlinks();drawSleepPickers();
  KEYS.forEach(function(k){var e=document.getElementById(k);if(e)e.value=P[k]});
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
   e.value=P[e.dataset.p];
@@ -4810,6 +4922,10 @@ emoLead:'How long after the glance lands before it starts. A beat first makes it
 slpRotX:'How far the X letterforms turn over one ambient loop. Per-letter overrides beat this.',
 slpRotO:'How far the O letterforms turn over one ambient loop. The eyes stay level either way.',
 eyeGlint:'Size of the catchlight. 0 removes it.',
+eyeAnt:'The small lift before the lid drops. Anticipation: what makes it read as flesh.',
+eyeBounce:'How far past its resting height the lid opens before settling back.',
+eyeLower:'How much of the blink the lower lid does. Near 0 is a human blink, near 1 a squint.',
+eyeLag:'How far behind the upper lid the lower one starts, as a fraction of the close.',
 // --- shape ---
 squash:'Squashes on impact.',
 stretch:'Stretches along the direction of travel.',
