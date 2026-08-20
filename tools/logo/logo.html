@@ -119,19 +119,15 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row secbar"><button onclick="allSecs(true)">Expand all</button><button onclick="allSecs(false)">Collapse all</button></div>
   <details id="slpsection"><summary>Sleep</summary>
   <details><summary>Arriving</summary>
-  <div class="row"><label>Layout</label>
-   <select id="slpinsel" onchange="setEntrance(this.value)"></select></div>
   <div class="row"><label>Arrival length <b id="vsdur"></b></label><input id="sdur" data-p="dur" type="range" min="200" max="12000" step="50"></div>
   <div class="row"><label>Stagger <b id="vsstag"></b></label><input id="sstag" data-p="stag" type="range" min="0" max="2000" step="10"></div>
-  <div class="row"><label>Gap <b id="vsgap"></b></label><input id="sgap" data-p="lgap" type="range" min=".55" max="2" step=".01"></div>
-  <div class="row"><label>Spread <b id="vsspread"></b></label><input id="sspread" data-p="lspread" type="range" min=".5" max="2.2" step=".01"></div>
-  <div class="row"><label>Scatter <b id="vsscat"></b></label><input id="sscat" data-p="lscat" type="range" min="0" max=".6" step=".01"></div>
-  <div class="row"><label>Shuffle order <b id="vsshuffle"></b></label><input id="sshuffle" data-p="lshuffle" type="range" min="0" max="1" step=".01"></div>
-  <div class="row"><label>Turn <b id="vsturn"></b></label><input id="sturn" data-p="lturn" type="range" min="-180" max="180" step="45"></div>
   <div class="row"><label>Start spread <b id="vsstart"></b></label><input id="sstart" data-p="startSpread" type="range" min="-400" max="400" step="10"></div>
-  <div class="row"><label>Settle back to a row <b id="vssettle"></b></label><input id="ssettle" data-p="lsettle" type="range" min="0" max="1" step=".01"></div>
-  <p class="note">How the mark gets there. Plays once — the loop below takes
-   over when it lands.</p>
+  <p class="note">How the mark gets there, and only that. Plays once — the loop
+   below takes over when it lands.</p>
+  <p class="note">WHERE it gets to is Layout, further down — the same panel a
+   loader uses. This section used to carry a partial copy of it (gap, spread,
+   scatter, shuffle, turn), which quietly cost the controls it did not copy:
+   cell turn, turning the X and the O separately, and the score line.</p>
   </details>
   <details><summary>Resting</summary>
   <div class="row"><label>Ambient motion</label>
@@ -4186,7 +4182,13 @@ function applyRate(){document.querySelectorAll('#stage g,#stage path').forEach(f
  g.getAnimations().forEach(function(a){a.playbackRate=rate})})}
 function play(){build()}
 function setRate(r){rate=r;applyRate()}
-function setLayout(v){P.layout=v;build();sync()}
+function setLayout(v){
+ P.layout=v;
+ // A sleep mark also records which arrangement it arrives INTO. One set
+ // of buttons drives both now, so they cannot drift apart.
+ if(P.sleep) P.slpEntrance=v;
+ build(); sync();
+}
 /** Where the letters finish: held in the arrangement, or landing as the
     wordmark. The slider under it is the same thing part way. */
 function setSettle(v){P.lsettle=v;build();sync()}
@@ -4210,9 +4212,6 @@ function setTexType(m){P.texType=m;build()}
 
 var GLINTS=['dot','oval','pill','square','star','pair','crescent'];
 var AMBIENTS=['still','float','breathe','sway','bob','pulse'];
-// How it arrives: the same layouts the mark can animate in from, so this
-// is the existing Layout choice surfaced where it is actually decided.
-var ENTRANCES=['row','grid','stack','diagonal'];
 function setAmbient(v){P.slpAmbient=v;drawSleepPickers();build();sch()}
 /**
  * The layout the mark arrives into — and stays in.
@@ -4226,15 +4225,10 @@ function setAmbient(v){P.slpAmbient=v;drawSleepPickers();build();sch()}
  * choosing one, so settle stays at 0 and the Arriving sliders can move
  * it deliberately if a settle is actually wanted.
  */
-function setEntrance(v){P.slpEntrance=v;P.layout=v;P.lsettle=0;
- sync();build();sch()}
 function drawSleepPickers(){
  var a=document.getElementById('slpambsel');
  if(a) a.innerHTML=AMBIENTS.map(function(n){
   return '<option value="'+n+'"'+(P.slpAmbient===n?' selected':'')+'>'+n+'</option>'}).join('');
- var e=document.getElementById('slpinsel');
- if(e) e.innerHTML=ENTRANCES.map(function(n){
-  return '<option value="'+n+'"'+(P.slpEntrance===n?' selected':'')+'>'+n+'</option>'}).join('');
 }
 
 /**
@@ -4404,12 +4398,13 @@ function syncSleep(){
  // a working view is meaningless when there is only one thing to watch.
  var sec=document.getElementById('slpsection');
  if(sec) sec.style.display=P.sleep?'':'none';
- // Arriving carries the layout controls for a sleep mark, so the
- // standalone Layout group would be the same sliders twice — the same
- // settings, two places to change them, and no way to tell which one you
- // last touched. It stays for a loader, which has no Arriving section.
- var lay=document.getElementById('layoutgrp');
- if(lay) lay.style.display=P.sleep?'none':'';
+ // Layout is for both kinds of mark. It was hidden for a sleep one
+ // because Arriving carried a copy of it, and two sets of the same
+ // sliders is worse than none — but the copy was PARTIAL, so hiding the
+ // real panel silently took away cell turn, turning the X and the O
+ // separately, and the score line, and demoted the arrangement buttons
+ // to a dropdown. Arriving does only its own job now, and this is the
+ // one place letters get arranged whichever kind is being made.
  // Same rule for the arrival's own timing: Arriving owns it in sleep, so
  // Timing does not also offer it. Reached through the sliders rather
  // than by wrapping the rows in markup — this panel is deep enough that
@@ -4973,13 +4968,7 @@ var HELP={
 // --- sleep: arriving ---
 sdur:'How long the mark takes to arrive. Plays once.',
 sstag:'Delay between each letter setting off. 0 sends them all at once.',
-sgap:'Spacing between letters in the arrangement.',
-sspread:'Scales the whole arrangement outward from its middle.',
-sscat:'Randomly nudges each letter off its cell. Rough, not tidy.',
-sshuffle:'Reorders which letter goes to which cell.',
-sturn:'Rotates the whole arrangement about its middle, in eighths.',
 sstart:'How far outside its cell each letter begins. Negative starts inside.',
-ssettle:'At 1 the letters leave the arrangement and land as a plain row instead.',
 // --- sleep: resting ---
 slpDur:'How long one breath of the ambient motion takes.',
 slpAmt:'How far the ambient motion travels. 0 holds still.',
