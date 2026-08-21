@@ -352,6 +352,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Stroke variation <b id="varmVary"></b></label><input id="armVary" type="range" min="0" max="2" step=".05"></div>
   <div class="row"><label>Line wander <b id="varmWobble"></b></label><input id="armWobble" type="range" min="0" max="1.5" step=".05"></div>
   <div class="row"><label>Boil <b id="varmBoil"></b></label><input id="armBoil" type="range" min="0" max="1" step=".05"></div>
+  <div class="row"><label>Arm taper <b id="varmTaper"></b></label><input id="armTaper" type="range" min="1" max="3" step=".05"></div>
   <div class="row"><label>Arm bow <b id="varmBow"></b></label><input id="armBow" type="range" min="-2" max="2" step=".05"></div>
   <div class="row"><label>Lift height <b id="varmLift"></b></label><input id="armLift" type="range" min="0" max="2.5" step=".05"></div>
   <div class="row"><label>Letter tilt <b id="varmTilt"></b></label><input id="armTilt" type="range" min="0" max="3" step=".05"></div>
@@ -758,7 +759,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeShut:.03,blinkSync:1,eyeSpeed:1,eyeGlint:.3,glintIn:0,
  eyeClose:140,eyeHold:60,eyeOpen:250,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeAxis:0,eyeVia:.5,
- eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armDur:.62,armSize:1,armFill:1,armPasses:2,armVary:1,armWobble:.4,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
+ eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armDur:.62,armSize:1.25,armFill:0,armPasses:2,armVary:1,armTaper:1.5,armWobble:.4,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -3246,7 +3247,21 @@ function armVisit(total){
 function armGeom(){
  if(!P.arms||!P.sleep) return null;
  if(!armVisit(eyeSpan(totalRun()))) return null;
- var li=armTargetLetter(), c=LCEN[li]; if(!c) return null;
+ var li=armTargetLetter(), base=LCEN[li]; if(!base) return null;
+ /**
+  * Where the letter ACTUALLY is, not where it would be in a row.
+  *
+  * LCEN is the wordmark's own geometry — the base row — and every
+  * arrangement is a transform on top of it. Reaching for LCEN meant
+  * reaching for the row position whatever the layout said, so in a grid
+  * the hand closed on empty space beside the letter it was aiming at.
+  *
+  * The grab track keeps the BASE point as its origin, because it lives
+  * inside the group that does the arranging and its own coordinates have
+  * not moved. The arm is outside that group and needs the real one.
+  */
+ var lo0=lRest(li);
+ var c=[base[0]+lo0[0], base[1]+lo0[1]];
  // The letter's own extent, so the grab lands on ITS edge rather than
  // on a fraction of the whole mark — the O and the X are not the same
  // width, and a hand that ignores that grips thin air on one of them.
@@ -3266,6 +3281,8 @@ function armGeom(){
  // other way at the end of the row.
  var other=li-side; if(!LCEN[other]) other=li+side;
  if(!LCEN[other]) other=li;
+ var lo1=LCEN[other]?lRest(other):[0,0];
+ var oc=LCEN[other] ? [LCEN[other][0]+lo1[0], LCEN[other][1]+lo1[1]] : c;
  // How many times a repeating deed repeats, decided by how long it has
  // rather than fixed. Three waves inside a floored 700ms visit is a
  // seven hertz wave — about eight frames a cycle, which no sampling
@@ -3274,7 +3291,8 @@ function armGeom(){
  var span=eyeSpan(totalRun()), V=armVisit(span);
  var actMs=V ? V.f*span*(ARM_PH.done-ARM_PH.act) : 0;
  var cycles=Math.max(1, Math.min(4, Math.round(actMs/330)));
- return { li:li, c:c, b:b, other:other, oc:LCEN[other]||c, side:side, hr:hr,
+ return { li:li, c:c, base:base, b:b, other:other, oc:oc, obase:LCEN[other]||base,
+          side:side, hr:hr,
           cycles:cycles, actMs:actMs,
           ax:ax, ay:ay, box:box,
           lift:(P.armLift===undefined?1:P.armLift)*box[3]*0.55 };
@@ -3307,7 +3325,11 @@ function armPose(u){
   * rim rather than over the face.
   */
  var lw=(A.b?A.b.w:A.box[2]/4)/2, lh=(A.b?A.b.h:A.box[3])/2;
- var onX=A.c[0]-A.side*(lw-A.hr*0.28), onY=A.c[1]-lh*0.34;
+ // The wrist sits OUTSIDE the letter's edge; only the fingers come over
+ // it. Inside the edge, the palm lies across the letterform and the
+ // whole thing reads as a hand resting on it rather than holding it —
+ // and with an open outline, a palm over white ink is just clutter.
+ var onX=A.c[0]-A.side*(lw+A.hr*0.42), onY=A.c[1]-lh*0.30;
  // A wave never comes down to the letter, so its "on" position is where
  // it already is. Letting it descend and then teleport back up to wave
  // was a step in the middle of the gesture.
@@ -3419,73 +3441,84 @@ function armPose(u){
 }
 
 /**
- * The hose, as a curve from off-frame to the wrist.
+ * The arm, as a tapering TUBE rather than a stroke.
  *
- * Four segments rather than one, so there is somewhere for the line to
- * wander. A single quadratic is a perfect mathematical arc and reads as
- * one — the whole point of a drawn arm is that it was drawn, and a hand
- * does not produce a perfect arc.
+ * Two lines, not one — up one side, round the wrist, back down the
+ * other. A single stroked curve is a wire; the reference draws an arm
+ * with two edges that narrow toward the hand, and that narrowing is
+ * most of what says "arm" rather than "cable".
  *
- * The wander is seeded off the segment index, so the line is STABLE by
- * default: noise that changed every keyframe would be a 60Hz shimmer,
- * which is not sketchiness, it is buzz. Boil steps that seed on purpose,
- * a few times a visit, which is how a hand-drawn line actually behaves —
- * redrawn each time it is redrawn, not vibrating.
- *
- * Fixed segment count whatever the settings, because `d` only
- * interpolates between keyframes that share a command structure.
+ * The centreline still wanders. Four spans, seeded off the segment so
+ * the line is stable by default; boil reseeds it a few times a visit,
+ * which is how a redrawn line behaves. Fixed point count whatever the
+ * settings, because `d` only interpolates between keyframes sharing a
+ * command structure.
  */
 function armHose(u){
  var q=armPose(u); if(!q) return '';
  var A=q.A, bow=(P.armBow===undefined?1:P.armBow);
  var wob2=(P.armWobble===undefined?0.4:P.armWobble);
  var boil=Math.max(0,P.armBoil===undefined?0:P.armBoil);
- // Which "take" of the line this is. 0 holds one drawing for the whole
- // visit; higher redraws it that many times across the visit.
  var take=boil>0 ? Math.floor(u*Math.max(1,Math.round(boil*8))) : 0;
  var dx=q.x-A.ax, dy=q.y-A.ay, L=Math.hypot(dx,dy)||1;
  var px=-dy/L, py=dx/L;
  var b=L*0.22*bow*(-A.side);
- // the base curve, sampled so the noise has points to sit on
- var base=function(t){
-  var mt=1-t;
-  return [mt*mt*A.ax + 2*mt*t*(A.ax+dx/2+px*b) + t*t*q.x,
-          mt*mt*A.ay + 2*mt*t*(A.ay+dy/2+py*b) + t*t*q.y];
- };
- var N=4, d='', prev=base(0);
- d='M'+prev[0].toFixed(1)+','+prev[1].toFixed(1);
- for(var i2=1;i2<=N;i2++){
-  var t1=i2/N, t0=(i2-1)/N, pt=base(t1), mid=base((t0+t1)/2);
-  // Taper the wander to nothing at the wrist: a line that wobbles where
-  // it meets the hand reads as a mistake rather than as a stroke.
-  var fade=1-t1*0.75;
-  var n1=(rnd(A.li*13+i2*7.3+take*3.1)-0.5)*L*0.055*wob2*fade;
-  var n2=(rnd(A.li*29+i2*5.7+take*11.3)-0.5)*L*0.055*wob2*fade;
-  d+='Q'+(mid[0]+px*n1).toFixed(1)+','+(mid[1]+py*n1).toFixed(1)
-   +' '+(pt[0]+px*n2).toFixed(1)+','+(pt[1]+py*n2).toFixed(1);
+ var N=10;
+ // the wandering centreline, sampled once and reused for both edges
+ var pts=[];
+ for(var i2=0;i2<=N;i2++){
+  var t=i2/N, mt=1-t;
+  var cx0=mt*mt*A.ax + 2*mt*t*(A.ax+dx/2+px*b) + t*t*q.x;
+  var cy0=mt*mt*A.ay + 2*mt*t*(A.ay+dy/2+py*b) + t*t*q.y;
+  // taper the wander to nothing at the wrist — a line that wobbles
+  // where it meets the hand reads as a mistake, not as a stroke
+  var n=(rnd(A.li*13+i2*7.3+take*3.1)-0.5)*L*0.05*wob2*(1-t*0.85);
+  pts.push([cx0+px*n, cy0+py*n]);
  }
- return d;
+ // half-width, thick at the shoulder and narrow at the wrist
+ // The wrist is about a quarter of the hand's width and the arm tapers
+ // gently along its length. A strong taper makes the two lines splay
+ // apart at the shoulder and the arm stops reading as an arm.
+ var w1=A.hr*0.24, w0=w1*(P.armTaper===undefined?1.5:P.armTaper);
+ var side=function(sgn){
+  var d='';
+  for(var i3=0;i3<=N;i3++){
+   var t=i3/N, hw=(w0+(w1-w0)*t)*sgn;
+   var a=pts[Math.max(0,i3-1)], c2=pts[Math.min(N,i3+1)];
+   var tx=c2[0]-a[0], ty=c2[1]-a[1], m=Math.hypot(tx,ty)||1;
+   var nx=-ty/m, ny=tx/m;
+   d+=(i3?'L':'')+(pts[i3][0]+nx*hw).toFixed(1)+','+(pts[i3][1]+ny*hw).toFixed(1);
+  }
+  return d;
+ };
+ return 'M'+side(1)+'L'+side(-1).split('L').reverse().join('L')+'Z';
 }
 
 
 /**
- * The arm's markup, in two layers.
+ * The arm's markup, drawn twice in two colours.
  *
- * The hose goes BEHIND the letters and the hand in front, so the arm
- * reads as reaching out from behind the mark and taking hold of a
- * letter — which is what it is doing. Drawn entirely on top, it looked
- * like a sticker laid over the wordmark.
+ * The reference is dark line-work over a pale object: an open outline
+ * you see the object through. Ours is white ink on black, so the same
+ * outline laid on a white letter disappears into it — which is why the
+ * hand had to be filled with the ground to be visible at all, and that
+ * is a different thing. A filled hand is opaque; the reference's is not.
  *
- * Sketch passes are `<use>` references rather than repeated paths. A
- * use clones the referenced element's RENDERED state, animation and
- * all, so three overlapping strokes cost one animated path instead of
- * three — which matters when the path is redrawn every frame of the
- * visit.
+ * So the outline is drawn twice. The ink copy goes BEHIND the letters:
+ * visible against the ground, hidden where a letter covers it. The
+ * ground-coloured copy goes in FRONT: invisible against the ground,
+ * and reading as dark line-work exactly where it crosses a letter.
+ * Between them the outline is continuous everywhere and open
+ * throughout — the reference's read, on an inverted palette.
+ *
+ * The second copy is a <use>, which clones the referenced element's
+ * rendered state, animation and all. One animated path per shape,
+ * however many times it is painted.
  */
 var MEASURING=false;
 
-/** One stroke, plus however many offset repeats make it look drawn. */
-function armPasses(id, w){
+/** One line, plus however many offset repeats make it look drawn. */
+function armPasses(id, w, isUse){
  var n=Math.max(1,Math.min(4,Math.round(P.armPasses===undefined?2:P.armPasses)));
  var vary=(P.armVary===undefined?1:P.armVary);
  var out='';
@@ -3503,23 +3536,31 @@ function armsSVG(layer){
  if(MEASURING) return '';
  var A=armGeom(); if(!A) return '';
  var w=Math.max(0.6,(P.armW===undefined?1:P.armW)*A.box[3]*0.017);
- // Weight on the GROUP, not the path, so each use can vary its own.
- var st=' stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"';
+ var fillAmt=(P.armFill===undefined?0:P.armFill);
+ var common=' fill="none" stroke-linecap="round" stroke-linejoin="round"'
+  +' stroke-width="'+w.toFixed(2)+'"';
+
  if(layer==='back'){
-  return '<g class="armWrapBack" stroke-width="'+w.toFixed(2)+'"'+st+' fill="none">'
-   +'<path id="armHoseP" class="armHose"/>'
+  // The real paths live here, in ink, behind the letters.
+  var fill=fillAmt>0
+   ? ' fill="var(--bg)" fill-opacity="'+fillAmt.toFixed(2)+'"' : '';
+  return '<g class="armWrapBack" stroke="currentColor"'+common+'>'
+   +'<path id="armHoseP" class="armHose"'+fill+'/>'
    +armPasses('armHoseP', w)
-   +'</g>';
+   +'<g class="armHand">'
+   +'<path id="armGloveP" class="armGlove"'+fill+'/>'
+   +armPasses('armGloveP', w)
+   +'<path id="armCuffP" class="armCuff"/>'
+   +armPasses('armCuffP', w)
+   +'</g></g>';
  }
- var fillAmt=(P.armFill===undefined?1:P.armFill);
- var fill=fillAmt>0 ? ' fill="var(--bg)" fill-opacity="'+fillAmt.toFixed(2)+'"' : ' fill="none"';
- return '<g class="armWrap" stroke-width="'+w.toFixed(2)+'"'+st+'>'
-  +'<g class="armHand">'
-  +'<path id="armGloveP" class="armGlove"'+fill+'/>'
-  +armPasses('armGloveP', w)
-  +'<path id="armCuffP" class="armCuff" fill="none"/>'
-  +armPasses('armCuffP', w)
-  +'</g></g>';
+ // In front, in the ground's colour: nothing on the ground, line-work on
+ // a letter. Uses only — the animation belongs to the copy behind.
+ return '<g class="armWrapFront" stroke="var(--bg)"'+common+'>'
+  +'<use href="#armHoseP"/>'+armPasses('armHoseP', w)
+  +'<use href="#armGloveP"/>'+armPasses('armGloveP', w)
+  +'<use href="#armCuffP"/>'+armPasses('armCuffP', w)
+  +'</g>';
 }
 
 /**
@@ -3645,10 +3686,11 @@ function armCSS(total){
  // A swap moves two letters: the one picked up, and the one whose place
  // it takes. Both are driven off the same pose, so they cannot pass
  // through each other at different speeds.
- var moved=[[A.li, A.c, A.oc]];
- if(act==='swap' && A.other!==A.li) moved.push([A.other, A.oc, A.c]);
+ // [letter, where it starts, where it goes, the origin to rotate about]
+ var moved=[[A.li, A.c, A.oc, A.base]];
+ if(act==='swap' && A.other!==A.li) moved.push([A.other, A.oc, A.c, A.obase]);
  moved.forEach(function(m){
-  var li=m[0], from=m[1], to=m[2], stops=[];
+  var li=m[0], from=m[1], to=m[2], org=m[3], stops=[];
   us.forEach(function(u){
    var q=armPose(u); if(!q) return;
    var dx=(act==='swap') ? q.swap*(to[0]-from[0]) : 0;
@@ -3658,8 +3700,8 @@ function armCSS(total){
   });
   var none='transform:translate(0.0px,0.0px) rotate(0.00deg)';
   out+='@keyframes gr'+li+'{'+emit(stops,none,none)+'}'
-   +'.gr'+li+'{transform-box:view-box;transform-origin:'+from[0].toFixed(1)+'px '
-   +from[1].toFixed(1)+'px;animation:gr'+li+' '+ms+'ms linear both}';
+   +'.gr'+li+'{transform-box:view-box;transform-origin:'+org[0].toFixed(1)+'px '
+   +org[1].toFixed(1)+'px;animation:gr'+li+' '+ms+'ms linear both}';
  });
  return out;
 }
@@ -3839,9 +3881,24 @@ function eyeIntroCSS(){
  B.forEach(function(b,i){
   if(!b.hp) return;
   [['eyTopI',true],['eyBotI',false]].forEach(function(q){
+   /**
+    * RELATIVE to the blink, not absolute.
+    *
+    * This group wraps the blink track, so its translate ADDS to it. Sent
+    * to the same open position the blink already uses, it held the lid
+    * two pupil-heights clear for good — and the blink underneath then
+    * moved between "shut" and "open" while sitting inside a group that
+    * had already opened it. The eye never closed; only the catchlight
+    * went out, which is why a blink read as the glint blinking and the
+    * eyes doing nothing.
+    *
+    * So it starts by CANCELLING the blink's open offset — holding the
+    * lid shut at the wake — and releases to zero, after which the blink
+    * owns the lid alone.
+    */
    var shut=lidOffset(i,1,q[1]), rest=lidOffset(i,0,q[1]);
-   out+='@keyframes '+q[0]+i+'{0%{transform:translateY('+shut.toFixed(2)+'px)}'
-    +'100%{transform:translateY('+rest.toFixed(2)+'px)}}'
+   out+='@keyframes '+q[0]+i+'{0%{transform:translateY('+(shut-rest).toFixed(2)+'px)}'
+    +'100%{transform:translateY(0px)}}'
     +'.'+q[0]+i+'{transform-box:view-box;animation:'+q[0]+i+' '+Math.round(open)
     +'ms '+EZ_SETTLE+' '+wake+'ms both}';
   });
@@ -5478,7 +5535,7 @@ function preset(n){P=migrate(JSON.parse(JSON.stringify(PRESETS[n])));
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeDart','eyeGlance','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeShut','blinkSync','eyeSpeed','eyeGlint','glintIn',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armSize','armFill','armW','armPasses','armVary','armWobble','armBoil','armBow','armLift','armTilt','armEyes','armTarget',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armSize','armFill','armW','armPasses','armVary','armTaper','armWobble','armBoil','armBow','armLift','armTilt','armEyes','armTarget',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
@@ -5903,6 +5960,7 @@ armFill:'How solidly the hand covers what is behind it. 0 is an open outline, wh
 armW:'Line weight of the arm and hand.',
 armPasses:'How many times each line is drawn. More passes read as hand-drawn rather than plotted.',
 armVary:'How much the extra passes differ in offset, weight and opacity.',
+armTaper:'How much wider the arm is at the shoulder than at the wrist.',
 armWobble:'How far the arm wanders off a perfect arc. Tapers to nothing at the wrist.',
 armBoil:'How often the wander is redrawn across a visit. 0 holds one drawing.',
 armBow:'How much the arm bows on its way in. Negative bows the other way.',
