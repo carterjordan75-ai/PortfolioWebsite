@@ -3226,7 +3226,26 @@ function cuffPath(r){
  * own reaction can be timed off exactly the same beats — a letter that
  * lifts a frame before the hand closes on it is the tell that ruins it.
  */
-var ARM_PH={ in:0.00, land:0.19, close:0.30, act:0.34, done:0.62, open:0.72, out:0.78 };
+/**
+ * The beats of a visit, as fractions of it.
+ *
+ * Balanced by the DISTANCE each covers, not by feel. Lifting away
+ * carries the hand from the letter back up to where it came in — the
+ * same journey as the descent, in reverse — and it had 6% against the
+ * descent's 11%. At a floored visit that is 42ms for a move the way in
+ * was given 77ms, and the hand covered it in two frames: 46 units and
+ * 40 degrees between one sample and the next, which is a break, not a
+ * fast exit.
+ *
+ *   land  0.18   reach in from behind the mark
+ *   close 0.11   drop onto the letter's edge
+ *   act   0.04   fingers close
+ *   deed  0.25   whatever it came to do
+ *   open  0.08   fingers release
+ *   out   0.12   lift away        <- was 0.06
+ *   exit  0.22   swing back out of sight
+ */
+var ARM_PH={ in:0.00, land:0.18, close:0.29, act:0.33, done:0.58, open:0.66, out:0.78 };
 
 function armTargetLetter(){
  var t=Math.round(P.armTarget===undefined?-1:P.armTarget);
@@ -3252,9 +3271,20 @@ function armTargetLetter(){
  */
 var ARM_MIN_MS=700;
 function armVisit(total){
+ // A deed that REPEATS needs room for a repeat.
+ //
+ // Reach, close, hold, release, leave fits in seven hundred
+ // milliseconds. An oscillation does not: the deed is a quarter of the
+ // visit, so at that floor a poke or a wave gets 175ms for a cycle,
+ // which is about six hertz — ten frames a cycle, and no sampling rate
+ // draws that smoothly. One comfortable cycle wants 330ms, so the visit
+ // wants four times it. Measured clean at 1500ms and broken at 700 for
+ // exactly and only those two actions.
+ var act=P.armAction||'lift';
+ var floorMs=(act==='poke'||act==='wave') ? 1400 : ARM_MIN_MS;
  var dur=Math.max(0.15,Math.min(0.98,P.armDur===undefined?0.62:P.armDur));
- var want=Math.max(ARM_MIN_MS, dur*total);
- if(total<ARM_MIN_MS*1.05) return null;
+ var want=Math.max(floorMs, dur*total);
+ if(total<floorMs*1.05) return null;
  var f=Math.min(0.98, want/total);
  return { f:f, t0:(1-f)/2 };
 }
@@ -3361,89 +3391,95 @@ function armGeom(k){
  * letter's reaction, where the eyes look — reads from this, so there is
  * one description of the gesture rather than four that have to agree.
  */
+/** Where the arm's curve bows to. Shared, so the pose and the path
+    cannot disagree about which way the wrist is pointing. */
+function armVia(A, hx, hy){
+ var bow=(P.armBow===undefined?1:P.armBow);
+ return [ (A.ax+hx)/2, Math.max(A.ay, hy)+A.box[3]*0.34*bow ];
+}
+
 function armPose(k, u){
  var A=armGeom(k); if(!A) return null;
  var P0=ARM_PH;
  var lerp=function(a,b,t){ return a+(b-a)*Math.max(0,Math.min(1,t)) };
  var ease=function(t){ t=Math.max(0,Math.min(1,t)); return t*t*(3-2*t) };
  var act=P.armAction||'lift';
- var restX=A.ax, restY=A.ay;
+ // A short stub at rest rather than sat exactly on the anchor: on it the
+ // arm has zero length, its tangents are undefined, and the edge offsets
+ // come out as whatever the arithmetic happens to produce. The anchor is
+ // inside a letterform so the stub is covered anyway.
+ var restX=A.ax+(A.c[0]-A.ax)*0.10, restY=A.ay+(A.c[1]-A.ay)*0.10;
  var overW=(A.b?A.b.w:A.box[2]/4)/2;
  var overX=A.c[0]+A.side*(overW+A.hr*0.30), overY=A.c[1]-A.box[3]*0.52;
- /**
-  * The near EDGE of the letter, not the middle of it.
-  *
-  * A hand closing over the centre of a letterform is holding a plate,
-  * not picking something up. What a hand actually does is take a thing
-  * by the side nearest it — so the wrist goes to the edge the arm came
-  * from, a little above the middle, and the fingers close across the
-  * rim rather than over the face.
-  */
+ // The near EDGE of the letter, not the middle: a hand closing over the
+ // centre of a letterform is holding a plate, not picking something up.
  var lw=(A.b?A.b.w:A.box[2]/4)/2, lh=(A.b?A.b.h:A.box[3])/2;
- // The wrist sits OUTSIDE the letter's edge; only the fingers come over
- // it. Inside the edge, the palm lies across the letterform and the
- // whole thing reads as a hand resting on it rather than holding it —
- // and with an open outline, a palm over white ink is just clutter.
- // + not -: `side` is the side the arm comes FROM, so the hand takes
- // the edge on that same side. With the sign the other way the anchor
- // sat on one side and the hand grabbed the opposite edge, so the arm
- // reached straight across the letter it was holding.
  var onX=A.c[0]+A.side*(lw+A.hr*0.42), onY=A.c[1]-lh*0.30;
- // A wave never comes down to the letter, so its "on" position is where
- // it already is. Letting it descend and then teleport back up to wave
- // was a step in the middle of the gesture.
+ // A wave never comes down to the letter, so its "on" is where it is.
  if(act==='wave'){ onX=overX; onY=overY }
+ var holdCurl=(act==='wave')?0.25:1;
+
  /**
-  * Rest to rest, the same rule the eye's easing keeps.
+  * ONE curve through the whole visit, not a phase at a time.
   *
-  * `bell` goes out and back with no speed at either end or at the top;
-  * `env` fades a repeating motion in and out so it does not begin
-  * mid-swing. Without them the deed started at full tilt straight out
-  * of a phase that had come to a stop, which is a step change in
-  * velocity — 26,546 units/sec of one, measured.
+  * Every beat used to ease independently from rest to rest, so the hand
+  * came to a dead stop at all seven boundaries and set off again. Inside
+  * a short beat that puts the entire move into two frames: measured at
+  * 158 units between adjacent samples with 15 and 30 either side, and
+  * forty degrees of rotation along with it. Seven correct little eases
+  * add up to a stutter.
+  *
+  * A cubic Hermite through the same waypoints instead, tangents taken
+  * from the neighbour on each side, so velocity carries ACROSS the
+  * knots rather than dropping to nothing at every one. The hand flows
+  * through reach, drop, hold, release and lift as a single movement.
+  *
+  * The tangent is forced to zero where both neighbours share a
+  * position, so a genuine hold still holds rather than drifting through
+  * itself on the way past.
   */
+ var KT=[0, P0.land, P0.close, P0.done, P0.out, 1];
+ var KP=[[restX,restY],[overX,overY],[onX,onY],[onX,onY],[overX,overY],[restX,restY]];
+ var n=KT.length, i=0;
+ while(i<n-2 && u>KT[i+1]) i++;
+ var t1=KT[i], t2=KT[i+1], hh=Math.max(1e-6,t2-t1), sN=Math.max(0,Math.min(1,(u-t1)/hh));
+ var tangent=function(j){
+  var pj=KP[j], pa=KP[Math.max(0,j-1)], pb=KP[Math.min(n-1,j+1)];
+  if(pa[0]===pj[0]&&pa[1]===pj[1]&&pb[0]===pj[0]&&pb[1]===pj[1]) return [0,0];
+  var d=Math.max(1e-6, KT[Math.min(n-1,j+1)]-KT[Math.max(0,j-1)]);
+  return [(pb[0]-pa[0])/d*hh, (pb[1]-pa[1])/d*hh];
+ };
+ var m1=tangent(i), m2=tangent(i+1);
+ var s2=sN*sN, s3=s2*sN;
+ var h00=2*s3-3*s2+1, h10=s3-2*s2+sN, h01=-2*s3+3*s2, h11=s3-s2;
+ var x=h00*KP[i][0]+h10*m1[0]+h01*KP[i+1][0]+h11*m2[0];
+ var y=h00*KP[i][1]+h10*m1[1]+h01*KP[i+1][1]+h11*m2[1];
+ var curl=0, lift=0, swap=0;
+
+ // fingers close on the way down and release on the way up
+ if(u>=P0.close && u<P0.act) curl=holdCurl*ease((u-P0.close)/(P0.act-P0.close));
+ else if(u>=P0.act && u<P0.done) curl=holdCurl;
+ else if(u>=P0.done && u<P0.open) curl=holdCurl*(1-ease((u-P0.done)/(P0.open-P0.done)));
+
+ // whatever it came to do, laid over the top. bell and env both begin
+ // and end at zero with no slope, so the deed adds no step of its own.
  var bell=function(t){ return ease(Math.min(1,t*2))*ease(Math.min(1,(1-t)*2)) };
  var env=function(t){ return ease(Math.min(1,t*4))*ease(Math.min(1,(1-t)*4)) };
- var x,y,curl=0,lift=0,swap=0;
- if(u<P0.land){                       // swinging in
-  var t=ease(u/P0.land);
-  x=lerp(restX,overX,t); y=lerp(restY,overY,t);
- } else if(u<P0.close){               // dropping onto it
-  var t2=ease((u-P0.land)/(P0.close-P0.land));
-  x=lerp(overX,onX,t2); y=lerp(overY,onY,t2);
- } else if(u<P0.act){                 // closing
-  x=onX; y=onY; curl=ease((u-P0.close)/(P0.act-P0.close));
- } else if(u<P0.done){                // the deed
-  curl=1;
+ if(u>=P0.act && u<P0.done){
   var t3=(u-P0.act)/(P0.done-P0.act);
   if(act==='wave'){
-   x=overX+Math.sin(t3*Math.PI*2*A.cycles)*A.hr*1.5*env(t3); y=overY; curl=0.25;
+   x+=Math.sin(t3*Math.PI*2*A.cycles)*A.hr*1.5*env(t3);
   } else if(act==='poke'){
    var pk=Math.sin(t3*Math.PI*2*Math.max(1,A.cycles-1))*env(t3);
-   x=onX; y=onY+pk*A.hr*0.5; lift=-pk*A.lift*0.18;
+   y+=pk*A.hr*0.5; lift=-pk*A.lift*0.18;
   } else if(act==='swap'){
-   // A real exchange: the two letters trade places and trade back, so
-   // the round still ends where it began. Carrying one out and
-   // returning it is not a swap, it is a lift with extra steps.
-   swap=bell(t3);
-   var up2=bell(t3)*0.35;
-   lift=up2*A.lift;
-   x=onX+swap*(A.oc[0]-A.c[0]); y=onY-lift;
+   swap=bell(t3); lift=swap*0.35*A.lift;
+   x+=swap*(A.oc[0]-A.c[0]); y-=lift;
   } else {
-   var up=bell(t3);
-   lift=up*A.lift;
-   x=onX; y=onY-up*A.lift;
+   lift=bell(t3)*A.lift; y-=lift;
   }
- } else if(u<P0.open){                // letting go
-  var t4=ease((u-P0.done)/(P0.open-P0.done));
-  x=onX; y=lerp(onY,onY-A.hr*0.3,t4); curl=1-t4;
- } else if(u<P0.out){                 // lifting away
-  var t5=ease((u-P0.open)/(P0.out-P0.open));
-  x=lerp(onX,overX,t5); y=lerp(onY-A.hr*0.3,overY,t5);
- } else {                             // swinging out
-  var t6=ease((u-P0.out)/(1-P0.out));
-  x=lerp(overX,restX,t6); y=lerp(overY,restY,t6);
  }
+
  /**
   * Which way the hand faces.
   *
@@ -3457,14 +3493,23 @@ function armPose(k, u){
   * letter's centre as the fist closes, which means the turn happens on
   * exactly the beats the fingers do.
   */
- // At rest the hand sits exactly ON the anchor, so the vector along the
- // hose is zero and atan2(0,0) hands back 0 — an arbitrary angle, and a
- // whole-turn snap against the sample either side of it. Fall back to
- // the direction it is about to travel, which is stable and is where it
- // would be pointing anyway.
- var vx=x-A.ax, vy=y-A.ay;
- if(Math.hypot(vx,vy)<0.5){ vx=overX-A.ax; vy=overY-A.ay }
- var hoseAng=Math.atan2(vy, vx)*180/Math.PI+90;
+ /**
+  * Measured from the point the arm bows through, not from the anchor.
+  *
+  * From the anchor the vector is ZERO while the hand is still parked on
+  * it, so it needed a fallback — and a fallback is a switch, which
+  * fires the instant the hand creeps half a unit away and swings the
+  * whole hand round in one sample. With the angle baked into the path
+  * that moved every point of the outline at once: 100% of peak speed,
+  * lost in a single stop.
+  *
+  * The via point is always well clear of both ends, so the vector is
+  * never degenerate and never needs a special case. It is also the
+  * arm's actual incoming direction at the wrist, which is what the hand
+  * should be lined up with anyway.
+  */
+ var V0=armVia(A, x, y);
+ var hoseAng=Math.atan2(y-V0[1], x-V0[0])*180/Math.PI+90;
  // From the GRAB POINT to the letter's centre, not from wherever the
  // hand currently is. The live vector vanishes and flips sign if the
  // hand ever passes through the letter it is reaching for — which it
@@ -3480,7 +3525,8 @@ function armPose(k, u){
  // jump of 360 x face, which is not a whole turn and so cannot be
  // unwrapped away: 122 degrees between two adjacent stops on a long,
  // unhurried visit. Constant turn, no wrap, nothing to unwrap.
- var refAng=Math.atan2(onY-A.ay, onX-A.ax)*180/Math.PI+90;
+ var Vr=armVia(A, onX, onY);
+ var refAng=Math.atan2(onY-Vr[1], onX-Vr[0])*180/Math.PI+90;
  var turn=((gripAng-refAng+540)%360)-180;
  /**
   * The turn is spread across the whole approach, not across the close.
@@ -3524,9 +3570,8 @@ function armHose(k, u){
  // Bowed down between the ends, not out past the shoulder. Swinging it
  // outward carried the blunt shoulder end clear of the letter covering
  // it, which is the one thing that has to stay hidden.
- var viaX=(A.ax+q.x)/2;
- var viaY=Math.max(A.ay, q.y)+A.box[3]*0.34*bow;
- var cxC=2*viaX-(A.ax+q.x)/2, cyC=2*viaY-(A.ay+q.y)/2;
+ var Vp=armVia(A, q.x, q.y);
+ var cxC=2*Vp[0]-(A.ax+q.x)/2, cyC=2*Vp[1]-(A.ay+q.y)/2;
  var N=10, pts=[], nrm=[];
  // the hand's own x axis, which is where the arm's edges have to land
  var t0=q.ang*Math.PI/180, hnx=Math.cos(t0), hny=Math.sin(t0);
@@ -3643,18 +3688,24 @@ function armCSS(total){
  var ms=Math.round(total), out='';
  var PH=ARM_PH, visitMs=V.f*total;
 
- // Sampled at the frame rate, not at a fixed count. Fixed counts are a
- // guess about how long a phase will last, and the guess is wrong at
- // both ends. 17.5 rather than 16.7 because sampling exactly at the
- // thinner's floor means every other stop lands a hair inside it and is
- // taken straight back out.
- var us=[], seg=[[0,PH.land],[PH.land,PH.close],[PH.close,PH.act],
-                 [PH.act,PH.done],[PH.done,PH.open],[PH.open,PH.out],[PH.out,1]];
- seg.forEach(function(g){
-  var n=Math.max(3, Math.min(120, Math.ceil((g[1]-g[0])*visitMs/17.5)));
-  for(var q=0;q<n;q++) us.push(g[0]+(g[1]-g[0])*q/n);
- });
- us.push(1);
+ /**
+  * Sampled evenly across the whole visit, at the frame rate.
+  *
+  * It used to sample per phase — each beat given ceil(phaseMs/17.5)
+  * stops of its own. Within a beat that is even, but ACROSS beats the
+  * spacing jumps, because a short phase rounds up to three stops and a
+  * long one to forty. The browser interpolates linearly between stops,
+  * so uneven spacing is uneven speed: a genuine roughness, and one that
+  * came and went with the numbers rather than with the settings — clean
+  * at a 900ms visit, broken at 1100, clean again at 1300.
+  *
+  * Per-phase sampling only existed because each phase used to carry its
+  * own easing and needed resolving separately. The pose is one
+  * continuous curve now, so even spacing is both simpler and correct.
+  */
+ var nS=Math.max(24, Math.min(420, Math.ceil(visitMs/17.5)));
+ var us=[];
+ for(var q=0;q<=nS;q++) us.push(q/nS);
 
  var emit=function(stops, head, tail){
   var all=thinStops([{p:0,v:head}].concat(stops, [{p:100,v:tail}]), ms), o='';
