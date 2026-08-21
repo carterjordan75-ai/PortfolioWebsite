@@ -249,14 +249,18 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Pupil size <b id="veyeSize"></b></label><input id="eyeSize" type="range" min=".3" max="3.4" step=".01"></div>
   <div class="row"><label>Oval <b id="veyeOval"></b></label><input id="eyeOval" type="range" min=".45" max="2.2" step=".01"></div>
   <div class="row"><label>Dome <b id="veyeDome"></b></label><input id="eyeDome" type="range" min="0" max="1" step=".01"></div>
-  <div class="row"><label>Reach to rim <b id="veyeEdge"></b></label><input id="eyeEdge" type="range" min="0" max="1" step=".02"></div>
+  <div class="row"><label>Reach to the edge <b id="veyeEdge"></b></label><input id="eyeEdge" type="range" min="0" max="1.4" step=".02"></div>
   <div class="row"><label>Glint shape</label></div>
   <div class="row" id="glintpicker"></div>
   <div class="row"><label>Glint size <b id="veyeGlint"></b></label><input id="eyeGlint" type="range" min="0" max="1" step=".01"></div>
-  <p class="note">What the eye IS, before it does anything. Reach to rim is
-   capped by the letterform and follows Pupil size and Oval, so a bigger pupil
-   gets less room and still stops short of the ring rather than walking out
-   through it. Dome is the fish-eye: a pupil sits on a curved surface, so it
+  <div class="row"><label>Glint arrives <b id="vglintIn"></b></label><input id="glintIn" type="range" min="0" max="4000" step="20"></div>
+  <p class="note">What the eye IS, before it does anything. Reach to the edge is
+   how much of the clear space between the pupil and the ring a glance is allowed
+   to spend. It follows Pupil size and Oval, so a bigger pupil gets less room. At
+   1 the pupil arrives exactly on the inside of the ring, which is where a
+   cartoon eye goes when it is looking hard at something. Past 1 it starts to
+   break through — the O stops being an O before it stops being an eye, which is
+   sometimes the point and is now yours to decide rather than mine. Dome is the fish-eye: a pupil sits on a curved surface, so it
    foreshortens along the way it travelled and is fattest facing you.</p>
   </details>
 
@@ -712,7 +716,7 @@ var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 
 var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
  eyes:0,eyeLook:.6,eyeDart:4,eyeGlance:1,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
- eyeShut:.12,eyeSpeed:1,eyeGlint:.3,
+ eyeShut:.12,eyeSpeed:1,eyeGlint:.3,glintIn:0,
  eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeVia:.5,
  eyeEdge:.68,lids:1,eyeOwnLoop:0,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,emos:[],emoAmt:1,emoMove:1,emoSpeed:1,emoReps:1,emoLead:0,
@@ -842,7 +846,10 @@ function eyeGeom(i){
  // The eye simply stops looking around and nothing anywhere reports an
  // error. That is exactly what happened.
  var edge=(typeof P.eyeEdge==='number'&&isFinite(P.eyeEdge))?P.eyeEdge:0.68;
- var room=Math.max(0,(b.w/2 - Math.max(rx,ry))*Math.max(0,Math.min(1,edge)));
+ // Capped at the slider's own maximum rather than at 1. The cap used to
+ // be 1 — the inside of the ring — which made everything past that point
+ // on the slider do nothing at all.
+ var room=Math.max(0,(b.w/2 - Math.max(rx,ry))*Math.max(0,Math.min(1.4,edge)));
  return { cx:cx, cy:cy, r:r, rx:rx, ry:ry, room:room };
 }
 function ring(p){var n=p.length,d='M'+p[0][0].toFixed(1)+','+p[0][1].toFixed(1);
@@ -2448,8 +2455,15 @@ function pupilRy(i){
  // and the path curves BETWEEN them, so it bulges a little past every
  // one of them; landing the lid exactly on the largest sample would sit
  // it on the bulge rather than clear of it.
+ // Dome is in here for the same reason as the rest. It reads as
+ // foreshortening, so it looks like it only ever SHRINKS the pupil —
+ // but a pupil at rest in the middle is the one facing you, and it
+ // bulges by up to a tenth to say so. That tenth was missing from the
+ // clearance, which is why turning Dome up put the lid back on the top
+ // of the pupil after the last fix had taken it off.
  return ext*Math.max(P.eyeSize,0.2)*Math.sqrt(Math.max(0.05,P.eyeOval))
-  *sy*(1+Math.max(0,P.eyeSwell||0))*(1+Math.max(0,P.eyeStretch||0)*0.42)*1.04;
+  *sy*(1+Math.max(0,P.eyeSwell||0))*(1+Math.max(0,P.eyeStretch||0)*0.42)
+  *(1+Math.max(0,P.eyeDome||0)*0.10)*1.04;
 }
 
 function lidGeom(i, cover, fromTop, tiltDeg){
@@ -3382,9 +3396,32 @@ function eyeWakeCSS(){
   // that element, composing its proportion, this wake and the expression
   // into one animation. A second `animation` on the same transform
   // silently wins and the other two stop happening.
-  +'@keyframes eyGw'+i+'{0%{opacity:0}100%{opacity:1}}'
-   +'.eyG'+i+'{animation:eyG'+i+' '+blink+'ms linear '+wake+'ms infinite,'
-   +'eyGw'+i+' 420ms ease '+wake+'ms both}';
+  // Two ways the catchlight can arrive.
+  //
+  // Once, at the wake, and then it is simply part of the eye — which is
+  // what it always did. Or every round: in as the round starts, out
+  // before it ends, so a resting mark catches the light rather than
+  // holding a permanent white dot. The second wants a real fade at BOTH
+  // ends; ramping in and cutting out at 100% would put a step across
+  // the loop seam, which is the one place a loop cannot hide one.
+  out+=(P.glintIn>0
+    ? (function(){
+       // A floor on the ramp, for the same reason the blink fade has one:
+       // asking for a 20ms arrival inside a several-second round puts both
+       // ends of it in the same hundredth of a percent, which is a cut
+       // wearing a fade's name. Sixty milliseconds is the shortest thing
+       // that still reads as arriving.
+       var cyc=Math.max(600,P.eyeCycle);
+       var f=Math.min(45, Math.max(60, P.glintIn)/cyc*100);
+       return '@keyframes eyGw'+i+'{0%{opacity:0}'
+        +f.toFixed(2)+'%{opacity:1}'+(100-f).toFixed(2)+'%{opacity:1}'
+        +'100%{opacity:0}}'
+        +'.eyG'+i+'{animation:eyG'+i+' '+blink+'ms linear '+wake+'ms infinite,'
+        +'eyGw'+i+' '+Math.round(cyc)+'ms '+EZ_MOVE+' '+wake+'ms infinite}';
+      })()
+    : '@keyframes eyGw'+i+'{0%{opacity:0}100%{opacity:1}}'
+      +'.eyG'+i+'{animation:eyG'+i+' '+blink+'ms linear '+wake+'ms infinite,'
+      +'eyGw'+i+' 420ms ease '+wake+'ms both}');
  });
  return out;
 }
@@ -4851,7 +4888,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 // nothing, which is how the whole Layout group shipped dead.
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeGlance','eyeBlink','eyeSize','eyeOval','eyeDome',
- 'eyeShut','eyeSpeed','eyeGlint',
+ 'eyeShut','eyeSpeed','eyeGlint','glintIn',
  'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browFollow','emoAmt','emoMove','emoSpeed','emoReps','emoLead',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
@@ -5266,7 +5303,7 @@ browFollow:'How much the brows travel with the pupil. Partial reads as one face;
 slpRedraw:'How long one redraw of the outline takes while resting. 0 is off.',
 slpRedrawStag:'Delay between letters redrawing.',
 eyeSeed:'A different set of glances from the same settings. Nothing else changes.',
-eyeEdge:'How much of the clear space between pupil and ring the eye may use. At 1 it reaches the inside of the ring.',
+eyeEdge:'How much of the clear space between pupil and ring a glance may use. At 1 it reaches the inside of the ring; past 1 it breaks through.',
 lids:'Whether the eye has lids at all. None is an eye that cannot close.',
 eyeOwnLoop:'Whether the eye keeps its own clock or gets one round stretched across the run.',
 eyeLidR:'Curvature of the lid edge. Low is a tight arc and reads cartoonish; high is nearly straight and reads deadpan.',
@@ -5279,6 +5316,7 @@ emoLead:'How long after the glance lands before it starts. A beat first makes it
 slpRotX:'How far the X letterforms turn over one ambient loop. Per-letter overrides beat this.',
 slpRotO:'How far the O letterforms turn over one ambient loop. The eyes stay level either way.',
 eyeGlint:'Size of the catchlight. 0 removes it.',
+glintIn:'How long the catchlight takes to arrive, every round. 0 leaves it on once the eyes are open.',
 eyeAnt:'The small lift before the lid drops. Anticipation: what makes it read as flesh.',
 eyeBounce:'How far past its resting height the lid opens before settling back.',
 eyeLower:'How much of the blink the lower lid does. Near 0 is a human blink, near 1 a squint.',
