@@ -281,6 +281,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Reach to the edge <b id="veyeEdge"></b></label><input id="eyeEdge" type="range" min="0" max="1.4" step=".02"></div>
   <div class="row"><label>Glances <b id="veyeDart"></b></label><input id="eyeDart" type="range" min="1" max="10" step="1"></div>
   <div class="row"><label>Glance speed <b id="veyeGlance"></b></label><input id="eyeGlance" type="range" min=".25" max="3" step=".05"></div>
+  <div class="row"><label>Up-down vs side to side <b id="veyeAxis"></b></label><input id="eyeAxis" type="range" min="-1" max="1" step=".05"></div>
   <div class="row"><label>Glance seed <b id="veyeSeed"></b></label><input id="eyeSeed" type="range" min="0" max="40" step="1"></div>
   <div class="row"><label>Via centre <b id="veyeVia"></b></label><input id="eyeVia" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Glance overshoot <b id="veyeOver"></b></label><input id="eyeOver" type="range" min="1" max="1.6" step=".01"></div>
@@ -700,9 +701,9 @@ var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 
 var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
  eyes:0,eyeLook:.6,eyeDart:4,eyeGlance:1,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
- eyeShut:.12,eyeSpeed:1,eyeGlint:.3,glintIn:0,
- eyeClose:320,eyeHold:110,eyeOpen:560,eyeSettle:260,eyeEase:.7,
- eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeVia:.5,
+ eyeShut:.03,eyeSpeed:1,eyeGlint:.3,glintIn:0,
+ eyeClose:140,eyeHold:60,eyeOpen:250,eyeSettle:260,eyeEase:.7,
+ eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeAxis:0,eyeVia:.5,
  eyeEdge:.68,lids:1,eyeOwnLoop:0,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
@@ -1694,6 +1695,20 @@ function eyeTrack(i){
  // same places in exactly the same order. It is a control now — move it
  // and you get a different set of glances out of the same settings.
  var seed=11+Math.round(P.eyeSeed)*7.3, drift=(i%2?1:-1)*0.06;
+ /**
+  * Which way the eye prefers to look.
+  *
+  * The glance targets were drawn on a disc, so an eye looked as far up
+  * as it looked sideways. Real ones do not, and neither does the
+  * reference this was measured against: 44 pixels of vertical travel
+  * against 27 horizontal, which is a face scanning up and down rather
+  * than reading a line.
+  *
+  * -1 flattens the disc into a horizontal band, +1 stands it up into a
+  * vertical one, 0 leaves it round.
+  */
+ var axis=Math.max(-1,Math.min(1,P.eyeAxis===undefined?0:P.eyeAxis));
+ var ax=1-Math.max(0,axis)*0.72, ay=1-Math.max(0,-axis)*0.72;
  var pts=[[0,0]];
  // <= darts, not < darts. It used to stop one short, so the last entry
  // before the terminator was the centre itself and "Glances: 4" bought
@@ -1705,11 +1720,11 @@ function eyeTrack(i){
   var a=rnd(seed+k*13)*Math.PI*2, rr=Math.sqrt(rnd(seed+k*29))*reach;
   // Not too close to the last place it looked, or two glances in a row
   // land almost on top of each other and read as one long stare.
-  var p=[Math.cos(a)*rr*(1+drift), Math.sin(a)*rr*(1-drift)];
+  var p=[Math.cos(a)*rr*(1+drift)*ax, Math.sin(a)*rr*(1-drift)*ay];
   var prev=pts[pts.length-1];
   if(Math.hypot(p[0]-prev[0],p[1]-prev[1])<reach*0.45){
    a+=Math.PI*(0.5+rnd(seed+k*41)*0.9);
-   p=[Math.cos(a)*rr*(1+drift), Math.sin(a)*rr*(1-drift)];
+   p=[Math.cos(a)*rr*(1+drift)*ax, Math.sin(a)*rr*(1-drift)*ay];
   }
   pts.push(p);
  }
@@ -3068,6 +3083,10 @@ function eyeWakeCSS(){
  B.forEach(function(b,i){
   if(!b.hp) return;
   var look=cyc, blink=cyc;
+  // Where the catchlight sits, so it grows out of its own middle rather
+  // than out of the corner of the artboard.
+  var gg=eyeGeom(i);
+  var gx=gg?(gg.cx-gg.r*0.34).toFixed(1):'0', gy=gg?(gg.cy-gg.r*0.36).toFixed(1):'0';
   // The delay is the morph: until it elapses each animation sits on its
   // own first frame, which for the pupil is dead centre and fully open —
   // an ordinary O counter. So the mark arrives as plain XOXO and only
@@ -3095,6 +3114,13 @@ function eyeWakeCSS(){
   // holding a permanent white dot. The second wants a real fade at BOTH
   // ends; ramping in and cutting out at 100% would put a step across
   // the loop seam, which is the one place a loop cannot hide one.
+  // A catchlight arrives the way a reflection does: it appears at a
+  // point and opens out. Fading alone reads as a light being turned up
+  // on something already there.
+  //
+  // On its own group, not on .eyG — that element's transform is already
+  // the blink's, and a second animation on the same property silently
+  // replaces the first rather than adding to it.
   out+=(P.glintIn>0
     ? (function(){
        // A floor on the ramp, for the same reason the blink fade has one:
@@ -3104,15 +3130,19 @@ function eyeWakeCSS(){
        // that still reads as arriving.
        var cyc=Math.max(600,P.eyeCycle);
        var f=Math.min(45, Math.max(60, P.glintIn)/cyc*100);
-       return '@keyframes eyGw'+i+'{0%{opacity:0}'
-        +f.toFixed(2)+'%{opacity:1}'+(100-f).toFixed(2)+'%{opacity:1}'
-        +'100%{opacity:0}}'
-        +'.eyG'+i+'{animation:eyG'+i+' '+blink+'ms linear '+wake+'ms infinite,'
-        +'eyGw'+i+' '+Math.round(cyc)+'ms '+EZ_MOVE+' '+wake+'ms infinite}';
+       var g0='opacity:0;transform:scale(0.05)', g1='opacity:1;transform:scale(1)';
+       return '@keyframes eyGw'+i+'{0%{'+g0+'}'
+        +f.toFixed(2)+'%{'+g1+'}'+(100-f).toFixed(2)+'%{'+g1+'}'
+        +'100%{'+g0+'}}'
+        +'.eyG'+i+'{animation:eyG'+i+' '+blink+'ms linear '+wake+'ms infinite}'
+        +'.eyGi'+i+'{transform-box:view-box;transform-origin:'+gx+'px '+gy+'px;'
+        +'animation:eyGw'+i+' '+Math.round(cyc)+'ms '+EZ_SETTLE+' '+wake+'ms infinite}';
       })()
-    : '@keyframes eyGw'+i+'{0%{opacity:0}100%{opacity:1}}'
-      +'.eyG'+i+'{animation:eyG'+i+' '+blink+'ms linear '+wake+'ms infinite,'
-      +'eyGw'+i+' 420ms ease '+wake+'ms both}');
+    : '@keyframes eyGw'+i+'{0%{opacity:0;transform:scale(0.05)}'
+      +'100%{opacity:1;transform:scale(1)}}'
+      +'.eyG'+i+'{animation:eyG'+i+' '+blink+'ms linear '+wake+'ms infinite}'
+      +'.eyGi'+i+'{transform-box:view-box;transform-origin:'+gx+'px '+gy+'px;'
+      +'animation:eyGw'+i+' 420ms '+EZ_SETTLE+' '+wake+'ms both}');
  });
  return out;
 }
@@ -3679,7 +3709,7 @@ function svgRaw(){
      +'<path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000"/>'
      // white is kept: a piece of ink left standing inside the pupil,
      // which reads as a catchlight
-     +(P.eyeGlint>0 ? '<g class="eyG'+i+'">'+glintLayers(i)+'</g>' : '')
+     +(P.eyeGlint>0 ? '<g class="eyG'+i+'"><g class="eyGi'+i+'">'+glintLayers(i)+'</g></g>' : '')
      +'</g></g>'
      // The lids, OUTSIDE the pupil's own transforms so they do not move
      // with the glance — a lid belongs to the face, not to the eyeball,
@@ -4571,7 +4601,7 @@ function preset(n){P=JSON.parse(JSON.stringify(PRESETS[n]));
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeLook','eyeDart','eyeGlance','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeShut','eyeSpeed','eyeGlint','glintIn',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
@@ -4985,6 +5015,7 @@ browSwing:'How far the brows tip as the eye looks aside. Up on the side it is lo
 browFollow:'How much the brows travel with the pupil. Partial reads as one face; full reads as being dragged.',
 slpRedraw:'How long one redraw of the outline takes while resting. 0 is off.',
 slpRedrawStag:'Delay between letters redrawing.',
+eyeAxis:'Which way the eye prefers to look. Below 0 is a horizontal scan, above 0 up and down, 0 is even.',
 eyeSeed:'A different set of glances from the same settings. Nothing else changes.',
 eyeEdge:'How much of the clear space between pupil and ring a glance may use. At 1 it reaches the inside of the ring; past 1 it breaks through.',
 lids:'Whether the eye has lids at all. None is an eye that cannot close.',
