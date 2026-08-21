@@ -348,6 +348,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Visit length <b id="varmDur"></b></label><input id="armDur" type="range" min=".15" max=".98" step=".01"></div>
   <div class="row"><label>Hand size <b id="varmSize"></b></label><input id="armSize" type="range" min=".3" max="2.4" step=".05"></div>
   <div class="row"><label>Hand fills <b id="varmFill"></b></label><input id="armFill" type="range" min="0" max="1" step=".05"></div>
+  <div class="row"><label>Knockout <b id="varmCase"></b></label><input id="armCase" type="range" min="0" max="2" step=".05"></div>
   <div class="row"><label>Line weight <b id="varmW"></b></label><input id="armW" type="range" min=".2" max="3" step=".05"></div>
   <div class="row"><label>Strokes <b id="varmPasses"></b></label><input id="armPasses" type="range" min="1" max="4" step="1"></div>
   <div class="row"><label>Stroke variation <b id="varmVary"></b></label><input id="armVary" type="range" min="0" max="2" step=".05"></div>
@@ -764,7 +765,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeShut:.03,blinkSync:1,eyeSpeed:1,eyeGlint:.3,glintIn:0,
  eyeClose:140,eyeHold:60,eyeOpen:250,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeAxis:0,eyeVia:.5,
- eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armDur:.62,armSize:1.25,armFill:1,armCount:1,armPasses:2,armVary:1,armTaper:1.5,armDraw:0,armWobble:.4,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
+ eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armDur:.62,armSize:1.25,armFill:1,armCount:1,armCase:1,armPasses:2,armVary:1,armTaper:1.5,armDraw:0,armWobble:.4,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -2942,7 +2943,7 @@ function eyeLoopSel(){
  var sel=[];
  B.forEach(function(b,i){ if(b.hp) sel.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i) });
  if(P.arms){ armSides().forEach(function(sd,k){
-   sel.push('.armWrap'+k,'.armWrapBack'+k,'.armHand'+k,'.armHose'+k,'.armGlove'+k,'.armCuff'+k) });
+   sel.push('.armWrap'+k,'.armHand'+k,'.armHose'+k,'.armGlove'+k,'.armCuff'+k) });
   var ag=armGeom(0); if(ag) sel.push('.gr'+ag.li,'.gr'+ag.other); }
  B.forEach(function(b,i){ if(b.hp){
   sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i);
@@ -3150,18 +3151,21 @@ function armLetters(){
  */
 function handPath(r, curl){
  curl=Math.max(0,Math.min(1,curl===undefined?0:curl));
- var ww=r*0.66, pw=r*0.98;
- var knuck=-r*(0.78+curl*0.16);
- var hw=r*(0.168+curl*0.02);
- var len=[0.86,1.06,0.99,0.78].map(function(v){ return r*(v*(1-curl*0.74)+curl*0.12) });
+ // Narrower and longer than it was. Stocky fingers on a wide palm read
+ // as a mitten; the reference's hand is a slim one, and the length is
+ // what carries the gesture.
+ var ww=r*0.54, pw=r*0.80;
+ var knuck=-r*(0.72+curl*0.16);
+ var hw=r*(0.122+curl*0.018);
+ var len=[1.02,1.26,1.17,0.92].map(function(v){ return r*(v*(1-curl*0.76)+curl*0.10) });
  var fan=[-0.30,-0.10,0.10,0.30];
- var x0=-r*0.66, slot=r*0.44;
+ var x0=-r*0.54, slot=r*0.36;
  var F=function(n){ return n.toFixed(1) };
  var P0=function(x,y){ return F(x)+','+F(y) };
  // --- up the near side of the palm, and out around the thumb ---
  var d='M'+P0(-ww, r*0.34);
  d+='C'+P0(-pw*1.06, r*0.06)+' '+P0(-pw*1.04, -r*0.16)+' '+P0(-pw*0.94, knuck+r*0.46);
- var ta=(0.72+curl*0.30), tl=r*(0.78-curl*0.20), tw=r*0.19;
+ var ta=(0.72+curl*0.30), tl=r*(0.82-curl*0.20), tw=r*0.135;
  var tbx=-pw*0.92, tby=knuck+r*(0.44+curl*0.10);
  var tdx=-Math.sin(ta), tdy=-Math.cos(ta), tpx=-tdy, tpy=tdx;
  var ttx=tbx+tdx*tl, tty=tby+tdy*tl;
@@ -3302,16 +3306,15 @@ function armGeom(k){
   * the tube leaves the anchor already hidden, threads out from behind
   * the letterforms, and only becomes visible where it clears them.
   */
- var aLi=li, aX=null;
- LCEN.forEach(function(cc,ii){
-  var o=lRest(ii), x=cc[0]+o[0];
-  if(aX===null || (sd<0 ? x<aX : x>aX)){ aX=x; aLi=ii }
- });
- var aOff=lRest(aLi), aC=[LCEN[aLi][0]+aOff[0], LCEN[aLi][1]+aOff[1]];
- var aB=B[aLi]||null;
- // A little below the middle of that letter, so it emerges under the
- // mark's waist rather than straight out of its centre line.
- var ax=aC[0]+sd*(aB?aB.w*0.18:0), ay=aC[1]+(aB?aB.h*0.30:box[3]*0.30);
+ // UNDER the mark, not inside a letterform.
+ //
+ // Anchoring behind the furthest letter did keep the origin hidden, but
+ // it put it in the middle of that letter's ink — so the arm read as
+ // sprouting out of the letter rather than as reaching in from
+ // somewhere. Below the mark's underside it comes from under the
+ // wordmark as a whole, which is the thing it is meant to belong to,
+ // and there is no letterform for it to appear to grow out of.
+ var ax=mid+sd*box[2]*0.30, ay=box[1]+box[3]*1.22;
 
  var hr=Math.max(6, (P.armSize===undefined?1:P.armSize)*box[3]*0.30);
  var other=li-sd; if(!LCEN[other]) other=li+sd;
@@ -3516,7 +3519,22 @@ function armHose(k, u){
  // Enough to clear the letterforms and no more. A deep dip stops
  // reading as an arm sweeping round and starts reading as a loop hung
  // under the mark; the slider opens it up when that is wanted.
- var viaY=bottom+A.box[3]*0.16*bow, viaX=(A.ax+q.x)/2;
+ // Room to come round in. Cramped against the letters the curve has to
+ // turn hard and reads as a kink; swung wide it reads as a sweep. Out
+ // sideways as well as down, so it comes round the mark rather than
+ // straight up through the middle of it.
+ // Bowed out from the ANCHOR, not from the midpoint.
+ //
+ // Once the anchor moved below the mark it was already most of the way
+ // to the hand's side, so a via point near the midpoint sat almost on
+ // the straight line between them and the arm came out as a diagonal
+ // stick. Swinging the via out past the anchor gives it somewhere to
+ // bow to: out and down first, then up and in to the hand.
+ // Half of what it was. Bowed hard the arm stops being an arm and
+ // becomes a loop hanging under the mark; this is enough to read as a
+ // sweep and the slider opens it up when more is wanted.
+ var viaX=A.ax+A.side*A.box[2]*0.13*bow;
+ var viaY=A.ay+A.box[3]*0.15*bow;
  var cxC=2*viaX-(A.ax+q.x)/2, cyC=2*viaY-(A.ay+q.y)/2;
  var N=10;
  // the wandering centreline, sampled once and reused for both edges
@@ -3552,7 +3570,16 @@ function armHose(k, u){
   }
   return d;
  };
- return 'M'+side(1)+'L'+side(-1).split('L').reverse().join('L')+'Z';
+ // Rounded at the shoulder rather than closed straight across. A flat
+ // join between the two edges reads as a cut end — a little wedge
+ // sitting on its own under the mark, which is exactly what it looked
+ // like.
+ var a0=pts[0], a1=pts[1];
+ var ex=a0[0]-(a1[0]-a0[0]), ey=a0[1]-(a1[1]-a0[1]);
+ return 'M'+side(1)
+  +'L'+side(-1).split('L').reverse().join('L')
+  +'Q'+ex.toFixed(1)+','+ey.toFixed(1)+' '+side(1).split('L')[0]
+  +'Z';
 }
 
 
@@ -3591,23 +3618,50 @@ function armsSVG(layer){
  armSides().forEach(function(sd, k){
   var A=armGeom(k); if(!A) return;
   var w=Math.max(0.6,(P.armW===undefined?1:P.armW)*A.box[3]*0.017);
-  var common=' fill="none" stroke="currentColor" stroke-linecap="round"'
-   +' stroke-linejoin="round" stroke-width="'+w.toFixed(2)+'"';
-  if(layer==='back'){
-   out+='<g class="armWrapBack'+k+'"'+common+'>'
-    +'<path id="armHoseP'+k+'" class="armHose'+k+'" pathLength="1000"/>'
-    +armPasses('armHoseP'+k, w)
-    +'</g>';
-   return;
-  }
-  var fillAmt=(P.armFill===undefined?1:P.armFill);
+  /**
+   * Every line is painted twice: a wide stroke in the GROUND's colour,
+   * then the ink stroke on top of it.
+   *
+   * Over the ground the casing is invisible and only the ink shows.
+   * Over a white letter the casing reads as a dark border and the ink
+   * line sits inside it. Either way the line survives — which it did
+   * not before: drawn behind the letters it simply disappeared wherever
+   * it crossed one, and drawn in front in white it disappeared into
+   * them, white on white.
+   *
+   * Two <path> elements sharing a class rather than a path and a <use>,
+   * because the `d` animation is defined on the class and applies to
+   * both without either having to reference the other.
+   */
+  var cw=(w*(1+2.2*Math.max(0,P.armCase===undefined?1:P.armCase))).toFixed(2);
+  var geom=' fill="none" stroke-linecap="round" stroke-linejoin="round"';
+  var caseOn=(P.armCase===undefined?1:P.armCase)>0;
+  if(layer!=='front') return;
+
+  // the arm
+  out+='<g class="armWrap'+k+'"'+geom+'>';
+  if(caseOn) out+='<path class="armHose'+k+'" pathLength="1000" stroke="var(--bg)"'
+   +' stroke-width="'+cw+'"/>';
+  out+='<path id="armHoseP'+k+'" class="armHose'+k+'" pathLength="1000"'
+   +' stroke="currentColor" stroke-width="'+w.toFixed(2)+'"/>'
+   +armPasses('armHoseP'+k, w);
+
+  // the hand
+  var fillAmt=(P.armFill===undefined?0:P.armFill);
   var fill=fillAmt>0
    ? ' fill="var(--bg)" fill-opacity="'+fillAmt.toFixed(2)+'"' : ' fill="none"';
-  out+='<g class="armWrap'+k+'"'+common+'>'
-   +'<g class="armHand'+k+'">'
-   +'<path id="armGloveP'+k+'" class="armGlove'+k+'" pathLength="1000"'+fill+'/>'
+  out+='<g class="armHand'+k+'">';
+  if(caseOn){
+   out+='<path class="armGlove'+k+'" pathLength="1000" fill="none" stroke="var(--bg)"'
+    +' stroke-width="'+cw+'"/>'
+    +'<path class="armCuff'+k+'" pathLength="1000" fill="none" stroke="var(--bg)"'
+    +' stroke-width="'+cw+'"/>';
+  }
+  out+='<path id="armGloveP'+k+'" class="armGlove'+k+'" pathLength="1000"'+fill
+   +' stroke="currentColor" stroke-width="'+w.toFixed(2)+'"/>'
    +armPasses('armGloveP'+k, w)
-   +'<path id="armCuffP'+k+'" class="armCuff'+k+'" pathLength="1000"/>'
+   +'<path id="armCuffP'+k+'" class="armCuff'+k+'" pathLength="1000" fill="none"'
+   +' stroke="currentColor" stroke-width="'+w.toFixed(2)+'"/>'
    +armPasses('armCuffP'+k, w)
    +'</g></g>';
  });
@@ -3734,7 +3788,7 @@ function armCSS(total){
    +'.armGlove'+k+'{animation:armGlove'+k+' '+ms+'ms linear both'+dashAnim+dash+'}'
    +'.armCuff'+k+'{d:path("'+cuffPath(A.hr)+'")'
    +(dashAnim?';animation:'+dashAnim.slice(1):'')+dash+'}'
-   +'.armWrap'+k+',.armWrapBack'+k+'{animation:armShow '+ms+'ms linear both}';
+   +'.armWrap'+k+'{animation:armShow '+ms+'ms linear both}';
  });
 
  // --- and what the letters do about it, from the first arm only -------
@@ -4074,7 +4128,7 @@ function viewCSS(){
  LCEN.forEach(function(c,li){ live.push('.slr'+li) });
  if(P.slpRedraw>0) B.forEach(function(b,i){ if(lp(i,'lgw')>0) live.push('.p'+i) });
  if(P.arms){ armSides().forEach(function(sd,k){
-   live.push('.armWrap'+k,'.armWrapBack'+k,'.armHand'+k,'.armHose'+k,'.armGlove'+k,'.armCuff'+k) });
+   live.push('.armWrap'+k,'.armHand'+k,'.armHose'+k,'.armGlove'+k,'.armCuff'+k) });
   var ag=armGeom(0); if(ag) live.push('.gr'+ag.li,'.gr'+ag.other); }
 
  if(P.slpView==='in')
@@ -4552,10 +4606,9 @@ function svgRaw(){
  var open='',close='',body='';
  if(P.target==='whole'){open='<g class="sqA">';close='</g>'}
  body+=open;
- // Behind the letters, and INSIDE the same wrapper the hand is in. Put
- // outside it, the hose would sit still through a whole-mark squash
- // while the hand rode it, and the arm would come apart at the wrist.
- body+=armsSVG('back');
+ // One layer, in front. It used to be split — arm behind, hand in
+ // front — which is what lost the arm wherever a letter crossed it.
+ // The casing does that job now without hiding anything.
  LETTERS.forEach(function(L,li){
   var stv=lStart(li), o2=P.letters[li]||{}, tv=tiltOf(li);
   var wantS=P.target!=='letter'&&((o2.squash||0)>0||(o2.stretch||0)>0);
@@ -5590,7 +5643,7 @@ function preset(n){P=migrate(JSON.parse(JSON.stringify(PRESETS[n])));
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeDart','eyeGlance','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeShut','blinkSync','eyeSpeed','eyeGlint','glintIn',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armSize','armFill','armCount','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armBow','armLift','armTilt','armEyes','armTarget',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armSize','armFill','armCount','armCase','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armBow','armLift','armTilt','armEyes','armTarget',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
@@ -6013,6 +6066,7 @@ armCount:'One arm, or a pair reaching from both sides at once.',
 armDur:'How much of the eye round the visit takes. The rest of it the arm is off-frame.',
 armSize:'Hand size.',
 armFill:'How solidly the hand covers what is behind it. 0 is an open outline, which vanishes on a solid mark.',
+armCase:'A ground-coloured border under every line, so it stays readable where it crosses the letters. 0 removes it.',
 armW:'Line weight of the arm and hand.',
 armPasses:'How many times each line is drawn. More passes read as hand-drawn rather than plotted.',
 armVary:'How much the extra passes differ in offset, weight and opacity.',
