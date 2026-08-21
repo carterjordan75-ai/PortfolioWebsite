@@ -108,6 +108,11 @@ details.off > *:not(summary){opacity:.34}
    is rotated, so borrowing it printed the label on a diagonal. */
 .need{display:none}
 details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
+/* A derived number, not something to drag. Reads as a statement about
+   the work rather than another slider to reach for. */
+.row.time{opacity:.62}
+.row.time b{font:10px ui-monospace,monospace;letter-spacing:.04em;font-weight:400;
+ text-align:right;flex:1}
 </style></head><body>
 <h1>XOXO loader — tuner 23</h1>
 <p class="sub">Round 9's move underneath. Controls are grouped by what they change — Timing, Letters, Decoration, Global effects — with presets and export either end. Pause and scrub under the stage to hold a frame while you tune.</p>
@@ -122,6 +127,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Arrival length <b id="vsdur"></b></label><input id="sdur" data-p="dur" type="range" min="200" max="12000" step="50"></div>
   <div class="row"><label>Stagger <b id="vsstag"></b></label><input id="sstag" data-p="stag" type="range" min="0" max="2000" step="10"></div>
   <div class="row"><label>Start spread <b id="vsstart"></b></label><input id="sstart" data-p="startSpread" type="range" min="-400" max="400" step="10"></div>
+  <div class="row time"><label>Whole arrival</label><b id="arrivetime"></b></div>
   <p class="note">How the mark gets there, and only that. Plays once — the loop
    below takes over when it lands.</p>
   <p class="note">WHERE it gets to is Layout, further down — the same panel a
@@ -141,6 +147,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Redraw stagger <b id="vslpRedrawStag"></b></label><input id="slpRedrawStag" type="range" min="0" max="2000" step="10"></div>
   <div class="row"><label>Spin X per loop <b id="vslpRotX"></b></label><input id="slpRotX" type="range" min="-720" max="720" step="15"></div>
   <div class="row"><label>Spin O per loop <b id="vslpRotO"></b></label><input id="slpRotO" type="range" min="-720" max="720" step="15"></div>
+  <div class="row time"><label>Rest loop</label><b id="resttime"></b></div>
   <p class="note">Redraw sends the outline drawing itself on again, over and
    over, at that period &mdash; the same stroke the entrance uses, handed a
    cycle and told to repeat. 0 is off. It needs an outline to draw: set a weight
@@ -181,6 +188,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
    <details><summary>Speed &amp; stagger</summary>
   <div class="row"><label>Duration <b id="vdur"></b></label><input id="dur" type="range" min="200" max="12000" step="50"></div>
   <div class="row"><label>Stagger <b id="vstag"></b></label><input id="stag" type="range" min="0" max="2000" step="10"></div>
+  <div class="row time"><label>Whole run</label><b id="runtime"></b></div>
   <div class="row"><label>Overshoot <b id="vover"></b></label><input id="over" type="range" min="1" max="1.16" step=".005"></div>
   <div class="row"><label>Curve peak <b id="vcurve"></b></label><input id="curve" type="range" min="1" max="1.8" step=".02"></div>
   <div class="row"><label>Smoothness <b id="vsmooth"></b></label><input id="smooth" type="range" min="0" max="1" step=".05"></div>
@@ -4011,6 +4019,11 @@ var GL = (function(){
 })();
 
 function build(){
+ // Here rather than in sync(): sync() runs when a MODE changes, and the
+ // ordinary sliders call build() alone. Hooked to sync the readouts went
+ // stale the moment anything was dragged, which is the only time anyone
+ // is looking at them.
+ showTimes();
  document.getElementById('kf').textContent=css();
  document.getElementById('stage').innerHTML=svg();
  document.getElementById('stage').style.background=P.bg;
@@ -4382,6 +4395,48 @@ function createNew(kind){
  var g=document.getElementById('newgate'); if(g) g.style.display='none';
  syncSleep(); build(); sch();
 }
+
+/**
+ * How long each phase actually lasts.
+ *
+ * Neither number was anywhere on the panel, and neither is the slider
+ * that appears to say it. "Arrival length" is `dur`, which is how long
+ * ONE letter takes; the arrival is that plus the stagger spread across
+ * the rest of them, so a 660ms arrival with a 300ms stagger runs 1560.
+ * And the rest has no single length at all — the breath, the eye and
+ * the redraw are deliberately independent, so what repeats is the
+ * longest of them, with the others drifting against it.
+ *
+ * Both are derived, so both are reported rather than set: changing one
+ * of these would mean deciding which slider underneath it gives way.
+ */
+function phaseTimes(){
+ var arrive=entranceEnd();
+ var wake=P.sleep?Math.max(0,P.slpWake):0;
+ var parts=[];
+ if(P.sleep && P.slpAmt>0 && P.slpAmbient!=='still') parts.push(['breath', Math.max(2000,P.slpDur)]);
+ if(EYES()) parts.push(['eye', eyeSpan(totalRun())]);
+ if(P.sleep && P.slpRedraw>0) parts.push(['redraw', Math.max(300,P.slpRedraw)]);
+ var longest=parts.reduce(function(a,b){ return b[1]>a[1]?b:a }, ['nothing',0]);
+ return { arrive:Math.round(arrive), wake:Math.round(wake),
+          settled:Math.round(arrive+wake), parts:parts,
+          rest:Math.round(longest[1]), restBy:longest[0] };
+}
+
+function showTimes(){
+ var t=phaseTimes(), ms=function(n){ return n>=1000?(n/1000).toFixed(2)+'s':n+'ms' };
+ var a=document.getElementById('arrivetime');
+ if(a) a.textContent=ms(t.arrive)
+  +(t.wake?'  ·  eyes open at '+ms(t.settled):'');
+ var r=document.getElementById('resttime');
+ if(r) r.textContent=t.parts.length
+  ? ms(t.rest)+'  ·  the '+t.restBy+', the longest of '
+    +t.parts.map(function(q){ return q[0]+' '+ms(q[1]) }).join(', ')
+  : 'nothing repeating yet';
+ var l=document.getElementById('runtime');
+ if(l) l.textContent=ms(totalMs())+'  ·  letters land at '+ms(t.arrive);
+}
+
 function syncSleep(){
  var k=document.getElementById('kindnow');
  if(k) k.textContent=P.sleep?'SLEEP':'LOADER';
