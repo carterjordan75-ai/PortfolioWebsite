@@ -759,7 +759,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeShut:.03,blinkSync:1,eyeSpeed:1,eyeGlint:.3,glintIn:0,
  eyeClose:140,eyeHold:60,eyeOpen:250,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeAxis:0,eyeVia:.5,
- eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armDur:.62,armSize:1.25,armFill:0,armPasses:2,armVary:1,armTaper:1.5,armWobble:.4,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
+ eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armDur:.62,armSize:1.25,armFill:1,armPasses:2,armVary:1,armTaper:1.5,armWobble:.4,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -2936,7 +2936,7 @@ function sleepSpinCSS(){
 function eyeLoopSel(){
  var sel=[];
  B.forEach(function(b,i){ if(b.hp) sel.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i) });
- if(P.arms){ sel.push('.armHand','.armHose','.armGlove');
+ if(P.arms){ sel.push('.armWrap','.armWrapBack','.armHand','.armHose','.armGlove');
   var ag=armGeom(); if(ag) sel.push('.gr'+ag.li,'.gr'+ag.other); }
  B.forEach(function(b,i){ if(b.hp){
   sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i);
@@ -3496,29 +3496,29 @@ function armHose(u){
 
 
 /**
- * The arm's markup, drawn twice in two colours.
+ * The arm's markup, in two layers.
  *
- * The reference is dark line-work over a pale object: an open outline
- * you see the object through. Ours is white ink on black, so the same
- * outline laid on a white letter disappears into it — which is why the
- * hand had to be filled with the ground to be visible at all, and that
- * is a different thing. A filled hand is opaque; the reference's is not.
+ * The ARM goes behind the letters, in ink. Visible against the ground,
+ * hidden where a letter covers it — which is what "coming out from
+ * behind the mark" looks like.
  *
- * So the outline is drawn twice. The ink copy goes BEHIND the letters:
- * visible against the ground, hidden where a letter covers it. The
- * ground-coloured copy goes in FRONT: invisible against the ground,
- * and reading as dark line-work exactly where it crosses a letter.
- * Between them the outline is continuous everywhere and open
- * throughout — the reference's read, on an inverted palette.
+ * The HAND goes in front, because a hand that takes hold of something
+ * has to be seen taking hold of it. It carries a ground-coloured fill
+ * so it stays legible where it crosses white ink, with the outline on
+ * top of that.
  *
- * The second copy is a <use>, which clones the referenced element's
- * rendered state, animation and all. One animated path per shape,
- * however many times it is painted.
+ * It briefly did something cleverer and wrong: the same outline painted
+ * twice, ink behind and ground-colour in front, so it would read dark
+ * over a pale letter and light over the dark ground. That only works if
+ * the front copy is CLIPPED to the letters. Unclipped it paints the
+ * same path in the same place in the background colour — which over the
+ * background is an exact erasure of the copy behind it. The arm was not
+ * hidden behind anything; it had been painted out.
  */
 var MEASURING=false;
 
 /** One line, plus however many offset repeats make it look drawn. */
-function armPasses(id, w, isUse){
+function armPasses(id, w){
  var n=Math.max(1,Math.min(4,Math.round(P.armPasses===undefined?2:P.armPasses)));
  var vary=(P.armVary===undefined?1:P.armVary);
  var out='';
@@ -3536,31 +3536,25 @@ function armsSVG(layer){
  if(MEASURING) return '';
  var A=armGeom(); if(!A) return '';
  var w=Math.max(0.6,(P.armW===undefined?1:P.armW)*A.box[3]*0.017);
- var fillAmt=(P.armFill===undefined?0:P.armFill);
- var common=' fill="none" stroke-linecap="round" stroke-linejoin="round"'
-  +' stroke-width="'+w.toFixed(2)+'"';
+ var common=' fill="none" stroke="currentColor" stroke-linecap="round"'
+  +' stroke-linejoin="round" stroke-width="'+w.toFixed(2)+'"';
 
  if(layer==='back'){
-  // The real paths live here, in ink, behind the letters.
-  var fill=fillAmt>0
-   ? ' fill="var(--bg)" fill-opacity="'+fillAmt.toFixed(2)+'"' : '';
-  return '<g class="armWrapBack" stroke="currentColor"'+common+'>'
-   +'<path id="armHoseP" class="armHose"'+fill+'/>'
+  return '<g class="armWrapBack"'+common+'>'
+   +'<path id="armHoseP" class="armHose"/>'
    +armPasses('armHoseP', w)
-   +'<g class="armHand">'
-   +'<path id="armGloveP" class="armGlove"'+fill+'/>'
-   +armPasses('armGloveP', w)
-   +'<path id="armCuffP" class="armCuff"/>'
-   +armPasses('armCuffP', w)
-   +'</g></g>';
+   +'</g>';
  }
- // In front, in the ground's colour: nothing on the ground, line-work on
- // a letter. Uses only — the animation belongs to the copy behind.
- return '<g class="armWrapFront" stroke="var(--bg)"'+common+'>'
-  +'<use href="#armHoseP"/>'+armPasses('armHoseP', w)
-  +'<use href="#armGloveP"/>'+armPasses('armGloveP', w)
-  +'<use href="#armCuffP"/>'+armPasses('armCuffP', w)
-  +'</g>';
+ var fillAmt=(P.armFill===undefined?1:P.armFill);
+ var fill=fillAmt>0
+  ? ' fill="var(--bg)" fill-opacity="'+fillAmt.toFixed(2)+'"' : ' fill="none"';
+ return '<g class="armWrap"'+common+'>'
+  +'<g class="armHand">'
+  +'<path id="armGloveP" class="armGlove"'+fill+'/>'
+  +armPasses('armGloveP', w)
+  +'<path id="armCuffP" class="armCuff"/>'
+  +armPasses('armCuffP', w)
+  +'</g></g>';
 }
 
 /**
@@ -3670,7 +3664,17 @@ function armCSS(total){
   }
   return out;
  };
- var out='@keyframes armHand{'+emit(hand,restXf,restXf)+'}'
+ // Faded right out when it is not here. Parking it off to one side is
+ // not enough: the frame is measured on the letters and then padded, so
+ // "just outside the letters" is comfortably inside what you can see —
+ // which is why a hand sat idling at the edge of the stage between
+ // visits. Opacity is certain where a position is a guess.
+ var vis='0%{opacity:0}'+at(0).toFixed(2)+'%{opacity:0}'
+  +at(0.03).toFixed(2)+'%{opacity:1}'+at(0.97).toFixed(2)+'%{opacity:1}'
+  +at(1).toFixed(2)+'%{opacity:0}100%{opacity:0}';
+ var out='@keyframes armShow{'+vis+'}'
+  +'.armWrap,.armWrapBack{animation:armShow '+ms+'ms linear both}'
+  +'@keyframes armHand{'+emit(hand,restXf,restXf)+'}'
   +'@keyframes armHose{'+emit(hose,restHose,restHose)+'}'
   +'@keyframes armGlove{'+emit(glove,restGlove,restGlove)+'}'
   +'.armHand{transform-box:view-box;transform-origin:0px 0px;'
@@ -4019,7 +4023,7 @@ function viewCSS(){
   glintSet().forEach(function(sh,n){ live.push('.eyGs'+i+'_'+n) }) });
  LCEN.forEach(function(c,li){ live.push('.slr'+li) });
  if(P.slpRedraw>0) B.forEach(function(b,i){ if(lp(i,'lgw')>0) live.push('.p'+i) });
- if(P.arms){ live.push('.armHand','.armHose','.armGlove');
+ if(P.arms){ live.push('.armWrap','.armWrapBack','.armHand','.armHose','.armGlove');
   var ag=armGeom(); if(ag) live.push('.gr'+ag.li,'.gr'+ag.other); }
 
  if(P.slpView==='in')
