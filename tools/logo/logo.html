@@ -1780,19 +1780,45 @@ function lookSchedule(i, total){
  // The track is centre, then one point per glance, then the centre
  // again as a terminator. The glances are the count, no adjustment.
  var n=Math.max(1, T.darts);
- var span0=live/n;
+
+ /**
+  * The last glance used to get no rest at all.
+  *
+  * A glance is timed at k*span, begins its approach `lead` before that,
+  * and finishes settling setP-moveP after it. Every glance then SITS
+  * until the next one begins its approach. The last one has no next
+  * one — the return home takes that role — and the old span was solved
+  * so its settle landed exactly on the moment the return begins. Zero
+  * hold, while every other glance got some; measured at 466ms of rest
+  * on the others and 0 on the last with two glances.
+  *
+  * So instead of solving for "the tail fits", solve for "every glance
+  * rests the same". Writing H for that rest:
+  *
+  *    last:   n*span - moveP + setP + H = live
+  *    middle: H = span*(1 - lead) - setP
+  *
+  * which gives span = (live + moveP) / (n + 1 - lead), and — usefully —
+  * setP falls out of it, so the settle can still be capped afterwards
+  * without the two coming apart again.
+  */
+ var lead=(P.eyeVia>0?0.62:0.28);
+ var span0=live/(n+1-lead);
  // How long the pupil takes to get somewhere, and to stop having got
  // there. 280ms and 230ms were the measured shape of a real dart and
  // were written in as constants; the slider scales both together so the
  // relationship between them — travel, then settle for about four
  // fifths as long — survives being made faster or slower.
  var gs=Math.max(0.2, P.eyeGlance===undefined?1:P.eyeGlance);
- var moveP=Math.min(span0*0.44, 100*(280/gs)/total);
+ var moveP=Math.min(span0*0.40, 100*(280/gs)/total);
  var overP=moveP*0.58;
- var setP=Math.min(span0*0.66, moveP+100*(230/gs)/total);
- // A glance finishes settling AFTER the instant it is timed to, so the
- // last one starts early enough that its tail lands before the return.
- var span=(live-Math.max(0,setP-moveP))/n;
+ var span=(live+moveP)/(n+1-lead);
+ // The settle is capped against what is actually left after the
+ // approach, keeping a sixth of it as rest. Capping against live/n
+ // instead let the settle run past the point the next glance had
+ // already set off, which is how the holds went NEGATIVE with Via on —
+ // glances overlapping rather than following each other.
+ var setP=Math.max(moveP, Math.min(span*(1-lead)*0.84, moveP+100*(230/gs)/total));
  return {T:T, n:n, span:span, moveP:moveP, overP:overP, setP:setP, homeP:homeP};
 }
 
