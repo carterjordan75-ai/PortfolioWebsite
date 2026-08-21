@@ -311,6 +311,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Blink shape</label></div>
   <div class="row" id="blinkpicker"></div>
   <div class="row"><label>Blinks <b id="veyeBlink"></b></label><input id="eyeBlink" type="range" min="0" max="6" step="1"></div>
+  <div class="row"><label>Blink on the glance <b id="vblinkSync"></b></label><input id="blinkSync" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Blink speed <b id="veyeSpeed"></b></label><input id="eyeSpeed" type="range" min=".35" max="2.2" step=".05"></div>
   <div class="row"><label>Close <b id="veyeClose"></b></label><input id="eyeClose" type="range" min="60" max="4000" step="20"></div>
   <div class="row"><label>Hold shut <b id="veyeHold"></b></label><input id="eyeHold" type="range" min="0" max="4000" step="20"></div>
@@ -709,7 +710,7 @@ var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 
 var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
  eyes:0,eyeDart:4,eyeGlance:1,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
- eyeShut:.03,eyeSpeed:1,eyeGlint:.3,glintIn:0,
+ eyeShut:.03,blinkSync:1,eyeSpeed:1,eyeGlint:.3,glintIn:0,
  eyeClose:140,eyeHold:60,eyeOpen:250,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeAxis:0,eyeVia:.5,
  eyeEdge:.41,lids:1,eyeOwnLoop:0,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
@@ -2281,17 +2282,58 @@ function lidGeom(i, cover, fromTop, tiltDeg){
  return { cx:g.cx + (-dy)*Math.sin(a), cy:g.cy + dy*Math.cos(a), r:R, eye:g, er:r };
 }
 
+/**
+ * The two lids, as shapes that fit together.
+ *
+ * They were a pair of circles, one centred above the eye and one below.
+ * Both therefore curved TOWARD each other: the upper edge bulged down,
+ * the lower edge bulged up, so as they closed they met in the middle
+ * first and left a gap at each side. What was left was not a closing eye
+ * but a bowtie — wide at the corners, pinched at the centre.
+ *
+ * Both edges curve the same way now, with the same radius, so they are
+ * parallel curves. They approach each other evenly and meet along their
+ * whole length at once, and the opening left by a raised lower lid is a
+ * U rather than a lens.
+ *
+ * Written as a quadratic through three known points rather than an SVG
+ * arc: the control point that puts the midpoint exactly on the edge is
+ * simply mirrored through it, which is one line and no sweep flags to
+ * get backwards.
+ */
+function lidBand(i, fromTop){
+ var g=eyeGeom(i); if(!g) return '';
+ var r=pupilRy(i), R=r*Math.max(1.05,P.eyeLidR);
+ // Wider than the counter, so a lid still covers the corners of the eye
+ // when it is curved hard.
+ var BW=Math.max(g.r*Math.max(P.eyeSize,0.2), r)*2.4;
+ // How far the middle of the edge dips below its ends. A big radius is
+ // a shallow dip and reads deadpan; a tight one is a strong curve.
+ var sag=(R>BW) ? R-Math.sqrt(R*R-BW*BW) : R;
+ // At FULL cover. The animation slides these; the geometry never moves.
+ var yEdge=fromTop ? (g.cy+r) : (g.cy-r);
+ var yEnd=yEdge-sag, ctrl=yEdge+sag, far=fromTop ? yEnd-2400 : yEnd+2400;
+ var x0=(g.cx-BW).toFixed(1), x1=(g.cx+BW).toFixed(1);
+ return 'M'+x0+','+yEnd.toFixed(1)
+   +' Q'+g.cx.toFixed(1)+','+ctrl.toFixed(1)+' '+x1+','+yEnd.toFixed(1)
+   +' L'+x1+','+far.toFixed(1)+' L'+x0+','+far.toFixed(1)+'Z';
+}
+
 function lidDiscs(i){
  var g=eyeGeom(i); if(!g||!P.lids) return '';
  // Drawn at full cover and translated back out of the way, so the
  // animation is a plain transform on a group — cheap, interpolates
  // exactly, and never touches the geometry.
- var a=lidGeom(i,1,true,0), b=lidGeom(i,1,false,0);
- if(!a||!b) return '';
- return '<g class="eyTop'+i+'"><circle fill="#fff" cx="'+a.cx.toFixed(1)+'" cy="'
-   +a.cy.toFixed(1)+'" r="'+a.r.toFixed(1)+'"/></g>'
-  +'<g class="eyBot'+i+'"><circle fill="#fff" cx="'+b.cx.toFixed(1)+'" cy="'
-   +b.cy.toFixed(1)+'" r="'+b.r.toFixed(1)+'"/></g>';
+ //
+ // The outer group is the arrival: a one-shot open at the wake, so the
+ // resting state begins with the eye opening rather than with it
+ // already open. It has to be a separate element from the blink, since
+ // both drive transform and the second declaration would replace the
+ // first rather than compose with it.
+ return '<g class="eyTopI'+i+'"><g class="eyTop'+i+'">'
+   +'<path fill="#fff" d="'+lidBand(i,true)+'"/></g></g>'
+  +'<g class="eyBotI'+i+'"><g class="eyBot'+i+'">'
+   +'<path fill="#fff" d="'+lidBand(i,false)+'"/></g></g>';
 }
 
 /** How far each lid is drawn back from full cover, in user units. */
@@ -2404,11 +2446,37 @@ function blinkTimes(i, total){
  var first=lead+close;
  var last=total-shut-open-settle;
  if(last<first) last=first;
+ /**
+  * Blinks belong ON the glances.
+  *
+  * A real eye blinks while it is moving — the brain suppresses vision
+  * through a saccade anyway, so that is the cheapest moment to lose.
+  * Blinking during a hold is the opposite: the one moment the eye is
+  * looking AT something is the one moment it stops being able to.
+  *
+  * So each blink is pulled toward the nearest glance's move, landing
+  * shut about half way through it. The slider decides how strongly; at
+  * 0 they fall where they used to, evenly spread and indifferent.
+  */
+ var S=lookSchedule(i,total), sync=Math.max(0,Math.min(1,P.blinkSync===undefined?1:P.blinkSync));
+ var moves=[];
+ if(S && sync>0) for(var m=1;m<=S.n;m++)
+  moves.push((m*S.span-S.moveP+S.setP*0.5)/100*total);
+
  var out=[];
  for(var k=0;k<n;k++){
   // One blink sits in the middle of the window; several spread across it.
   var u=(n===1)?0.5:k/(n-1);
-  out.push({ t:first+(last-first)*u, close:close, shut:shut, open:open });
+  var t=first+(last-first)*u;
+  if(moves.length){
+   var best=moves[0];
+   for(var q=1;q<moves.length;q++)
+    if(Math.abs(moves[q]-t)<Math.abs(best-t)) best=moves[q];
+   // Only as far as there is room to go: a blink dragged past the end
+   // of the run would be cut off by it.
+   t=Math.max(first, Math.min(last, t+(best-t)*sync));
+  }
+  out.push({ t:t, close:close, shut:shut, open:open });
  }
  return out;
 }
@@ -3106,6 +3174,33 @@ function entranceEnd(){
  return P.dur + Math.max(0,(LETTERS.length-1))*P.stag;
 }
 
+/**
+ * The eye opens into the resting state.
+ *
+ * The lids start shut and lift once, at the wake — so the mark arrives
+ * as a plain XOXO, and the first thing the face does is open its eyes.
+ * It is a one-shot on a group of its own, outside the blink, because
+ * the blink loops and this must not: an eye that reopens from scratch
+ * every round is not resting, it is waking up over and over.
+ */
+function eyeIntroCSS(){
+ if(!EYES()||!P.lids||!P.sleep) return '';
+ var wake=eyeWakeAt(), sp=Math.max(0.35,P.eyeSpeed);
+ var open=Math.max(80,P.eyeOpen/sp);
+ var out='';
+ B.forEach(function(b,i){
+  if(!b.hp) return;
+  [['eyTopI',true],['eyBotI',false]].forEach(function(q){
+   var shut=lidOffset(i,1,q[1]), rest=lidOffset(i,0,q[1]);
+   out+='@keyframes '+q[0]+i+'{0%{transform:translateY('+shut.toFixed(2)+'px)}'
+    +'100%{transform:translateY('+rest.toFixed(2)+'px)}}'
+    +'.'+q[0]+i+'{transform-box:view-box;animation:'+q[0]+i+' '+Math.round(open)
+    +'ms '+EZ_SETTLE+' '+wake+'ms both}';
+  });
+ });
+ return out;
+}
+
 function eyeWakeCSS(){
  if(!EYES()) return '';
  // The eyes keep their OWN clock. This used to be derived from the
@@ -3263,7 +3358,7 @@ function sleepCSS(){
   // do around them, a face with still eyes reads as switched off — so
   // they keep looking around for as long as it is up, which is the one
   // thing that makes it read as resting rather than as parked.
-  +eyeWakeCSS()
+  +eyeWakeCSS()+eyeIntroCSS()
   // Loop ease at 0 is a constant drift with no accent; at 1 it eases
   // hard into and out of every stop. Written as a curve rather than the
   // ease-in-out keyword so the slider has something to move.
@@ -4701,7 +4796,7 @@ function preset(n){P=migrate(JSON.parse(JSON.stringify(PRESETS[n])));
 // nothing, which is how the whole Layout group shipped dead.
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeDart','eyeGlance','eyeBlink','eyeSize','eyeOval','eyeDome',
- 'eyeShut','eyeSpeed','eyeGlint','glintIn',
+ 'eyeShut','blinkSync','eyeSpeed','eyeGlint','glintIn',
  'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
@@ -5095,6 +5190,7 @@ eyeSize:'Pupil size. A bigger pupil has less room to travel before it would brea
 eyeOval:'Stretches the pupil from round towards an oval.',
 eyeDome:'Foreshortens the pupil as it moves, so it reads as sitting on a sphere.',
 eyeShut:'How nearly closed a blink gets. 0 is fully shut.',
+blinkSync:'Pulls each blink onto a glance, so the eye blinks while it moves. 0 spreads them evenly instead.',
 eyeSpeed:'Scales close, hold and reopen together.',
 eyeOver:'How far past a target the pupil throws before settling.',
 eyeHome:'How long the look back to centre takes at the end.',
