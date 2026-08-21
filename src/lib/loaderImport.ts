@@ -41,6 +41,12 @@ export type LoaderArt = {
    */
   modes?: 'both' | 'light' | 'dark'
   /**
+   * Where it sits on screen and how wide, from the index rather than the
+   * artwork. Absent means centred at the surface's own default width,
+   * which is what every mark did before this existed.
+   */
+  placement?: { x: number; y: number; size: number }
+  /**
    * The exported file, kept exactly as it was downloaded.
    *
    * When this is present the site plays it verbatim in an iframe rather

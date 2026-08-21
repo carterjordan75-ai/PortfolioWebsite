@@ -3491,7 +3491,8 @@ type LoaderIndexShape = {
   randomise: boolean
   pinnedId: string | null
   items: Array<{ id: string; name: string; enabled: boolean; duration: number; bytes: number;
-                 modes?: 'both' | 'light' | 'dark'; kind?: 'loader' | 'sleep' }>
+                 modes?: 'both' | 'light' | 'dark'; kind?: 'loader' | 'sleep'
+                 placement?: { x: number; y: number; size: number } }>
 }
 
 /**
@@ -3653,6 +3654,14 @@ function LoadersAdminPanel() {
 
   useEffect(() => { load() }, [load])
 
+  // The placement being edited. Only one row is open at a time, so one
+  // slot is enough — and keeping it here rather than in the tool means a
+  // drag can update the live preview without a round trip per frame.
+  const [place, setPlace] = useState<{ x: number; y: number; size: number } | null>(null)
+  const savePlace = async (id: string, p: { x: number; y: number; size: number }) => {
+    await patch({ items: [{ id, placement: p }] })
+  }
+
   const patch = async (body: Record<string, unknown>) => {
     setError(null)
     const res = await fetch('/api/loaders', {
@@ -3701,8 +3710,11 @@ function LoadersAdminPanel() {
   }
 
   const preview = async (id: string) => {
-    if (previewId === id) { setPreviewId(null); setPreviewArt(null); return }
-    setPreviewId(id); setPreviewArt(null)
+    // Clearing the draft placement with the row it belongs to. One slot
+    // holds it, so leaving it behind would show the last loader's
+    // position on the next one opened — and the first drag would save it.
+    if (previewId === id) { setPreviewId(null); setPreviewArt(null); setPlace(null); return }
+    setPreviewId(id); setPreviewArt(null); setPlace(null)
     // A fresh loader starts framed, rather than wherever the last one
     // happened to be left.
     setPan({ x: 0, y: 0 })
@@ -3983,6 +3995,19 @@ function LoadersAdminPanel() {
                       <span className="text-white/25 text-[9px]">Fetching…</span>
                     )}
                   </div>
+                  {previewArt && (
+                    <PlacementTool
+                      art={previewArt}
+                      kind={item.kind || 'loader'}
+                      ground={previewBg === 'light' ? '#f2f2ef' : '#0a0a0a'}
+                      ink={previewBg === 'light' ? '#111111' : '#ffffff'}
+                      value={place || item.placement || {
+                        x: 50, y: 50, size: (item.kind || 'loader') === 'sleep' ? 46 : 34,
+                      }}
+                      onChange={setPlace}
+                      onCommit={() => { if (place) savePlace(item.id, place) }}
+                    />
+                  )}
                   {!previewArt ? null : previewArt.mono ? (
                     <p className="text-white/25 text-[8px] mt-1.5">
                       Mono — follows the site&rsquo;s light / dark mode. Check it on both.
@@ -3998,6 +4023,145 @@ function LoadersAdminPanel() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+
+/**
+ * Where a mark sits on the screen, set by dragging it.
+ *
+ * The box is the viewport at 16:9, so a percentage here is the same
+ * percentage there — the mark is positioned by its CENTRE, which is what
+ * keeps the numbers meaning one thing at every screen size.
+ *
+ * Guides because placing something by eye against an empty rectangle is
+ * guesswork: the centre cross says whether it is actually centred, the
+ * thirds are where you put something that should not be, and the safe
+ * inset is the margin a mark should not cross on a phone, where the
+ * browser chrome eats the edges.
+ */
+function PlacementTool({
+  art, kind, ground, ink, value, onChange, onCommit,
+}: {
+  art: LoaderArtShape | null
+  kind: 'loader' | 'sleep'
+  ground: string
+  ink: string
+  value: { x: number; y: number; size: number }
+  onChange: (p: { x: number; y: number; size: number }) => void
+  onCommit: () => void
+}) {
+  const box = useRef<HTMLDivElement>(null)
+  const [guides, setGuides] = useState(true)
+  const [dragging, setDragging] = useState(false)
+
+  const move = (e: React.PointerEvent) => {
+    const b = box.current?.getBoundingClientRect()
+    if (!b) return
+    onChange({
+      ...value,
+      x: Math.round(Math.min(100, Math.max(0, ((e.clientX - b.left) / b.width) * 100))),
+      y: Math.round(Math.min(100, Math.max(0, ((e.clientY - b.top) / b.height) * 100))),
+    })
+  }
+
+  const G = 'rgba(255,255,255,0.22)'
+  const preset = (x: number, y: number) => () => { onChange({ ...value, x, y }); }
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-white/40 text-[8px] uppercase tracking-[0.14em]">Placement</span>
+        <button
+          onClick={() => setGuides(g => !g)}
+          className={`text-[8px] uppercase tracking-[0.12em] ${guides ? 'text-white/70' : 'text-white/30'} hover:text-white`}
+        >
+          Guides
+        </button>
+      </div>
+
+      <div
+        ref={box}
+        onPointerDown={e => {
+          setDragging(true)
+          ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+          move(e)
+        }}
+        onPointerMove={e => { if (dragging) move(e) }}
+        onPointerUp={() => { if (dragging) { setDragging(false); onCommit() } }}
+        onPointerCancel={() => setDragging(false)}
+        className="relative w-full overflow-hidden rounded-md border border-white/10 select-none"
+        style={{ aspectRatio: '16 / 9', background: ground, cursor: dragging ? 'grabbing' : 'crosshair' }}
+      >
+        {art && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${value.x}%`,
+              top: `${value.y}%`,
+              width: `${value.size}%`,
+              transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none',
+            }}
+          >
+            <XoxoBrandLoader art={{ ...art }} ink={ink} knockout={ground} />
+          </div>
+        )}
+
+        {guides && (
+          <svg
+            viewBox="0 0 160 90" preserveAspectRatio="none" aria-hidden
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+          >
+            {/* thirds */}
+            <g stroke={G} strokeWidth="0.4" strokeDasharray="2 2">
+              <line x1="53.3" y1="0" x2="53.3" y2="90" /><line x1="106.7" y1="0" x2="106.7" y2="90" />
+              <line x1="0" y1="30" x2="160" y2="30" /><line x1="0" y1="60" x2="160" y2="60" />
+            </g>
+            {/* the safe inset — the margin a mark should not cross */}
+            <rect x="8" y="4.5" width="144" height="81" fill="none" stroke={G} strokeWidth="0.4" />
+            {/* centre, solid so it reads as the one true line */}
+            <g stroke="rgba(255,255,255,0.42)" strokeWidth="0.5">
+              <line x1="80" y1="0" x2="80" y2="90" /><line x1="0" y1="45" x2="160" y2="45" />
+            </g>
+          </svg>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 mt-2">
+        <div className="grid grid-cols-3 gap-[2px] shrink-0">
+          {[[10,12],[50,12],[90,12],[10,50],[50,50],[90,50],[10,88],[50,88],[90,88]].map(([x, y]) => (
+            <button
+              key={`${x}-${y}`}
+              onClick={preset(x, y)}
+              onPointerUp={onCommit}
+              title={`${x}% / ${y}%`}
+              className={`w-3 h-3 rounded-[2px] border ${
+                Math.abs(value.x - x) < 3 && Math.abs(value.y - y) < 3
+                  ? 'border-white/70 bg-white/40' : 'border-white/15 hover:border-white/40'
+              }`}
+            />
+          ))}
+        </div>
+        <label className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-white/40 text-[8px] uppercase tracking-[0.12em] shrink-0">Size</span>
+          <input
+            type="range" min={4} max={100} step={1} value={value.size}
+            onChange={e => onChange({ ...value, size: +e.target.value })}
+            onPointerUp={onCommit}
+            className="flex-1 min-w-0 accent-white"
+          />
+          <span className="text-white/40 text-[8px] tabular-nums w-14 text-right shrink-0">
+            {value.size}vw
+          </span>
+        </label>
+      </div>
+      <p className="text-white/25 text-[8px] mt-1.5">
+        Dragged by its centre, so {value.x}% / {value.y}% means the same thing on any screen.
+        Width is capped at {value.size * 10}px, so it stops growing on a wide monitor.
+        {kind === 'sleep' ? ' Shown over the page it interrupts.' : ''}
+      </p>
     </div>
   )
 }

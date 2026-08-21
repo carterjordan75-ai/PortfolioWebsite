@@ -54,6 +54,31 @@ export type LoaderModes = 'both' | 'light' | 'dark'
  */
 export type LoaderKind = 'loader' | 'sleep'
 
+/**
+ * Where the mark sits on the screen, and how big it is.
+ *
+ * Both surfaces used to centre everything at a width written into the
+ * component — 34vw for a loader, 46vw for a screensaver — which is a
+ * reasonable default and a poor rule: a mark with arms reaching in from
+ * the left wants to sit right of centre, and a wide arrangement wants
+ * more room than a stacked one.
+ *
+ * x and y are the position of the mark's CENTRE as a percentage of the
+ * viewport, so 50/50 is what every existing loader already does and an
+ * absent placement needs no migration. `size` is in vw, capped at ten
+ * times itself in px — the same relationship the two hard-coded widths
+ * had, so 34 and 46 reproduce them exactly.
+ */
+export type LoaderPlacement = { x: number; y: number; size: number }
+
+const clampPlace = (p: unknown): LoaderPlacement | undefined => {
+  if (!p || typeof p !== 'object') return undefined
+  const q = p as Record<string, unknown>
+  const n = (v: unknown, lo: number, hi: number, d: number) =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d
+  return { x: n(q.x, 0, 100, 50), y: n(q.y, 0, 100, 50), size: n(q.size, 4, 100, 34) }
+}
+
 export type LoaderMeta = {
   id: string
   name: string
@@ -62,6 +87,8 @@ export type LoaderMeta = {
   modes?: LoaderModes
   /** Absent on everything added before sleep mode — treated as 'loader'. */
   kind?: LoaderKind
+  /** Absent means centred at the surface's own default width. */
+  placement?: LoaderPlacement
   duration: number
   bytes: number
   createdAt: string
@@ -159,9 +186,12 @@ export async function GET(request: NextRequest) {
     : live.find(i => i.id === pinned) || live[0]
 
   const art = await readArt(chosen.id)
-  // The renderer needs to know how to paint it, and only the index knows.
+  // The renderer needs to know how to paint it and where to put it, and
+  // only the index knows either — both are presentation choices the admin
+  // panel can change without touching the artwork.
   return NextResponse.json(
-    { index, chosen, art: art ? { ...art, modes: chosen.modes || 'both' } : art },
+    { index, chosen,
+      art: art ? { ...art, modes: chosen.modes || 'both', placement: chosen.placement } : art },
     NO_CACHE,
   )
 }
@@ -208,7 +238,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, id, duration: art.duration }, NO_CACHE)
 }
 
-/** PATCH { randomise?, pinnedId?, items?: [{id, name?, enabled?}] } */
+/** PATCH { randomise?, pinnedId?, items?: [{id, name?, enabled?, modes?, kind?, placement?}] } */
 export async function PATCH(request: Request) {
   let body: Partial<LoaderIndex> & { items?: Array<Partial<LoaderMeta> & { id: string }> }
   try {
@@ -230,6 +260,10 @@ export async function PATCH(request: Request) {
     if (patch.modes === 'both' || patch.modes === 'light' || patch.modes === 'dark')
       item.modes = patch.modes
     if (patch.kind === 'loader' || patch.kind === 'sleep') item.kind = patch.kind
+    if ('placement' in patch) {
+      const pl = clampPlace(patch.placement)
+      if (pl) item.placement = pl; else delete item.placement
+    }
   }
 
   await writeVersionedJson(INDEX_KEY, index)

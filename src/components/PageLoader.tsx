@@ -232,6 +232,24 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
     return () => clearTimeout(t)
   }, [show, visible, mode, onComplete, art])
 
+  /**
+   * Where the mark goes.
+   *
+   * Absent placement keeps the old behaviour exactly — flex-centred at
+   * the surface's own width — so nothing made before this moves. With a
+   * placement it is positioned by its centre, which is what makes the
+   * numbers mean the same thing at every viewport size.
+   */
+  const markStyle: React.CSSProperties = art?.placement
+    ? {
+        position: 'absolute',
+        left: `${art.placement.x}%`,
+        top: `${art.placement.y}%`,
+        transform: 'translate(-50%, -50%)',
+        width: scaled(`min(${art.placement.size}vw, ${art.placement.size * 10}px)`, 'loader'),
+      }
+    : { width: MARK_WIDTH }
+
   return (
     <AnimatePresence>
       {visible && (
@@ -256,7 +274,7 @@ export default function PageLoader({ show, onComplete, mode = 'transition' }: Pa
               frame apart, and only the ground has to be there
               instantly. */}
           {art && (
-            <div style={{ width: MARK_WIDTH }}>
+            <div style={markStyle}>
               <XoxoBrandLoader art={art} knockout={ground} />
             </div>
           )}

@@ -146,6 +146,18 @@ export default function SleepMode() {
   const pinnedDark = art?.modes === 'dark' ? true : art?.modes === 'light' ? false : dark
   const ground = pinnedDark ? 'rgba(10,10,10,0.62)' : 'rgba(255,255,255,0.62)'
 
+  // Same rule as the loader: no placement means centred at this
+  // surface's own width, which is what every sleep mark did before.
+  const markStyle: React.CSSProperties = art?.placement
+    ? {
+        position: 'absolute',
+        left: `${art.placement.x}%`,
+        top: `${art.placement.y}%`,
+        transform: 'translate(-50%, -50%)',
+        width: scaled(`min(${art.placement.size}vw, ${art.placement.size * 10}px)`, 'loader'),
+      }
+    : { width: MARK_WIDTH }
+
   return (
     <AnimatePresence>
       {asleep && art && (
@@ -189,7 +201,7 @@ export default function SleepMode() {
             <style dangerouslySetInnerHTML={{ __html:
               '.xoxo-sleep-mark .xoxo-brand *{animation-iteration-count:infinite!important}' }} />
           )}
-          <div className="xoxo-sleep-mark" style={{ width: MARK_WIDTH }}>
+          <div className="xoxo-sleep-mark" style={markStyle}>
             <XoxoBrandLoader art={art} knockout="transparent" />
           </div>
         </motion.div>

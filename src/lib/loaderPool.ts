@@ -24,6 +24,12 @@ export type LoaderArt = {
    * that the admin panel can change without touching the file.
    */
   modes?: 'both' | 'light' | 'dark'
+  /**
+   * Where it sits on screen and how wide, from the index rather than the
+   * artwork. Absent means centred at the surface's own default width,
+   * which is what every mark did before this existed.
+   */
+  placement?: { x: number; y: number; size: number }
   /** The exported file, verbatim. Played as-is when present. */
   html?: string
   /** Paints in one greyscale colour, so it follows the theme rather than
