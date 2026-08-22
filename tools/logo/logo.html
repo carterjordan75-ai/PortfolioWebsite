@@ -1511,6 +1511,14 @@ function fitViewBox(str, bb){
  var grow=Math.max(1,P.over);
  if(P.sleep) grow*=1+Math.max(0,P.slpAmt)*0.03;
  hx=hx*grow*1.02; hy=hy*grow*1.02;
+ // The arms throw a carried letter well above the mark — up to 1.3
+ // letter-heights plus the letter itself — and that flight is a CSS
+ // transform too, invisible to the measurement. Without this the O
+ // sails out through the top of the frame at the peak of the lift.
+ if(P.arms && P.sleep){
+  var need=mb[3]*(1.30*Math.max(0.2,(P.armLift===undefined?1:P.armLift))+0.75);
+  hy=Math.max(hy, mb[3]/2+need);
+ }
  var vb=[cx-hx, cy-hy, hx*2, hy*2];
  return str.replace(/viewBox="[^"]*"/,
   'viewBox="'+vb.map(function(n){return n.toFixed(1)}).join(' ')+'"');
@@ -2131,10 +2139,7 @@ function eyeLookCSS(i, total){
     // hand is taken from where the eye actually IS at that moment —
     // half way through the carry it is half way across the mark.
     var ex=g0.cx, ey=g0.cy;
-    if(AG.li===i){
-     if(isSwap){ ex+=q.swap*(AG.oc[0]-AG.c[0]); ey+=q.swap*(AG.oc[1]-AG.c[1])-q.lift }
-     else ey-=q.lift;
-    }
+    if(AG.li===i){ ex+=q.carry[0]; ey+=q.carry[1] }
     var vx=q.x-ex, vy=q.y-ey, vm=Math.hypot(vx,vy)||1;
     putAt(AV.t0+(AV.t1-AV.t0)*uu, vx/vm*reach, vy/vm*reach, w?EZ_MOVE:EZ_SETTLE);
    }
@@ -3315,7 +3320,7 @@ function cuffPath(r){
  *   out   0.12   lift away        <- was 0.06
  *   exit  0.22   swing back out of sight
  */
-var ARM_PH={ in:0.00, land:0.18, close:0.29, act:0.33, done:0.58, open:0.66, out:0.78 };
+var ARM_PH={ in:0.00, land:0.20, close:0.315, act:0.375, done:0.625, open:0.665, out:0.85 };
 
 function armTargetLetter(){
  var t=Math.round(P.armTarget===undefined?-1:P.armTarget);
@@ -3351,7 +3356,10 @@ function armVisit(total){
  // wants four times it. Measured clean at 1500ms and broken at 700 for
  // exactly and only those two actions.
  var act=P.armAction||'lift';
- var floorMs=(act==='poke'||act==='wave') ? 1400 : ARM_MIN_MS;
+ // A grab is a whole performance now — anticipation, snap, hang, land,
+ // bounce, withdraw — and squeezing that under two seconds crushes the
+ // holds that make it read. The oscillating deeds keep their own floor.
+ var floorMs=(act==='poke'||act==='wave') ? 1400 : 1800;
  var dur=Math.max(0.15,Math.min(0.98,P.armDur===undefined?0.62:P.armDur));
  var want=Math.max(floorMs, dur*total);
  if(total<floorMs*1.05) return null;
@@ -3446,13 +3454,22 @@ function armGeom(k){
   * origin is simply covered: the arm appears from behind the letter's
   * edge, which is what it is supposed to do.
   */
- var aLi=li, aX=null;
+ /**
+  * The arms come from the MIDDLE of the mark, behind the letters.
+  *
+  * Not from behind the end letters, and never from off to the side: in
+  * the reference both arms root behind the object's centre of mass and
+  * reach up and out from there. So the anchor is the letter nearest the
+  * mark's centre that is not being carried — for a swap that is the
+  * middle X, and both shoulders sit behind it like one creature's.
+  */
+ var aLi=li, aBest=null;
  LCEN.forEach(function(cc,ii){
-  // During a swap both Os are mid-air at once, so an anchor behind
-  // either would sit exposed for the whole carry. The Xs stay put.
+  if(ii===li) return;
   if(act0==='swap' && B[ii] && B[ii].hp) return;
   var o=lRest(ii), x=cc[0]+o[0];
-  if(aX===null || (sd<0 ? x<aX : x>aX)){ aX=x; aLi=ii }
+  var d=Math.abs(x-mid);
+  if(aBest===null || d<aBest){ aBest=d; aLi=ii }
  });
  var aOff=lRest(aLi), aC=[LCEN[aLi][0]+aOff[0], LCEN[aLi][1]+aOff[1]];
  var aB=B[aLi]||null;
@@ -3460,7 +3477,8 @@ function armGeom(k){
  // the widest part of the arm and it ends bluntly; anywhere but the
  // middle of the letterform and the flat end pokes out past the ink
  // that is supposed to be hiding it.
- var ax=aC[0], ay=aC[1]+(aB?aB.h*0.06:0);
+ // Shoulders nudged apart so two arms from one letter read as a pair.
+ var ax=aC[0]+sd*(aB?aB.w*0.10:0), ay=aC[1]+(aB?aB.h*0.10:0);
 
  var hr=Math.max(6, (P.armSize===undefined?1:P.armSize)*box[3]*0.30);
  var other=li-sd; if(!LCEN[other]) other=li+sd;
@@ -3495,176 +3513,209 @@ function armGeom(k){
  */
 /** Where the arm's curve bows to. Shared, so the pose and the path
     cannot disagree about which way the wrist is pointing. */
-function armVia(A, hx, hy){
+/**
+ * The arm's shape parameters for a given hand position: the chord, the
+ * upward bulge, and the arrival tangent.
+ *
+ * The centreline is the chord plus a sine bulge — not a quadratic with
+ * a control point. A quadratic CUSPS when its control point opposes the
+ * chord, which the bow could arrange at high settings: the tangent
+ * passes through zero, reverses, and every edge normal flips with it —
+ * measured as far-edge points leaping three hundred units in a frame.
+ * A sine bulge of height h has tangent chord + perp·hπ·cos, which can
+ * only reverse if hπ exceeds the chord — so h is clamped to 0.30 of it,
+ * and the fold is impossible at ANY slider setting, by construction.
+ */
+function armShape(A, hx, hy){
+ var dx=hx-A.ax, dy=hy-A.ay, L=Math.hypot(dx,dy)||1;
+ /**
+  * The bulge is PURELY vertical, always up.
+  *
+  * Perpendicular-to-the-chord needed a side chosen, and a chosen side
+  * is a discrete switch: the moment the hand crossed the anchor's x the
+  * whole arc flipped to the other side of the chord in one frame —
+  * every seed broke at the same beat of the withdraw. Straight up has
+  * no side to choose. And the cusp guarantee survives: with h capped at
+  * 0.30 of the chord, the tangent (dx, dy − hπcosπt) cannot reach zero
+  * — if dx is 0 the chord is vertical, so |dy| is the whole length and
+  * hπ ≤ 0.94|dy| cannot cancel it.
+  */
  var bow=(P.armBow===undefined?1:P.armBow);
- return [ (A.ax+hx)/2, Math.max(A.ay, hy)+A.box[3]*0.34*bow ];
+ var h=Math.min(A.box[3]*(0.20+0.30*Math.abs(bow)), L*0.30);
+ return { dx:dx, dy:dy, L:L, px:0, py:-1, h:h };
+}
+
+
+/**
+ * The performance, as a list of waypoints.
+ *
+ * Measured off the reference frame by frame, not felt: moves there run
+ * 130-570ms with peak speeds five to eleven frame-widths a second,
+ * five of six begin with a wind-up in the OPPOSITE direction, the
+ * attack reaches peak inside three frames with a long decaying settle,
+ * and the holds between beats run two to ten times the moves. The
+ * knots below are that grammar — anticipate, snap, hang, land, bounce
+ * — with the spacing carrying the timing: a big distance over a small
+ * u-gap IS the snap, and the Catmull-Rom tangents overshoot through it
+ * the way a thrown limb does.
+ */
+function armScript(A){
+ var act=P.armAction||'lift';
+ var H=A.box[3], lh=(A.b?A.b.h:H)/2;
+ var L2=Math.max(0.2,(P.armLift===undefined?1:P.armLift));
+ // the grip: over the TOP edge — the hands come down from above
+ var gx=A.c[0]+A.side*A.hr*0.12, gy=A.c[1]-lh-A.hr*0.22;
+ var hovX=gx, hovY=gy-A.hr*1.35;
+ // A short stub out of the anchor, never exactly ON it. On it the tube
+ // has zero length, its tangents are undefined, and every point of the
+ // outline collapses onto the anchor — then leaps hundreds of units the
+ // moment the hand moves. This is the second time this exact bug has
+ // been fixed; it came back when the pose was rewritten as a script.
+ var rx=A.ax+(gx-A.ax)*0.10, ry=A.ay+(gy-A.ay)*0.10;
+ /**
+  * The facing is scripted with the position, not derived from it.
+  *
+  * Every attempt to compute it live from the geometry grew a seam: the
+  * chord's direction thrashes while the arm is short, and any blend of
+  * two angles wraps at 180. Angles as knot data, unwrapped once below,
+  * cannot wrap and cannot thrash — and they carry character the
+  * geometry never could: the hand rears back on the wind-up, trails its
+  * fingertips through the snap, and swings past straight at the stops.
+  * 180 points the fingers down at the letters.
+  */
+ var dirX=(gx<A.ax)?-1:1;
+ var K=[];
+ var add=function(u,x,y,a){ K.push({u:u,x:x,y:y,a:(a===undefined?180:a)}) };
+ // --- in: rise from behind the middle, wind up, snap out, settle ---
+ add(0.00, rx, ry, 180-dirX*12);
+ add(0.05, rx, ry, 180-dirX*12);
+ add(0.075, rx, ry+A.hr*0.45, 180-dirX*34);           // wind-up: rear back
+ add(0.115, (rx+hovX)/2, Math.min(ry,hovY)-H*0.30, 180-dirX*26); // tips trail
+ add(0.165, hovX-A.side*A.hr*0.4, hovY-A.hr*0.3, 180+dirX*15);   // whip past
+ add(0.20, hovX, hovY, 180);                          // settle over the letter
+ add(0.255, hovX, hovY, 180);                         // and HOLD
+ if(act==='lift'||act==='swap'){
+  var ob=B[A.other], oh=(ob?ob.h:H)/2;
+  var px2=(act==='swap')?A.oc[0]+A.side*A.hr*0.12:gx;
+  var py2=(act==='swap')?A.oc[1]-oh-A.hr*0.22:gy;
+  // Apexes WELL clear of the mark — the carried letter is airborne, not
+  // shuffled. Two different heights so the crossing Os read as passing.
+  var apexX=(gx+px2)/2;
+  // A full letter-height of daylight between the two arcs, or the Os
+  // pass through each other mid-crossing and read as a totem pole.
+  var apexY=A.box[1]-H*(A.k?0.50:1.70)*L2;
+  var dirC=(px2<gx)?-1:(px2>gx)?1:dirX;               // which way the carry goes
+  add(0.275, hovX, hovY-A.hr*0.5, 180);               // breathe up
+  add(0.30, gx, gy+A.hr*0.16, 180);                   // DROP on, squash
+  add(0.315, gx, gy, 180);                            // grip
+  add(0.375, gx, gy, 180);                            // fingers close (hold)
+  add(0.40, gx, gy+A.hr*0.34, 180-dirC*9);            // PRESS — the wind-up
+  add(0.465, apexX*0.30+gx*0.70, apexY+H*0.12, 180-dirC*24); // tips trail
+  add(0.505, apexX, apexY, 180-dirC*6);               // apex
+  add(0.55, apexX*0.45+px2*0.55, apexY+H*0.07, 180+dirC*12); // pendulum swings
+  add(0.60, px2, py2+A.hr*0.22, 180+dirC*6);          // drop in, squash
+  add(0.625, px2, py2, 180);                          // placed
+  add(0.665, px2, py2, 180);                          // fingers open (hold)
+  add(0.69, px2, py2-A.hr*0.6, 180-dirC*18);          // flick away
+  add(0.75, (px2+rx)/2, Math.min(py2,ry)-H*0.55, 180+dirC*28); // trailing home
+  add(0.85, rx, ry-A.hr*0.6, 180+dirC*10);
+  add(1.00, rx, ry, 180-dirX*12);
+ } else if(act==='poke'){
+  var bops=Math.max(1,Math.min(3,A.cycles||2));
+  var u0=0.34, u1=0.62, span=(u1-u0)/bops;
+  for(var b3=0;b3<bops;b3++){
+   var ub=u0+span*b3;
+   add(ub+span*0.22, gx, gy-A.hr*1.5, 180-dirX*10);   // wind up high
+   add(ub+span*0.48, gx, gy+A.hr*0.12, 180);          // BOP
+   add(ub+span*0.70, gx, gy-A.hr*0.9, 180+dirX*8);    // recoil
+  }
+  add(0.67, hovX, hovY);
+  add(0.75, (hovX+rx)/2, Math.min(hovY,ry)-H*0.45);
+  add(0.86, rx, ry-A.hr*0.5);
+  add(1.00, rx, ry);
+ } else {                                             // wave
+  var wc=Math.max(1,Math.min(4,A.cycles||2));
+  for(var w3=1;w3<=wc*2;w3++){
+   var uw=0.28+(0.62-0.28)*w3/(wc*2);
+   add(uw, hovX+((w3%2)?-1:1)*A.hr*1.4, hovY-A.hr*0.4, 180+((w3%2)?1:-1)*26);
+  }
+  add(0.68, hovX, hovY);
+  add(0.76, (hovX+rx)/2, Math.min(hovY,ry)-H*0.45);
+  add(0.87, rx, ry-A.hr*0.5);
+  add(1.00, rx, ry);
+ }
+ // Unwrapped ONCE, so interpolation between knots can never cross the
+ // 180 seam however the values were written above.
+ for(var uw2=1; uw2<K.length; uw2++)
+  K[uw2].a=K[uw2-1].a+((((K[uw2].a-K[uw2-1].a)+540)%360)-180);
+ return { K:K, grip:[gx,gy], act:act };
 }
 
 function armPose(k, u){
  var A=armGeom(k); if(!A) return null;
  var P0=ARM_PH;
- var lerp=function(a,b,t){ return a+(b-a)*Math.max(0,Math.min(1,t)) };
  var ease=function(t){ t=Math.max(0,Math.min(1,t)); return t*t*(3-2*t) };
- var act=P.armAction||'lift';
- // A short stub at rest rather than sat exactly on the anchor: on it the
- // arm has zero length, its tangents are undefined, and the edge offsets
- // come out as whatever the arithmetic happens to produce. The anchor is
- // inside a letterform so the stub is covered anyway.
- var restX=A.ax+(A.c[0]-A.ax)*0.10, restY=A.ay+(A.c[1]-A.ay)*0.10;
- var overW=(A.b?A.b.w:A.box[2]/4)/2;
- var overX=A.c[0]+A.side*(overW+A.hr*0.30), overY=A.c[1]-A.box[3]*0.52;
- // The near EDGE of the letter, not the middle: a hand closing over the
- // centre of a letterform is holding a plate, not picking something up.
- var lw=(A.b?A.b.w:A.box[2]/4)/2, lh=(A.b?A.b.h:A.box[3])/2;
- var onX=A.c[0]+A.side*(lw+A.hr*0.42), onY=A.c[1]-lh*0.30;
- // A wave never comes down to the letter, so its "on" is where it is.
- if(act==='wave'){ onX=overX; onY=overY }
- var holdCurl=(act==='wave')?0.25:1;
-
- /**
-  * ONE curve through the whole visit, not a phase at a time.
-  *
-  * Every beat used to ease independently from rest to rest, so the hand
-  * came to a dead stop at all seven boundaries and set off again. Inside
-  * a short beat that puts the entire move into two frames: measured at
-  * 158 units between adjacent samples with 15 and 30 either side, and
-  * forty degrees of rotation along with it. Seven correct little eases
-  * add up to a stutter.
-  *
-  * A cubic Hermite through the same waypoints instead, tangents taken
-  * from the neighbour on each side, so velocity carries ACROSS the
-  * knots rather than dropping to nothing at every one. The hand flows
-  * through reach, drop, hold, release and lift as a single movement.
-  *
-  * The tangent is forced to zero where both neighbours share a
-  * position, so a genuine hold still holds rather than drifting through
-  * itself on the way past.
-  */
- var KT=[0, P0.land, P0.close, P0.done, P0.out, 1];
- var KP=[[restX,restY],[overX,overY],[onX,onY],[onX,onY],[overX,overY],[restX,restY]];
- var n=KT.length, i=0;
- while(i<n-2 && u>KT[i+1]) i++;
- var t1=KT[i], t2=KT[i+1], hh=Math.max(1e-6,t2-t1), sN=Math.max(0,Math.min(1,(u-t1)/hh));
+ var S=armScript(A), K=S.K, act=S.act;
+ u=Math.max(0,Math.min(1,u));
+ // Catmull-Rom through the script. Velocity carries across the knots;
+ // a knot whose neighbours share its position is a hold and gets a zero
+ // tangent, so holds hold.
+ var n=K.length, i=0;
+ while(i<n-2 && u>K[i+1].u) i++;
+ var t1=K[i].u, t2=K[i+1].u, hh=Math.max(1e-6,t2-t1), sN=Math.max(0,Math.min(1,(u-t1)/hh));
  var tangent=function(j){
-  var pj=KP[j], pa=KP[Math.max(0,j-1)], pb=KP[Math.min(n-1,j+1)];
-  if(pa[0]===pj[0]&&pa[1]===pj[1]&&pb[0]===pj[0]&&pb[1]===pj[1]) return [0,0];
-  var d=Math.max(1e-6, KT[Math.min(n-1,j+1)]-KT[Math.max(0,j-1)]);
-  return [(pb[0]-pa[0])/d*hh, (pb[1]-pa[1])/d*hh];
+  var pj=K[j], pa=K[Math.max(0,j-1)], pb=K[Math.min(n-1,j+1)];
+  if(pa.x===pj.x&&pa.y===pj.y&&pb.x===pj.x&&pb.y===pj.y) return [0,0];
+  var d=Math.max(1e-6, K[Math.min(n-1,j+1)].u-K[Math.max(0,j-1)].u);
+  return [(pb.x-pa.x)/d*hh, (pb.y-pa.y)/d*hh];
  };
  var m1=tangent(i), m2=tangent(i+1);
  var s2=sN*sN, s3=s2*sN;
  var h00=2*s3-3*s2+1, h10=s3-2*s2+sN, h01=-2*s3+3*s2, h11=s3-s2;
- var x=h00*KP[i][0]+h10*m1[0]+h01*KP[i+1][0]+h11*m2[0];
- var y=h00*KP[i][1]+h10*m1[1]+h01*KP[i+1][1]+h11*m2[1];
- var curl=0, lift=0, swap=0;
+ var x=h00*K[i].x+h10*m1[0]+h01*K[i+1].x+h11*m2[0];
+ var y=h00*K[i].y+h10*m1[1]+h01*K[i+1].y+h11*m2[1];
 
- // fingers close on the way down and release on the way up
- if(u>=P0.close && u<P0.act) curl=holdCurl*ease((u-P0.close)/(P0.act-P0.close));
- else if(u>=P0.act && u<P0.done) curl=holdCurl;
- else if(u>=P0.done && u<P0.open) curl=holdCurl*(1-ease((u-P0.done)/(P0.open-P0.done)));
+ // fingers: closed through the grab, easing at both ends
+ var holdCurl=(act==='wave')?0.15:(act==='poke')?0.55:1;
+ var curl=0;
+ if(act==='poke'||act==='wave'){
+  curl=holdCurl*ease((u-0.22)/0.10)*(1-ease((u-0.70)/0.10));
+ } else {
+  if(u>=P0.close && u<P0.act) curl=holdCurl*ease((u-P0.close)/(P0.act-P0.close));
+  else if(u>=P0.act && u<P0.done) curl=holdCurl;
+  else if(u>=P0.done && u<P0.open) curl=holdCurl*(1-ease((u-P0.done)/(P0.open-P0.done)));
+ }
 
- // whatever it came to do, laid over the top. bell and env both begin
- // and end at zero with no slope, so the deed adds no step of its own.
- var bell=function(t){ return ease(Math.min(1,t*2))*ease(Math.min(1,(1-t)*2)) };
- var env=function(t){ return ease(Math.min(1,t*4))*ease(Math.min(1,(1-t)*4)) };
- if(u>=P0.act && u<P0.done){
-  var t3=(u-P0.act)/(P0.done-P0.act);
-  if(act==='wave'){
-   x+=Math.sin(t3*Math.PI*2*A.cycles)*A.hr*1.5*env(t3);
-  } else if(act==='poke'){
-   var pk=Math.sin(t3*Math.PI*2*Math.max(1,A.cycles-1))*env(t3);
-   y+=pk*A.hr*0.5; lift=-pk*A.lift*0.18;
-  } else if(act==='swap'){
-   /**
-    * The carry goes out and STAYS. bell() would bring the letter home
-    * again inside the deed; the point of swapping the two Os is that
-    * they are identical, so they can keep each other's places and the
-    * loop closes with nothing to undo.
-    *
-    * One O arcs over the top, the other dips underneath — two identical
-    * letterforms crossing at the same height would merge into one blob
-    * for the middle of the carry.
-    */
-   swap=ease(t3);
-   lift=bell(t3)*A.lift*(A.k===0?1.15:-0.60);
-   x+=swap*(A.oc[0]-A.c[0]); y+=swap*(A.oc[1]-A.c[1]); y-=lift;
-  } else {
-   lift=bell(t3)*A.lift; y-=lift;
+ /**
+  * What the letter does: it is IN the hand. From the moment the fingers
+  * have closed to the moment they open, the letter's offset is simply
+  * the hand's distance from where it took hold — so the press, the
+  * launch, the hang and the landing squash all come through for free,
+  * and a letter and its hand cannot disagree by a frame.
+  */
+ var carry=[0,0];
+ if(act==='lift'||act==='swap'){
+  var G=S.grip;
+  if(u>=0.36 && u<0.645){ carry=[x-G[0], y-G[1]] }
+  else if(u>=0.645){
+   carry=(act==='swap') ? [A.oc[0]-A.c[0], A.oc[1]-A.c[1]] : [0,0];
   }
+ } else if(act==='poke'){
+  // the letter takes the bop: it dips as far as the hand sinks past
+  // its top edge, and springs back with it
+  var pen=y-(A.c[1]-((A.b?A.b.h:A.box[3])/2)-A.hr*0.22);
+  if(u>0.30 && u<0.68 && pen>0) carry=[0, pen*0.85];
  }
 
- // After the release the LETTER stays where it was put; the hand's own
- // offset eases away as it withdraws to its side, so it releases at the
- // letter's new position and drifts home.
- if(act==='swap' && u>=P0.done){
-  swap=1; lift=0;
-  var fadeS=1-ease(Math.max(0,Math.min(1,(u-P0.done)/(1-P0.done))));
-  x+=fadeS*(A.oc[0]-A.c[0]); y+=fadeS*(A.oc[1]-A.c[1]);
- }
-
- /**
-  * Which way the hand faces.
-  *
-  * Travelling, it follows the hose — a hand that keeps one angle while
-  * its arm swings reads as a sticker rather than as something attached.
-  *
-  * Closing, it turns to face what it is taking hold of. Grabbing the
-  * right-hand edge of a letter with the fingers splayed off to the
-  * right is not a grip, it is a wave happening to be nearby; the
-  * fingers have to come over the edge. So the angle blends toward the
-  * letter's centre as the fist closes, which means the turn happens on
-  * exactly the beats the fingers do.
-  */
- /**
-  * Measured from the point the arm bows through, not from the anchor.
-  *
-  * From the anchor the vector is ZERO while the hand is still parked on
-  * it, so it needed a fallback — and a fallback is a switch, which
-  * fires the instant the hand creeps half a unit away and swings the
-  * whole hand round in one sample. With the angle baked into the path
-  * that moved every point of the outline at once: 100% of peak speed,
-  * lost in a single stop.
-  *
-  * The via point is always well clear of both ends, so the vector is
-  * never degenerate and never needs a special case. It is also the
-  * arm's actual incoming direction at the wrist, which is what the hand
-  * should be lined up with anyway.
-  */
- var V0=armVia(A, x, y);
- var hoseAng=Math.atan2(y-V0[1], x-V0[0])*180/Math.PI+90;
- // From the GRAB POINT to the letter's centre, not from wherever the
- // hand currently is. The live vector vanishes and flips sign if the
- // hand ever passes through the letter it is reaching for — which it
- // does when the arm comes from the far side — and a flipped facing is
- // a 180 degree spin between two frames.
- var gripAng=Math.atan2(A.c[1]-onY, A.c[0]-onX)*180/Math.PI+90;
- // Shortest way round, or a grip near the wrap point spins the long way.
- // Which way round to turn is decided ONCE, against the hose angle at
- // the moment of the grip — not per sample against the live one.
- //
- // Recomputed each time, the wrap flips as the arm swings and `turn`
- // jumps by a full circle. Multiplied by a fractional `face` that is a
- // jump of 360 x face, which is not a whole turn and so cannot be
- // unwrapped away: 122 degrees between two adjacent stops on a long,
- // unhurried visit. Constant turn, no wrap, nothing to unwrap.
- var Vr=armVia(A, onX, onY);
- var refAng=Math.atan2(onY-Vr[1], onX-Vr[0])*180/Math.PI+90;
- var turn=((gripAng-refAng+540)%360)-180;
- /**
-  * The turn is spread across the whole approach, not across the close.
-  *
-  * Tying it to `curl` meant the hand swung its whole facing round in
-  * however long the fingers took to shut — 28ms on a floored visit,
-  * which is 130 degrees in under two frames. A hand orients on its way
-  * to a thing, not at the instant it touches it. So it starts turning
-  * as it comes in, holds the grip facing through the deed, and unwinds
-  * as it leaves.
-  */
- var face=(u<P0.act) ? ease(u/Math.max(0.01,P0.act))
-        : (u<P0.open) ? 1
-        : 1-ease((u-P0.open)/Math.max(0.01,1-P0.open));
- var ang=hoseAng+turn*face;
- return { A:A, x:x, y:y, ang:ang, curl:curl, lift:lift, swap:swap, act:act };
+ // The facing comes off the same knots as the position, through the
+ // same basis — one description of the gesture, nothing derived live.
+ var aT=function(j){
+  var pa=K[Math.max(0,j-1)].a, pb=K[Math.min(n-1,j+1)].a;
+  var d2=Math.max(1e-6, K[Math.min(n-1,j+1)].u-K[Math.max(0,j-1)].u);
+  return (pb-pa)/d2*hh;
+ };
+ var ang=h00*K[i].a+h10*aT(i)+h01*K[i+1].a+h11*aT(i+1);
+ return { A:A, x:x, y:y, ang:ang, curl:curl, carry:carry, act:act };
 }
 
 /**
@@ -3688,20 +3739,18 @@ function armHose(k, u){
  var wob2=(P.armWobble===undefined?0.4:P.armWobble);
  var boil=Math.max(0,P.armBoil===undefined?0:P.armBoil);
  var take=boil>0 ? Math.floor(u*Math.max(1,Math.round(boil*8))) : 0;
- var dx=q.x-A.ax, dy=q.y-A.ay, L=Math.hypot(dx,dy)||1;
- // Bowed down between the ends, not out past the shoulder. Swinging it
- // outward carried the blunt shoulder end clear of the letter covering
- // it, which is the one thing that has to stay hidden.
- var Vp=armVia(A, q.x, q.y);
- var cxC=2*Vp[0]-(A.ax+q.x)/2, cyC=2*Vp[1]-(A.ay+q.y)/2;
+ var SH=armShape(A, q.x, q.y), L=SH.L;
  var N=10, pts=[], nrm=[];
  // the hand's own x axis, which is where the arm's edges have to land
  var t0=q.ang*Math.PI/180, hnx=Math.cos(t0), hny=Math.sin(t0);
  for(var i2=0;i2<=N;i2++){
-  var t=i2/N, mt=1-t;
-  var cx0=mt*mt*A.ax + 2*mt*t*cxC + t*t*q.x;
-  var cy0=mt*mt*A.ay + 2*mt*t*cyC + t*t*q.y;
-  var tx=2*(mt*(cxC-A.ax)+t*(q.x-cxC)), ty=2*(mt*(cyC-A.ay)+t*(q.y-cyC));
+  var t=i2/N;
+  // chord plus a sine bulge — see armShape for why not a quadratic
+  var bl2=SH.h*Math.sin(Math.PI*t);
+  var cx0=A.ax+SH.dx*t + SH.px*bl2;
+  var cy0=A.ay+SH.dy*t + SH.py*bl2;
+  var tx=SH.dx + SH.px*SH.h*Math.PI*Math.cos(Math.PI*t);
+  var ty=SH.dy + SH.py*SH.h*Math.PI*Math.cos(Math.PI*t);
   var tm=Math.hypot(tx,ty)||1, px=-ty/tm, py=tx/tm;
   // Over the last stretch the normal turns to meet the hand's, so the
   // edges arrive on the wrist rather than near it.
@@ -3917,9 +3966,9 @@ function armCSS(total){
    var stops=[];
    us.forEach(function(u){
     var q=armPose(k2, u); if(!q) return;
-    var dx=q.swap*(A2.oc[0]-A2.c[0]), dy=q.swap*(A2.oc[1]-A2.c[1])-q.lift;
-    stops.push({p:at(u), v:'transform:translate('+dx.toFixed(1)+'px,'+dy.toFixed(1)
-      +'px) rotate('+(q.lift*0.04*tilt).toFixed(2)+'deg)'});
+    stops.push({p:at(u), v:'transform:translate('+q.carry[0].toFixed(1)+'px,'
+      +q.carry[1].toFixed(1)
+      +'px) rotate('+(q.carry[0]*0.022*tilt).toFixed(2)+'deg)'});
    });
    var stay='transform:translate('+(A2.oc[0]-A2.c[0]).toFixed(1)+'px,'
      +(A2.oc[1]-A2.c[1]).toFixed(1)+'px) rotate(0.00deg)';
@@ -3933,8 +3982,9 @@ function armCSS(total){
  var A=first, stops=[];
  us.forEach(function(u){
   var q=armPose(0, u); if(!q) return;
-  stops.push({p:at(u), v:'transform:translate(0.0px,'+(-q.lift).toFixed(1)
-    +'px) rotate('+(q.lift*0.04*tilt).toFixed(2)+'deg)'});
+  stops.push({p:at(u), v:'transform:translate('+q.carry[0].toFixed(1)+'px,'
+    +q.carry[1].toFixed(1)
+    +'px) rotate('+(-q.carry[1]*0.012*tilt).toFixed(2)+'deg)'});
  });
  out+='@keyframes gr'+A.li+'{'+emit(stops,none,none)+'}'
   +'.gr'+A.li+'{transform-box:view-box;transform-origin:'+A.base[0].toFixed(1)+'px '
