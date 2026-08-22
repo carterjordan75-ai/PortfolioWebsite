@@ -351,6 +351,8 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Comes out from behind</label></div>
   <div class="row" id="armfrompicker"></div>
   <div class="row"><label>Starts when <b id="varmDelay"></b></label><input id="armDelay" type="range" min="0" max="1" step=".02"></div>
+  <div class="row"><label>Speed <b id="varmSpeed"></b></label><input id="armSpeed" type="range" min=".4" max="2.5" step=".05"></div>
+  <div class="row"><label>Wait before leaving <b id="varmWait"></b></label><input id="armWait" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Second arm lags <b id="varmStagger"></b></label><input id="armStagger" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Grip on the edge <b id="varmGrip"></b></label><input id="armGrip" type="range" min=".3" max="1.2" step=".05"></div>
   <div class="row"><label>Letter gives <b id="varmSquash"></b></label><input id="armSquash" type="range" min="0" max="1" step=".05"></div>
@@ -777,7 +779,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeShut:.03,blinkSync:1,eyeSpeed:1,eyeGlint:.3,glintIn:0,
  eyeClose:140,eyeHold:60,eyeOpen:250,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeAxis:0,eyeVia:.5,
- eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armTarget2:-1,armFrom:'end',armStagger:.35,armGrip:.7,armSquash:.7,armDur:.62,armDelay:.5,armSize:1.25,armFill:1,armCount:1,armCase:1,armPasses:1,armVary:1,armTaper:1.15,armDraw:0,armWobble:0,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
+ eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armTarget2:-1,armFrom:'end',armStagger:.35,armGrip:.7,armSquash:.7,armSpeed:1,armWait:.3,armDur:.62,armDelay:.5,armSize:1.25,armFill:1,armCount:1,armCase:1,armPasses:1,armVary:1,armTaper:1.15,armDraw:0,armWobble:0,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -1525,13 +1527,23 @@ function fitViewBox(str, bb){
  // transform too, invisible to the measurement. Without this the O
  // sails out through the top of the frame at the peak of the lift.
  if(P.arms && P.sleep){
-  var need=mb[3]*(1.30*Math.max(0.2,(P.armLift===undefined?1:P.armLift))+0.75);
-  hy=Math.max(hy, mb[3]/2+need);
-  // and sideways: the arm bodies loop around the OUTSIDE of the mark
-  hx=Math.max(hx, mb[2]/2+mb[2]*0.22+mb[3]*0.30);
-  // a turned arrangement is worked from turned sides: room both ways
-  var fd=({row:0,grid:0,stack:90,diagonal:45}[P.layout]||0)+(P.lturn||0);
-  if(fd%180!==0){ var hm=Math.max(hx,hy); hx=hm; hy=hm; }
+  // what the arms were actually measured to reach this build — the
+  // tube and the hand at every sampled beat; a carried letter is always
+  // between its hand and the mark, so it is inside that too
+  var ae=armExt();
+  if(ae){
+   var pad=mb[3]*0.08;
+   hx=Math.max(hx, Math.max(cx-ae[0], ae[2]-cx)+pad);
+   hy=Math.max(hy, Math.max(cy-ae[1], ae[3]-cy)+pad);
+  } else {
+   var need=mb[3]*(1.30*Math.max(0.2,(P.armLift===undefined?1:P.armLift))+0.75);
+   hy=Math.max(hy, mb[3]/2+need);
+   // and sideways: the arm bodies loop around the OUTSIDE of the mark
+   hx=Math.max(hx, mb[2]/2+mb[2]*0.22+mb[3]*0.30);
+   // a turned arrangement is worked from turned sides: room both ways
+   var fd=({row:0,grid:0,stack:90,diagonal:45}[P.layout]||0)+(P.lturn||0);
+   if(fd%180!==0){ var hm=Math.max(hx,hy); hx=hm; hy=hm; }
+  }
  }
  var vb=[cx-hx, cy-hy, hx*2, hy*2];
  return str.replace(/viewBox="[^"]*"/,
@@ -3323,7 +3335,7 @@ function handOutline(r, curl, fan, mirror){
  Q(lp(-pw,-r*0.43), lp(-r*0.48,-r*0.23), lp(-pw*0.97,-r*0.42), lp(-r*0.64,-r*0.26));
  var FX=[-0.36,0.0,0.36], KY=[-0.82,-0.95,-0.90], HW=[0.17,0.19,0.18], LEN=[0.48,0.62,0.56];
  var A0=[-0.12,0,0.10], A1=[-0.45,-0.02,0.38];
- var SY=[-0.40,-0.74,-1.08];                 // the stack, pinky lowest
+ var SY=[-0.42,-0.76,-1.10];                 // the stack, pinky lowest
  var dip=1-0.45*Math.sin(Math.PI*tF);        // the nub in the middle of the slide
  var prevR=null;
  for(var i=0;i<3;i++){
@@ -3336,8 +3348,9 @@ function handOutline(r, curl, fan, mirror){
   // LATE — converging first brought neighbouring knuckles closer than
   // two fingers' widths and their outlines crossed
   var K=[Kc[0]+(-0.40*r-Kc[0])*tF*tF, Kc[1]+(SY[i]*r-Kc[1])*Math.sqrt(tF)];
-  var a=ac+(-Math.PI/2-ac)*tF, hw=hwc+(0.15*r-hwc)*tF;
-  var L1=(L1c+(0.14*r-L1c)*tF)*dip, L2=(L2c+(0.10*r-L2c)*tF)*dip, bend=bc+(0.5-bc)*tF;
+  var a=ac+(-Math.PI/2-ac)*tF, hw=hwc+(0.165*r-hwc)*tF;
+  // softer knuckles: a gentle scallop down the front, not a row of bumps
+  var L1=(L1c+(0.10*r-L1c)*tF)*dip, L2=(L2c+(0.06*r-L2c)*tF)*dip, bend=bc+(0.35-bc)*tF;
   var kl=nL(a), KL=[K[0]+kl[0]*hw, K[1]+kl[1]*hw];
   if(i===0) Q(lp(-pw*0.92,-r*0.44), lp(K[1]+r*0.06, K[1]+hw*1.1), KL[0], KL[1]);
   else {
@@ -3521,7 +3534,15 @@ function armVisit(total){
  // holds that make it read. The oscillating deeds keep their own floor.
  var floorMs=(act==='poke'||act==='wave') ? 1400 : (act==='swap') ? 2400 : 1800;
  var dur=Math.max(0.15,Math.min(0.98,P.armDur===undefined?0.62:P.armDur));
- var want=Math.max(floorMs, dur*total);
+ // tempo: 2 is twice as quick, 0.5 half; the wait after placing
+ // lengthens the visit so the gesture is not squeezed to pay for it
+ var speed=Math.max(0.4,Math.min(2.5,P.armSpeed===undefined?1:P.armSpeed));
+ var waitK=1+Math.max(0,Math.min(1,P.armWait===undefined?0.3:P.armWait))*0.35;
+ var want=Math.max(floorMs, dur*total)*waitK/speed;
+ // a compact pair is traded in sequence — one hand's whole performance,
+ // then the other's — so the visit wants longer; the floor is the same,
+ // so the arms still come out in a round that fits one trade
+ if(act==='swap' && P.layout==='grid') want*=1.4;
  if(total<floorMs*1.05) return null;
  var dl=Math.max(0,Math.min(1,P.armDelay===undefined?0.5:P.armDelay));
  /**
@@ -3577,9 +3598,13 @@ function armSides(){
  * arm is built in a frame where the arrangement lies along x, and
  * only the output is turned back into the world.
  */
-function armFrame(){
+function armFrame(extra){
  var baseDeg={row:0,grid:0,stack:90,diagonal:45}[P.layout]||0;
- var deg=baseDeg+(P.lturn||0), rad=deg*Math.PI/180;
+ // `extra` turns the frame a further quarter so a COLUMN of a compact
+ // arrangement reads as a row: a pair traded up a column is then the
+ // same job as a pair traded along a row, worked from the column's
+ // outer side
+ var deg=baseDeg+(P.lturn||0)+(extra||0), rad=deg*Math.PI/180;
  var mb=markBox(), cx=mb[0]+mb[2]/2, cy=mb[1]+mb[3]/2;
  var c=Math.cos(rad), sn=Math.sin(rad);
  return {
@@ -3598,17 +3623,21 @@ function armGeom(k, vis){
  var sd0=sides0[Math.min(k||0, sides0.length-1)];
  var twoArms=sides0.length>1;
  if(twoArms && act0==='lift') act0='swap';
- var F=armFrame();
- // every letter where it actually is, in the arrangement's frame
- var LP=LCEN.map(function(cc,ii){ var o=lRest(ii); return F.toL([cc[0]+o[0], cc[1]+o[1]]) });
- var LHs=LCEN.map(function(cc,ii){ return lHalf(ii) });
- var LH=0; LHs.forEach(function(h){ LH=Math.max(LH,h[1]*2) });
- var x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
- LP.forEach(function(pt,ii){
-  x0=Math.min(x0,pt[0]-LHs[ii][0]); x1=Math.max(x1,pt[0]+LHs[ii][0]);
-  y0=Math.min(y0,pt[1]-LHs[ii][1]); y1=Math.max(y1,pt[1]+LHs[ii][1]);
- });
- var box=[x0,y0,x1-x0,y1-y0], mid=x0+box[2]/2, midY=y0+box[3]/2;
+ var F, LP, LHs, LH=0, x0, y0, x1, y1, box, mid, midY;
+ var frameUp=function(extra){
+  F=armFrame(extra);
+  // every letter where it actually is, in the arrangement's frame
+  LP=LCEN.map(function(cc,ii){ var o=lRest(ii); return F.toL([cc[0]+o[0], cc[1]+o[1]]) });
+  LHs=LCEN.map(function(cc,ii){ return lHalf(ii) });
+  LH=0; LHs.forEach(function(h){ LH=Math.max(LH,h[1]*2) });
+  x0=1e9;y0=1e9;x1=-1e9;y1=-1e9;
+  LP.forEach(function(pt,ii){
+   x0=Math.min(x0,pt[0]-LHs[ii][0]); x1=Math.max(x1,pt[0]+LHs[ii][0]);
+   y0=Math.min(y0,pt[1]-LHs[ii][1]); y1=Math.max(y1,pt[1]+LHs[ii][1]);
+  });
+  box=[x0,y0,x1-x0,y1-y0]; mid=x0+box[2]/2; midY=y0+box[3]/2;
+ };
+ frameUp(0);
  /**
   * Row-like, or compact. A row has room for each arm's lane on its own
   * half of the far side, so the bodies can sweep a full circuit round
@@ -3627,12 +3656,68 @@ function armGeom(k, vis){
   */
  var pickA=Math.round(P.armTarget===undefined?-1:P.armTarget);
  var pickB=Math.round(P.armTarget2===undefined?-1:P.armTarget2);
+ /**
+  * Rearrange: the pair that makes the most sense for THIS layout. In a
+  * row-like arrangement, two letters on the same line, as far apart as
+  * possible, identical glyphs preferred. In a compact one, one letter
+  * from the top half and one from the bottom, as far apart as
+  * possible — a diagonal — so each arm works its own side and the
+  * carries arc round the corners rather than up a column.
+  */
+ if(pickA===-2 || pickB===-2){
+  var best=null, bestS=-1e9;
+  for(var i1=0;i1<LCEN.length;i1++) for(var j1=i1+1;j1<LCEN.length;j1++){
+   var p1=LP[i1], q1=LP[j1], sc;
+   if(rowLike){
+    if(Math.abs(p1[1]-q1[1])>LH*0.3) continue;
+    sc=Math.abs(p1[0]-q1[0]);
+    // the arms root behind a letter OUTSIDE the two slots being traded:
+    // rooted between them, the body rises straight through the carry.
+    // The two end letters of a row leave nothing outside.
+    var lo=Math.min(p1[0],q1[0]), hi=Math.max(p1[0],q1[0]), outside=false;
+    LP.forEach(function(pt,ii){ if(ii!==i1 && ii!==j1 && (pt[0]<lo-LH*0.3 || pt[0]>hi+LH*0.3)) outside=true });
+    if(!outside) sc-=1e6;
+   }
+   else {
+    // compact: two letters on one LINE — a row or a column — so they
+    // can be traded along that line's outer side. A diagonal pair has
+    // no side that is outside for both of them: whichever way a hand
+    // holds a letter, it ends up inside the mark when it sets it down
+    // in the far corner.
+    var sameRow=Math.abs(p1[1]-q1[1])<LH*0.3, sameCol=Math.abs(p1[0]-q1[0])<LH*0.3;
+    if(!sameRow && !sameCol) continue;
+    sc=Math.hypot(p1[0]-q1[0], p1[1]-q1[1]);
+   }
+   if(!!(B[i1]&&B[i1].hp)===!!(B[j1]&&B[j1].hp)) sc+=LH*0.5;
+   // identical letters with eyes: the trade is invisible at the end of
+   // the round, and the letters being traded can look where they go
+   if(B[i1]&&B[i1].hp&&B[j1]&&B[j1].hp) sc+=LH*0.1;
+   if(sc>bestS){ bestS=sc; best=[i1,j1] }
+  }
+  if(best){ pickA=best[0]; pickB=best[1] }
+ }
  var os=[]; LCEN.forEach(function(cc,ii){ if(B[ii]&&B[ii].hp) os.push(ii) });
  os.sort(function(a2,b2){ return LP[a2][0]-LP[b2][0] });
  var liA=(pickA>=0 && LCEN[pickA]) ? pickA : (os[0]!==undefined?os[0]:armTargetLetter());
  var liB=(pickB>=0 && LCEN[pickB]) ? pickB : (os[os.length-1]!==undefined?os[os.length-1]:liA);
  var guard=0;
  while(liB===liA && guard++<LCEN.length) liB=(liB+1)%LCEN.length;
+ /**
+  * A compact pair on one LINE — two letters of a grid's row, or of its
+  * column — is a different job from a row's swap, and it is the only
+  * compact trade there is. Both hands come from the line's outer side.
+  * Each arm is rooted behind the letter of the OTHER line on its own
+  * side, and leaves it through its outer face — left from the bottom-
+  * left letter, right from the bottom-right — so the two bodies rise
+  * up opposite sides of the mark and never meet. A column is the same
+  * job with the frame turned a quarter.
+  */
+ var gridSwap=false;
+ if(twoArms && act0==='swap' && !rowLike && LCEN[liA] && LCEN[liB]){
+  var pg=LP[liA], qg=LP[liB];
+  if(Math.abs(pg[1]-qg[1])<LH*0.3) gridSwap=true;
+  else if(Math.abs(pg[0]-qg[0])<LH*0.3){ gridSwap=true; frameUp(90); }
+ }
  if(twoArms){
   var pa=LP[liA], pb=LP[liB];
   var topFirst=(Math.abs(pa[1]-pb[1])>LH*0.3) ? (pa[1]<pb[1]) : (pa[0]>pb[0]);
@@ -3651,6 +3736,8 @@ function armGeom(k, vis){
  // outer side — sent after a bottom-row letter from above, it had to
  // thread the gap between the rows
  if(!twoArms && !rowLike) V=(c[1]<midY)?-1:1;
+ // a compact pair is worked from ITS line's outer side, by both hands
+ if(gridSwap) V=(c[1]<midY)?-1:1;
  /**
   * Which end the body swings round. In a row, the end OPPOSITE the
   * target, so the sweep is long — and opposite ends for two arms. In a
@@ -3669,17 +3756,27 @@ function armGeom(k, vis){
   * arrangements always use the neighbour; their hooks need it.
   */
  var from=P.armFrom||'end';
- // a hook round one corner out of the target's OWN letter comes back
- // onto its own outgoing line; compact arrangements use the neighbour
- if(!rowLike && from==='own') from='next';
+ // out of the target's OWN letter only when the letter stays put: a
+ // letter about to be lifted leaves its root in an empty slot, with
+ // the hand coming down through it
+ // ...and not at all: a root rising out of the letter the hand is
+ // about to come down onto has the hand crossing it every time
+ if(from==='own') from='next';
+ /**
+  * The root rises from behind the tuck letter, so the tuck must not
+  * sit under the carry: a letter BETWEEN the two slots being traded
+  * has the carry's apex directly over it, and the arm rose straight
+  * through its own hand. Letters outside that span come first.
+  */
+ var ocS=(act0==='swap' && LCEN[partner]) ? LP[partner] : c;
+ var spanT=function(pt){
+  var dxS=ocS[0]-c[0], dyS=ocS[1]-c[1], L2s=dxS*dxS+dyS*dyS; if(L2s<1) return 2;
+  return ((pt[0]-c[0])*dxS+(pt[1]-c[1])*dyS)/L2s;
+ };
  var aLi=li, aBest=null;
  LCEN.forEach(function(cc,ii){
   if(from==='own'){ if(ii!==li) return; }
   else {
-   // never behind a letter that is about to be carried away — the two
-   // being swapped, not every O: ruling out the Os left an X-swap only
-   // the letter in the target's own column, and the route ran down
-   // through its own target
    if(ii===li) return;
    if(act0==='swap' && ii===partner) return;
   }
@@ -3688,6 +3785,10 @@ function armGeom(k, vis){
   else if(from==='next') d=Math.hypot(pt[0]-c[0], pt[1]-c[1]);
   else if(from==='middle') d=Math.hypot(pt[0]-mid, pt[1]-midY);
   else d=(loopS>0) ? -pt[0] : pt[0];
+  var tS=spanT(pt);
+  if(from!=='own' && tS>-0.15 && tS<1.15) d+=1e6;      // under the carry: last resort
+  // nor in the target's own column: the root would rise through it
+  if(Math.abs(pt[0]-c[0])<LH*0.5 && Math.abs(pt[1]-c[1])>LH*0.3) d+=1e6;
   if(aBest===null || d<aBest){ aBest=d; aLi=ii }
  });
  var aC=LP[aLi], aB=B[aLi]||null;
@@ -3709,7 +3810,30 @@ function armGeom(k, vis){
  // the RESTORE visit: the letter is in the other slot now and goes
  // back — the same performance with source and destination traded
  if(vis && act0==='swap'){ var cSw=c; c=oc; oc=cSw }
+ /**
+  * The compact pair's root: the other line's letter on the side of
+  * this arm's CURRENT slot, left through its outer face. On the
+  * restore visit the slots have traded, so the roots trade too — the
+  * first mover's body is always on the side it starts from, which is
+  * what keeps the two bodies apart.
+  */
+ var sx=0, rootSide=0;
+ if(gridSwap){
+  var rBest=null;
+  LCEN.forEach(function(cc,ii){
+   if(ii===li || ii===partner) return;
+   var pt=LP[ii], d=Math.hypot(pt[0]-c[0], pt[1]-c[1]);
+   if(rBest===null || d<rBest){ rBest=d; aLi=ii }
+  });
+  aC=LP[aLi]; aB=B[aLi]||null; ax=aC[0]; ay=aC[1];
+  rootSide=(aC[0]<mid)?-1:1; sx=rootSide;
+  loopS=rootSide;
+ }
  var wt=F.toW([ax,ay]);
+ var wex=sx ? F.toW([ax+sx*((aB?aB.w:LH)*0.5), ay]) : F.toW([ax, ay+V*((aB?aB.h:LH)*0.5)]);
+ // which side of the root the arm works: the side its letter's two
+ // slots are on (the tuck is outside that span by construction)
+ var toLeft=((c[0]+oc[0])/2)<ax;
  // which way the compact arch sweeps: the way that leaves the box,
  // judged from the hover point over (or under) the target
  var lh0=(b?b.h:LH)/2, gripD0=(P.armGrip===undefined?0.7:P.armGrip);
@@ -3720,8 +3844,9 @@ function armGeom(k, vis){
  var arcDir=(dg>0)?1:-1;
  return { k:(k||0), li:li, c:c, base:base, b:b, other:other, oc:oc, arcDir:arcDir,
           obase:LCEN[other]||base, side:sd, V:V, loop:loopS, hr:hr, LH:LH,
-          cycles:cycles, actMs:actMs, ax:ax, ay:ay, wax:wt[0], way:wt[1],
-          box:box, rowLike:rowLike, F:F, vis:vis?1:0,
+          cycles:cycles, actMs:actMs, ax:ax, ay:ay, wax:wt[0], way:wt[1], wex:wex[0], wey:wex[1],
+          box:box, rowLike:rowLike, F:F, vis:vis?1:0, toLeft:toLeft,
+          gridSwap:gridSwap, sx:sx, rootB:aB, mid:mid, midY:midY,
           lift:(P.armLift===undefined?1:P.armLift)*LH*0.55 };
 }
 
@@ -3824,7 +3949,29 @@ function armCurve(C){
  * it from above, as the drawover has it, and when the hand is at the
  * letter the arm reaches down to it.
  */
+/**
+ * A SIDE exit, for the compact pair: the arm leaves its root through
+ * the letter's outer side face instead of its top. The same one-arc
+ * solve, in a frame turned so that face points up — the exit, the
+ * hand and its axis are turned into that frame, the solved line is
+ * turned back. One solver, two ways out.
+ */
 function armCentre(A, hx, hy, axX, axY){
+ if(!A.sx) return armCentreV(A, hx, hy, axX, axY);
+ var th=-A.sx*Math.PI/2, c=Math.cos(th), sn=Math.sin(th);
+ var ex=A.ax, ey=A.ay;
+ var rot=function(x,y){ return [x*c-y*sn, x*sn+y*c] };
+ var unrot=function(x,y){ return [x*c+y*sn, -x*sn+y*c] };
+ var h2=rot(hx-ex, hy-ey), a2=rot(axX, axY);
+ var rb=A.rootB;
+ var A2={ hr:A.hr, LH:A.LH, box:[0,0,A.box[3],A.box[2]], V:-1, ax:0, ay:0,
+          b:{ h:(rb?rb.w:A.LH) }, toLeft:(h2[0]<0), rowLike:A.rowLike, sweepMax:Math.PI*1.6, sideExit:true };
+ var R=armCentreV(A2, h2[0], h2[1], a2[0], a2[1]);
+ var back=function(pt){ var w=unrot(pt[0],pt[1]); return [w[0]+ex, w[1]+ey] };
+ return { raw:R.raw.map(back), C:R.C.map(back), c4:back(R.c4) };
+}
+
+function armCentreV(A, hx, hy, axX, axY){
  var bow=Math.max(0.2,Math.abs(P.armBow===undefined?1:P.armBow));
  if(!A.rowLike) bow=Math.max(0.8, Math.min(1.3, bow));
  var bx=A.box[0], by=A.box[1], bw=A.box[2], bh=A.box[3], cy=by+bh/2;
@@ -3848,58 +3995,73 @@ function armCentre(A, hx, hy, axX, axY){
   * mark's centre line for a hand facing diagonally, and rises up the
   * side for a hand facing straight down — which is the drawover.
   */
- var edgeX=(A.loop>0 ? bx+bw : bx);
- var Lw=Math.min(A.hr*0.9, Math.hypot(hx-edgeX, hy-cy)*0.3);
+ /**
+  * The arm leaves the letter it is tucked behind VERTICALLY — out of
+  * its top face for a top arm, its underside for an under arm — and
+  * arcs from there to the hand. Leaving sideways put the root behind
+  * the rest of the row, visible in every gap and in any slot a letter
+  * had just been lifted out of; leaving vertically, the root is inside
+  * one letter's silhouette until it clears the face.
+  *
+  * From the exit S the line goes straight on, then one ellipse: S is
+  * on the ellipse's side (where the tangent is vertical), the wrist
+  * entry W is on it where the tangent is the hand's axis, the centre
+  * is at S's height. Solved in two fixed passes, no feedback.
+  */
+ var aBh=(A.b?A.b.h:A.LH), tuckH=aBh;
+ var Lw=Math.min(A.hr*0.9, Math.abs(hy-A.ay)*0.3+A.hr*0.3);
  var W=[hx-axX*Lw, hy-axY*Lw];
- var sideX=edgeX+A.loop*stand;
- // the side point stays outside the wrist: a hand out past it (a wave)
- // takes the side point with it
- if(A.loop>0) sideX=Math.max(sideX, W[0]+A.hr*1.2); else sideX=Math.min(sideX, W[0]-A.hr*1.2);
- var exit=[edgeX+A.loop*stand*0.35, A.ay];
- /**
-  * Solved so the SIDE POINT sits on the mark's centre line and the
-  * start angle is free: the arm leaves the side horizontally, bulges
-  * outward, and comes over in a wide, low sweep into the wrist. With
-  * the ellipse's centre pinned to the centre line instead, the arch
-  * was tall and narrow and dropped into the hand like a hairpin.
-  */
- // which way round the sweep goes: a top arm on the right runs 0° →
- // -90° (decreasing), on the left 180° → 270° (increasing); an under
- // arm the reverse — the product of its side and its vertical sign
- var sgn=A.loop*A.V;
- // the side point is at the TUCK LETTER's height, the same as the exit
- // (the mark's centre line in a row; the letter's own row in a grid)
- var sy=A.ay;
- var dy0=sy-W[1];                       // how far the wrist sits above (+) or below it
- /**
-  * Solved in two fixed passes with no feedback: the end angle from the
-  * axis, the height from the wrist's height above the side point, the
-  * centre and start angle from those, and the width last. An iterated
-  * solve with the width feeding the height sat on a saturation edge
-  * and landed on different branches in neighbouring frames.
-  */
- var ths=(A.loop>0)?0:Math.PI, the=ths+sgn*Math.PI*0.75, Cy=sy;
- var rx=Math.max(A.hr*1.2, Math.abs(sideX-W[0])), ry=Math.max(off*0.8, Math.abs(dy0)*0.6);
+ // the exit: just clear of the face — and always on the far side of
+ // the wrist from the box, so the arc can come down into the hand
+ var faceY=A.ay+A.V*(tuckH*0.5+A.LH*0.30);
+ var sy=(A.V<0)? Math.min(faceY, W[1]-A.hr*0.4) : Math.max(faceY, W[1]+A.hr*0.4);
+ var S=[A.ax, sy];
+ var exit=[A.ax, A.ay+A.V*(tuckH*0.5+A.LH*0.10)];
+ // the arc goes toward the hand's side of the exit; up first for a top
+ // arm, down first for an under arm
+ // decided once per arm from where its letter sits, not per frame:
+ // a hand carrying over the root's column flipped the arc's side
+ var toLeft=A.toLeft;
+ var ths=toLeft?0:Math.PI;
+ var sgn=(toLeft?-1:1)*((A.V<0)?1:-1);
+ var rx=Math.max(A.hr*1.2, Math.abs(S[0]-W[0])), ry=Math.max(off*0.8, Math.abs(W[1]-sy));
+ var the=ths+sgn*Math.PI*0.75;
  var solve=function(rxA, ryA){
   var te=Math.atan2(-sgn*axX/rxA, sgn*axY/ryA);
   var d=te-ths; d=d-2*Math.PI*Math.floor(d/(2*Math.PI)); if(sgn<0) d-=2*Math.PI;
-  if(Math.abs(d)<0.4) d=sgn*0.4; if(Math.abs(d)>Math.PI*1.05) d=sgn*Math.PI*1.05;
+  // a side exit curls further: out of the face, up the side, over and
+  // down into a hand facing the mark — three quarters of a turn
+  var dMax=A.sweepMax||Math.PI*1.05;
+  if(Math.abs(d)<0.35) d=sgn*0.35; if(Math.abs(d)>dMax) d=sgn*dMax;
   te=ths+d;
-  var sE=Math.sin(te);
-  var ryN=Math.max(off*0.8, Math.abs(dy0)*0.55, Math.abs(dy0)/(1+Math.abs(sE))*1.03);
-  var CyN=W[1]-ryN*sE;
-  var sS=Math.max(-1,Math.min(1,(sy-CyN)/ryN));
-  var thsN=(A.loop>0)? Math.asin(sS) : Math.PI-Math.asin(sS);
-  var den=Math.cos(thsN)-Math.cos(te);
-  var rxN=Math.max(A.hr*1.2, Math.abs(sideX-W[0])/Math.max(0.25,Math.abs(den)));
-  // never flatter than 2:1 — a flat ellipse's ends turn tighter than
-  // the tube is wide; the side point comes in rather than the arc up
-  rxN=Math.min(rxN, ryN*2.2);
-  return { the:te, ry:ryN, Cy:CyN, ths:thsN, rx:rxN };
+  var sE=Math.sin(te), cE=Math.cos(te);
+  var rxN=Math.max(A.hr*1.2, Math.abs(W[0]-S[0])/Math.max(0.25,Math.abs(Math.cos(ths)-cE)));
+  if(A.sideExit){
+   /**
+    * Out of a side face the line curls three quarters round, and the
+    * wrist sits low on the far side of the ellipse, not on its
+    * shoulder — so the centre line is not at the wrist's height but
+    * wherever a round-enough ellipse through the wrist puts it.
+    * Pinned at the wrist's height (the top-face rule) the ellipse
+    * had to be a sliver to pass through the wrist, the minimum
+    * height overruled it, and the line kinked into the wrist.
+    */
+   var ryS=Math.max(off*0.6, rxN*0.55);
+   if(sE>0.05) ryS=Math.max(ryS, (W[1]-faceY)/sE);        // the centre stays clear of the face
+   ryS=Math.min(ryS, rxN*2.2);
+   return { the:te, rx:rxN, ry:ryS, cy:W[1]-ryS*sE };
+  }
+  // W is on the ellipse: its height sets ry, its reach sets rx
+  var ryN=Math.max(off*0.6, Math.abs(W[1]-sy)/Math.max(0.25,Math.abs(sE)));
+  // never flatter than 2:1 either way
+  rxN=Math.min(rxN, ryN*2.2); ryN=Math.min(ryN, rxN*2.2);
+  return { the:te, rx:rxN, ry:ryN, cy:sy };
  };
  var S1=solve(rx, ry), S2=solve(S1.rx, S1.ry);
- the=S2.the; ry=S2.ry; Cy=S2.Cy; ths=S2.ths; rx=S2.rx;
- var Cx=sideX-rx*Math.cos(ths);
+ the=S2.the; rx=S2.rx; ry=S2.ry;
+ var Cy=S2.cy, Cx=S[0]-rx*Math.cos(ths);
+ S=[S[0], Cy];
+
  var fixed=[[A.ax,A.ay], exit];
  for(var ai=0;ai<=6;ai++){ var th=ths+(the-ths)*ai/6; fixed.push([Cx+rx*Math.cos(th), Cy+ry*Math.sin(th)]) }
  var c4=[Cx+rx*Math.cos(ths+(the-ths)*0.5), Cy+ry*Math.sin(ths+(the-ths)*0.5)];
@@ -3987,14 +4149,145 @@ function armScript(A){
   */
  // a swap sequences the second hand itself, so it takes no stagger
  var lag=(A.k===1 && act!=='swap')?Math.max(0,Math.min(1,P.armStagger===undefined?0.35:P.armStagger)):0;
+ var wait=Math.max(0,Math.min(1,P.armWait===undefined?0.3:P.armWait));
  var K=[], uR, uDone=ARM_PH.done, uOpen=0.645;
  var add=function(u,x,y,a){ K.push({u:(u>land?u+lag*0.03:u),x:x,y:y,a:(a===undefined?base:a)}) };
+ var bx0=A.box[0]+A.box[2]/2, by0=A.box[1]+A.box[3]/2;
+ var lastArc=null;
+ /**
+  * The carry arc. A half-ellipse from A to B whose bulge is
+  * perpendicular to AB and points AWAY from the box's centre, with
+  * the letter's centre clearing the row by a letter-height at the
+  * apex. Samples eased in and out along it; `upTo` stops part way
+  * (the second hand's wait at the apex), `from` resumes from there.
+  */
+ var arcTo=function(u0,u1,ax0,ay0,bx1,by1,upTo,leanA,from){
+  var mx=(ax0+bx1)/2, my=(ay0+by1)/2, dx=bx1-ax0, dy=by1-ay0, dl=Math.hypot(dx,dy)||1;
+  var nx=-dy/dl, ny=dx/dl;
+  if(nx*(mx-bx0)+ny*(my-by0)<0){ nx=-nx; ny=-ny }          // away from the box
+  // for a top or under arm the bulge is its own side, when AB is level
+  if(Math.abs(dy)<H*0.5){ nx=0; ny=V }
+  // a compact pair trades adjacent slots with nothing in between, so
+  // its arc only needs to read as a lift, not to clear a neighbour
+  var reach=lh+H*(A.gridSwap?0.25:0.45)*L2+A.hr*gripD;     // the hand's apex offset
+  // the second hand's arc runs OUTSIDE the first's: concentric, so a
+  // letter waiting at its apex is never on the other's path
+  if(A.k===1 && !A.gridSwap) reach+=H*(A.rowLike?1.4:1.7);
+  var half=dl/2, steps=6, f0=from||0;
+  for(var i3=0;i3<=steps;i3++){
+   var t=f0+(upTo-f0)*i3/steps;
+   var e=t*t*(3-2*t);                                       // ease along the arc
+   var ph=Math.PI*e;
+   var px=mx-Math.cos(ph)*half*(dx/dl), py=my-Math.cos(ph)*half*(dy/dl);
+   px+=nx*Math.sin(ph)*reach; py+=ny*Math.sin(ph)*reach;
+   var uu=u0+(u1-u0)*i3/steps;
+   if(i3===0 && f0>0) continue;                             // resuming: the hold already sits there
+   add(uu, px, py, leanA*Math.sin(ph));
+   lastArc=[px,py];
+  }
+ };
+ var arcHold=function(uH){ if(lastArc) add(uH, lastArc[0], lastArc[1], base) };
+ /**
+  * The compact pair, in sequence.
+  *
+  * Two hands from the line's outer side cannot cross each other's
+  * path the way a top and an under hand trade in a row, so they take
+  * turns. The FIRST hand lifts its letter, carries it across on the
+  * arc, sets it down, lets go and goes all the way home. The SECOND
+  * lifts its letter straight up — clear above the first one's arc —
+  * and holds it there, in the air, until the first arm is back in
+  * the mark; then it swings the letter over and down into the slot
+  * the first one left: a quarter-ellipse, level out of the hold and
+  * vertical into the slot, so it never passes through the letter
+  * already set down beside it. Everything is tighter than a row's
+  * trade, because it is two performances in one visit.
+  */
+ var G=!!(A.gridSwap && act==='swap');
+ var tL=land, tC=ARM_PH.close, tA=ARM_PH.act, out0, backEnd;
+ if(G){
+  var obG=B[A.other], ohG=(obG?obG.h:H)/2;
+  var pxG=A.oc[0], pyG=A.oc[1]+V*(ohG+A.hr*gripD);
+  var dirG=(pxG<gx)?-1:1;
+  var clearG=(V<0)? bTop-H*0.55 : bBot+H*0.55;
+  var apexG=(V<0)? bTop-lh-H*0.45*L2 : bBot+lh+H*0.45*L2;   // the first letter's centre, at its apex
+  // the LIFTER lands first and lifts first; the carrier a beat behind
+  tL=(A.k===1)?0.10:0.12; out0=(A.k===1)?0.02:0.04;
+  add(tL, hovX, hovY, base);                               // land, and hold
+  add(tL+0.02, hovX, hovY, base);
+  add(tL+0.03, hovX, hovY+V*A.hr*0.5, base);               // breathe away
+  add(tL+0.04, gx, gy, base);                              // on
+  add(tL+0.045, gx, gy, base);
+  tC=tL+0.05; add(tC, gx, gy, base);                       // grip
+  tA=tL+0.085; add(tA, gx, gy, base);                      // fingers closed
+  add(tA+0.01, gx, gy, base-LN*dirG*9);                    // lean into it
+  if(A.k===0){
+   // the CARRIER: across on the arc once the other letter is up and
+   // out of its way, down with a bounce, let go, and all the way home
+   var uA=0.25;
+   add(uA, gx, gy, base-LN*dirG*9);
+   arcTo(uA, uA+0.10, gx, gy, pxG, pyG, 1, base-LN*dirG*14);
+   var uL=uA+0.115;
+   add(uL, pxG, pyG-V*A.hr*0.22, base+LN*dirG*4);         // in, squash
+   add(uL+0.005, pxG, pyG-V*A.hr*0.22, base+LN*dirG*4);
+   add(uL+0.017, pxG, pyG+V*A.hr*0.06, base);              // rebound
+   add(uL+0.03, pxG, pyG, base);                           // settled
+   add(uL+0.065, pxG, pyG, base);                          // still holding
+   add(uL+0.10, pxG, pyG, base);                           // fingers open
+   add(uL+0.12, pxG, pyG+V*A.hr*0.6, base-LN*dirG*14);     // flick away
+   add(uL+0.15, (pxG+hovX)/2, (V<0)?Math.min(clearG,hovY):Math.max(clearG,hovY), base+LN*dirG*10);
+   add(uL+0.185, hovX, hovY, base);
+   add(uL+0.185+wait*0.03, hovX, hovY, base);              // and WAIT, as asked
+   uR=uL+0.185+wait*0.03; uDone=uL+0.03; uOpen=uL+0.065;
+   backEnd=uR+0.10;                                        // home before the other swings
+  } else {
+   // the LIFTER: straight up, clear above the carrier's arc, and HELD
+   // there until the carrier's arm is home; then the swing
+   var uR0=0.25+0.115+0.185+wait*0.03;                      // the carrier's own times, to wait for
+   /**
+    * Where it waits: up and AWAY — a letter-height out from the line
+    * and a letter-height back along it, the far side from the slot
+    * the carrier is heading for. Straight up was not enough: the
+    * carrier's hand at the top of its arc is a hand's reach beyond
+    * its letter, and clearing that straight up put the wait three
+    * letter-heights out of the mark. Back along the line, the
+    * carrier's whole arc is on the other side of it.
+    */
+   var xHold=gx-dirG*H*1.1, hAside=gy+V*H*0.8;
+   var tGo=uR0+0.045;
+   add(tA+0.085, xHold, hAside, base-LN*dirG*6);           // lifted up and away
+   add(tGo, xHold, hAside, base-LN*dirG*6);                // and HELD, in the air
+   // the swing: one arc from the hold, over, and down into the slot
+   arcTo(tGo, tGo+0.11, xHold, hAside, pxG, pyG, 1, base-LN*dirG*14, 1e-9);
+   var uL2=tGo+0.125;
+   add(uL2, pxG, pyG-V*A.hr*0.22, base+LN*dirG*4);        // in, squash
+   add(uL2+0.005, pxG, pyG-V*A.hr*0.22, base+LN*dirG*4);
+   add(uL2+0.017, pxG, pyG+V*A.hr*0.06, base);             // rebound
+   add(uL2+0.03, pxG, pyG, base);                          // settled
+   add(uL2+0.05, pxG, pyG, base);                          // still holding
+   add(uL2+0.075, pxG, pyG, base);                         // fingers open
+   add(uL2+0.09, pxG, pyG+V*A.hr*0.6, base-LN*dirG*14);    // flick away
+   add(uL2+0.11, (pxG+hovX)/2, (V<0)?Math.min(clearG,hovY):Math.max(clearG,hovY), base+LN*dirG*10);
+   add(uL2+0.135, hovX, hovY, base);
+   add(uL2+0.135+wait*0.03, hovX, hovY, base);
+   uR=uL2+0.135+wait*0.03; uDone=uL2+0.03; uOpen=uL2+0.05;
+   backEnd=Math.min(0.975, uR+0.08);
+  }
+  for(var uwG=1; uwG<K.length; uwG++)
+   K[uwG].a=K[uwG-1].a+((((K[uwG].a-K[uwG-1].a)+540)%360)-180);
+  return { K:K, grip:[gx,gy], act:act, hov:[hovX,hovY], route:R, uR:uR, lag:lag, uDone:uDone, uOpen:uOpen,
+           tL:tL, tC:tC, tA:tA, out0:out0, backEnd:backEnd };
+ }
  add(land, hovX, hovY, base);                              // off the route's end
  add(0.255, hovX, hovY, base);                             // and HOLD
  if(act==='lift'||act==='swap'){
   var ob=B[A.other], oh=(ob?ob.h:H)/2;
-  var px2=(act==='swap')?A.oc[0]+A.side*A.hr*0.12:gx;
-  var py2=(act==='swap')?A.oc[1]+V*(oh+A.hr*0.22):gy;
+  // squarely over the slot: set down off-centre by a finger's width,
+  // the letter hopped the rest of the way the moment it was let go
+  var px2=(act==='swap')?A.oc[0]:gx;
+  // the hand is the same distance off the letter when it sets it down
+  // as when it took hold — written as a fixed 0.22 it set the letter
+  // down half a hand DEEP, held it there, and let it pop back up
+  var py2=(act==='swap')?A.oc[1]+V*(oh+A.hr*gripD):gy;
   // the apex bows toward the arm's loop side, so two letters trading
   // places up and down a column pass side by side instead of through
   // each other
@@ -4030,19 +4323,11 @@ function armScript(A){
     * letters trading places at once met in the middle; in sequence
     * they never share a path.
     */
-   add(0.465, gx*0.8+apexX*0.2, apexY+((V<0)?H*0.12:-H*0.12), base-LN*dirC*20);
-   add(0.505, gx*0.7+apexX*0.3, apexY, base-LN*dirC*6);     // up and aside
-   add(0.655, gx*0.7+apexX*0.3, apexY, base-LN*dirC*6);     // and HOLD
-   // round the OUTSIDE into the slot — beside it, then square over it,
-   // then straight in — so in a column it passes the first letter,
-   // never through it, and in a row never clips the letter beside
-   var column=(Math.abs(gx-px2)<H*0.5);
-   var swing=column ? 1.25 : 0.6;                       // wide only up a column
-   add(0.70, px2+A.loop*H*swing, (apexY+py2)/2, base+LN*dirC*12);
-   // up a column the slot is blocked from below by the first letter:
-   // come level with it beside, and slide in sideways
-   if(column) add(0.73, px2+A.loop*H*0.8, py2, base+LN*dirC*6);
-   else add(0.73, px2, py2+V*A.hr*1.1, base+LN*dirC*6);     // square over the slot
+   // the second letter rides its own arc to the apex, waits there
+   // until the first has set down, then completes the arc
+   arcTo(0.40, 0.505, gx, gy, px2, py2, 0.5, base-LN*dirC*14);
+   arcHold(0.655);
+   arcTo(0.655, 0.735, gx, gy, px2, py2, 1, base+LN*dirC*10, 0.5);
    add(0.75, px2, py2-V*A.hr*0.22, base+LN*dirC*4);         // in, squash
    add(0.755, px2, py2-V*A.hr*0.22, base+LN*dirC*4);
    add(0.767, px2, py2+V*A.hr*0.06, base);                  // rebound
@@ -4052,21 +4337,18 @@ function armScript(A){
    add(0.86, px2, py2+V*A.hr*0.6, base-LN*dirC*14);         // flick away
    add(0.88, (px2+hovX)/2, (V<0)?Math.min(clearY,hovY):Math.max(clearY,hovY), base+LN*dirC*10);
    add(0.905, hovX, hovY, base);
-   uR=0.905; uDone=0.78; uOpen=0.815;
+   add(0.905+wait*0.04, hovX, hovY, base);
+   uR=0.905+wait*0.04; uDone=0.78; uOpen=0.815;
   } else {
-   add(0.465, apexX*0.30+gx*0.70, apexY+((V<0)?H*0.12:-H*0.12), base-LN*dirC*24);
-   add(0.505, apexX, apexY, base-LN*dirC*6);                // apex
-   add(0.55, apexX*0.45+px2*0.55, apexY+((V<0)?H*0.07:-H*0.07), base+LN*dirC*12);
    /**
-    * Into the slot STRAIGHT — a knot directly over it first, so the
-    * letter drops along the slot's axis and never clips the letter
-    * beside it — then a bounce: in past the rest, back a touch, and
-    * settled, like landing on a surface. Only then does the hand open.
+    * The carry is ONE ARC: a half-ellipse from this slot to the other,
+    * bulging away from the logo — over the top for a top arm, round
+    * the outside of a column — so the letter swings round the mark
+    * and never crosses it. Samples on the arc, eased in and out, so
+    * the spline through them is the arc; the old lift / across / drop
+    * was three straight legs.
     */
-   // up a column, come level beside the slot and slide in sideways —
-   // dropping down the column went through the arm's own root
-   if(Math.abs(gx-px2)<H*0.5) add(0.58, px2+A.loop*H*0.8, py2, base+LN*dirC*6);
-   else add(0.58, px2, py2+V*A.hr*1.1, base+LN*dirC*6);     // square over the slot
+   arcTo(0.40, 0.585, gx, gy, px2, py2, 1, base-LN*dirC*14);
    add(0.60, px2, py2-V*A.hr*0.22, base+LN*dirC*4);         // in, squash
    add(0.605, px2, py2-V*A.hr*0.22, base+LN*dirC*4);
    add(0.617, px2, py2+V*A.hr*0.06, base);                  // rebound
@@ -4077,7 +4359,8 @@ function armScript(A){
    add(0.72, px2, py2+V*A.hr*0.6, base-LN*dirC*14);         // flick away
    add(0.75, (px2+hovX)/2, (V<0)?Math.min(clearY,hovY):Math.max(clearY,hovY), base+LN*dirC*10);
    add(0.785, hovX, hovY, base);
-   uR=0.785; uDone=0.63; uOpen=0.665;
+   add(0.785+wait*0.10, hovX, hovY, base);                  // and WAIT, as asked
+   uR=0.785+wait*0.10; uDone=0.63; uOpen=0.665;
   }
  } else if(act==='spin'){
   /**
@@ -4095,8 +4378,8 @@ function armScript(A){
   add(0.53, gx+dirX*A.hr*0.85, gy+V*A.hr*1.1, base+LN*dirX*8);   // lift off
   add(0.625, hovX, hovY, base);                            // watch it whirl
   add(0.68, hovX, hovY, base);
-  add(0.72, hovX, hovY, base);
-  uR=0.72;
+  add(0.72+wait*0.12, hovX, hovY, base);
+  uR=0.72+wait*0.12;
  } else if(act==='poke'){
   var bops=Math.max(1,Math.min(3,A.cycles||2));
   var u0=0.34, u1=0.62, span=(u1-u0)/bops;
@@ -4107,8 +4390,8 @@ function armScript(A){
    add(ub+span*0.70, gx, gy+V*A.hr*0.9, base+LN*dirX*8);   // recoil
   }
   add(0.67, hovX, hovY, base);
-  add(0.71, hovX, hovY, base);
-  uR=0.71;
+  add(0.71+wait*0.12, hovX, hovY, base);
+  uR=0.71+wait*0.12;
  } else {                                                  // wave
   var wc=Math.max(1,Math.min(4,A.cycles||2));
   for(var w3=1;w3<=wc*2;w3++){
@@ -4116,15 +4399,15 @@ function armScript(A){
    add(uw, hovX+((w3%2)?-1:1)*A.hr*(A.rowLike?1.4:0.8), hovY+V*A.hr*0.4, base+((w3%2)?1:-1)*14);
   }
   add(0.68, hovX, hovY, base);
-  add(0.72, hovX, hovY, base);
-  uR=0.72;
+  add(0.72+wait*0.12, hovX, hovY, base);
+  uR=0.72+wait*0.12;
  }
  // Unwrapped ONCE, so interpolation between knots can never cross the
  // 180 seam however the values were written above.
  for(var uw2=1; uw2<K.length; uw2++)
   K[uw2].a=K[uw2-1].a+((((K[uw2].a-K[uw2-1].a)+540)%360)-180);
  return { K:K, grip:[gx,gy], act:act, hov:[hovX,hovY], route:R, uR:uR+lag*0.09, lag:lag,
-          uDone:uDone+lag*0.03, uOpen:uOpen+lag*0.03 };
+          uDone:uDone+lag*0.03, uOpen:uOpen+lag*0.03, tL:tL, tC:tC, tA:tA };
 }
 
 function armPose(k, u, vis){
@@ -4141,9 +4424,12 @@ function armPose(k, u, vis){
   * back in. A stub of the route (s0) always remains, so the tube is
   * never zero length.
   */
- var land=P0.land, s0=0.02, tanAng=function(pt){ return Math.atan2(pt.ty,pt.tx)*180/Math.PI+90 };
+ // the beats are the script's: a compact pair runs on a tighter clock
+ var land=(S.tL!==undefined)?S.tL:P0.land, tClose=(S.tC!==undefined)?S.tC:P0.close, tAct=(S.tA!==undefined)?S.tA:P0.act;
+ var s0=0.02, tanAng=function(pt){ return Math.atan2(pt.ty,pt.tx)*180/Math.PI+90 };
  var x, y, lean=0, phase, s=1, ang;
- var out0=0.04+S.lag*0.10, backEnd=Math.min(0.975, Math.max(0.95+S.lag*0.04, S.uR+0.10));
+ var out0=(S.out0!==undefined)?S.out0:0.04+S.lag*0.10;
+ var backEnd=(S.backEnd!==undefined)?S.backEnd:Math.min(0.975, Math.max(0.95+S.lag*0.04, S.uR+0.10));
  if(u<land){
   var te=Math.max(0,(u-out0)/Math.max(0.01,land-out0));
   s=s0+(1-s0)*(1-Math.pow(1-te,2.4));
@@ -4212,12 +4498,12 @@ function armPose(k, u, vis){
   KEYS=[[0.00,0.12,0.35],[0.20,0.12,0.35],[0.30,0.55,0.20],[0.70,0.55,0.20],[0.82,0.15,0.40],[1,0.15,0.40]];
  } else if(top){
   // closed by contact: the drawover's hands are full fists on the rim
-  KEYS=[[0.00,0.18,0.15],[P0.land*0.45,0.18,0.15],[P0.land,0.62,0.22],
-        [P0.close,1,0.15],[P0.act,1,0.15],[S.uOpen,1,0.15],[S.uOpen+0.035,0.15,0.55],
+  KEYS=[[0.00,0.18,0.15],[land*0.45,0.18,0.15],[land,0.62,0.22],
+        [tClose,1,0.15],[tAct,1,0.15],[S.uOpen,1,0.15],[S.uOpen+0.035,0.15,0.55],
         [S.uOpen+0.12,0.18,0.15],[1,0.18,0.15]];
  } else {
-  KEYS=[[0.00,0.85,0.00],[P0.land*0.45,0.85,0.00],[P0.land,0.00,1.00],
-        [P0.close,1,0.20],[P0.act,1,0.20],[S.uOpen,1,0.20],[S.uOpen+0.035,0.05,0.90],
+  KEYS=[[0.00,0.85,0.00],[land*0.45,0.85,0.00],[land,0.00,1.00],
+        [tClose,1,0.20],[tAct,1,0.20],[S.uOpen,1,0.20],[S.uOpen+0.035,0.05,0.90],
         [S.uOpen+0.12,0.60,0.20],[1,0.60,0.20]];
  }
  var curl=KEYS[0][1], fan=KEYS[0][2];
@@ -4246,7 +4532,21 @@ function armPose(k, u, vis){
  }
  if(act==='lift'||act==='swap'){
   var G=S.grip;
-  if(u>=0.36 && u<S.uOpen){ carry=[x-G[0], y-G[1]] }
+  if(u>=Math.min(0.36,tAct-0.01) && u<S.uOpen){
+   carry=[x-G[0], y-G[1]];
+   /**
+    * In a compact arrangement the letter set down has a neighbour a
+    * finger's width away, so the hand pressing past the slot cannot
+    * MOVE the letter that way: the push goes into the squash instead
+    * (which reads from the hand's depth below), and the letter stays
+    * on its line.
+    */
+   if(A.gridSwap){
+    var slotY=(A.oc[1]-A.c[1]);
+    var past=(carry[1]-slotY)*(-A.V);
+    if(past>0) carry[1]=slotY;
+   }
+  }
   else if(u>=S.uOpen){
    carry=(act==='swap') ? [A.oc[0]-A.c[0], A.oc[1]-A.c[1]] : [0,0];
   }
@@ -4297,10 +4597,20 @@ function armPose(k, u, vis){
    * without the wrist breaking.
    */
   var uOp=S.uOpen+0.03;
-  var face=(u<P0.close) ? ease((u-land)/Math.max(0.01,P0.close-land))
+  var face=(u<tClose) ? ease((u-land)/Math.max(0.01,tClose-land))
          : (u<uOp) ? 1
          : 1-ease((u-uOp)/Math.max(0.01,S.uR-uOp));
-  ang=Tend+((((gripAng-Tend)+540)%360)-180)*face*0.45+lean;
+  /**
+   * A compact pair's hand takes the edge OBLIQUELY: facing 40° past
+   * the letter toward the side its own arm comes from, so the arm
+   * comes down into it as a crook — up out of the face, over, and
+   * down. Facing the letter square-on, the arm had to come all the
+   * way round to the bottom of its loop to arrive along the hand, and
+   * the loop swung out as far beyond the hand as the root was behind it.
+   */
+  var faceTo=A.gridSwap ? gripAng-A.V*(A.loop||1)*40 : gripAng;
+  var faceK=A.gridSwap ? 1 : 0.45;
+  ang=Tend+((((faceTo-Tend)+540)%360)-180)*face*faceK+lean;
   // (no wrist clamp: the arc is solved to arrive along the hand's axis
   // whatever it is, and a hard clamp flipped the hand 180° when the
   // facing passed directly behind the arm)
@@ -4314,7 +4624,7 @@ function armPose(k, u, vis){
   * what moves.
   */
  var sq=Math.max(0,Math.min(1,P.armSquash===undefined?0.7:P.armSquash));
- var held=(phase==='act' && u>=P0.close && u<S.uOpen+0.03 && act!=='wave') ? Math.max(0,Math.min(1,(curl-0.7)/0.3)) : 0;
+ var held=(phase==='act' && u>=tClose && u<S.uOpen+0.03 && act!=='wave') ? Math.max(0,Math.min(1,(curl-0.7)/0.3)) : 0;
  var pen=(phase==='act' && act!=='wave') ? Math.max(0,Math.min(1,((y-S.grip[1])*(-A.V))/(A.hr*0.4))) : 0;
  var sy=1-(0.06*held+0.22*pen)*sq, sx=1+(0.03*held+0.10*pen)*sq;
  var lhS=(A.b?A.b.h:A.LH)/2;
@@ -4322,7 +4632,9 @@ function armPose(k, u, vis){
  var F=A.F, w=F.toW([x,y]), wc=F.vecW(carry), wp=F.vecW(pin);
  return { A:A, x:w[0], y:w[1], ang:ang+F.deg, carry:wc, spin:spin, act:act,
           lx:x, ly:y, lang:ang, lcarry:carry,
-          curl:curl, fan:fan, mirror:(A.V<0)?1:-1,
+          // the thumb is on the side the body comes from — as a row's
+          // top hand, arriving from the right end, has always had it
+          curl:curl, fan:fan, mirror:A.gridSwap?(A.loop||1):((A.V<0)?1:-1),
           squash:[sx,sy], pin:wp,
           phase:phase, s:s, route:R };
 }
@@ -4364,6 +4676,20 @@ function armPose(k, u, vis){
  * arriving at an angle to it. The whole centreline is resampled evenly
  * by length, so as the forearm grows every sample slides, none jump.
  */
+/**
+ * How far the arms reach, measured from every outline this build
+ * samples — so the frame can be fitted to what the arms actually do
+ * rather than to a guess. A compact pair's bodies loop a long way out
+ * to the side; a row's go up and over.
+ */
+var ARM_EXT=null;
+function armExt(){ return ARM_EXT }
+function armExtAdd(x, y){
+ if(!ARM_EXT){ ARM_EXT=[x,y,x,y]; return }
+ if(x<ARM_EXT[0]) ARM_EXT[0]=x; if(y<ARM_EXT[1]) ARM_EXT[1]=y;
+ if(x>ARM_EXT[2]) ARM_EXT[2]=x; if(y>ARM_EXT[3]) ARM_EXT[3]=y;
+}
+
 function armHose(k, u, vis){
  var mode=(vis==='edges')?'edges':null; if(mode) vis=0;
  var q=armPose(k, u, vis); if(!q) return '';
@@ -4448,6 +4774,10 @@ function armHose(k, u, vis){
  };
  var near=edge(-1), far=edge(1);
  if(mode==='edges') return { near:near, far:far, q:q };
+ // the reach of this beat, in the world: the tube and the hand's circle
+ for(var ie=0;ie<=N;ie+=3){ var wn=A.F.toW(near[ie]), wf=A.F.toW(far[ie]); armExtAdd(wn[0],wn[1]); armExtAdd(wf[0],wf[1]) }
+ var wh=A.F.toW([q.lx,q.ly]), hrr=A.hr*1.25;
+ armExtAdd(wh[0]-hrr, wh[1]-hrr); armExtAdd(wh[0]+hrr, wh[1]+hrr);
  var d='M'+F(near[0])+chain(near);
  d+=handOutlineAt(A.hr, q.curl, q.fan, q.mirror, q.lx, q.ly, q.lang);
  var farR=far.slice().reverse();
@@ -4560,17 +4890,18 @@ function armsSVG(layer){
    * air above the mark instead of sliding in behind the letter, and a
    * hand at the tip of a faded line looked like it was floating.
    */
-  var fr=(A.box[3]*0.30).toFixed(1), frH=(A.box[3]*0.30).toFixed(1);
+  var fr=(A.LH*0.80).toFixed(1), frH=(A.LH*0.80).toFixed(1);
   out+='<defs><radialGradient id="armFadeG'+k+'" gradientUnits="userSpaceOnUse"'
-   +' cx="'+A.wax.toFixed(1)+'" cy="'+A.way.toFixed(1)+'" r="'+fr+'">'
+   +' cx="'+A.wex.toFixed(1)+'" cy="'+A.wey.toFixed(1)+'" r="'+fr+'">'
+   // a soft ramp from nothing at the face to full a letter-height out
    +'<stop offset="0" stop-color="#000"/>'
-   +'<stop offset="0.55" stop-color="#000" stop-opacity="0.85"/>'
+   +'<stop offset="0.35" stop-color="#000" stop-opacity="0.7"/>'
    +'<stop offset="1" stop-color="#000" stop-opacity="0"/>'
    +'</radialGradient>'
    +'<mask id="armFade'+k+'" maskUnits="userSpaceOnUse" x="-2000" y="-2600"'
    +' width="6000" height="6000">'
    +'<rect x="-2000" y="-2600" width="6000" height="6000" fill="#fff"/>'
-   +'<circle cx="'+A.wax.toFixed(1)+'" cy="'+A.way.toFixed(1)+'" r="'+fr+'"'
+   +'<circle cx="'+A.wex.toFixed(1)+'" cy="'+A.wey.toFixed(1)+'" r="'+fr+'"'
    +' fill="url(#armFadeG'+k+')"/>'
    +'</mask>'
    /**
@@ -4582,7 +4913,7 @@ function armsSVG(layer){
     * enough to hide a hand parked behind the middle.
     */
    +'<radialGradient id="armFadeHG'+k+'" gradientUnits="userSpaceOnUse"'
-   +' cx="'+A.wax.toFixed(1)+'" cy="'+A.way.toFixed(1)+'" r="'+frH+'">'
+   +' cx="'+A.wex.toFixed(1)+'" cy="'+A.wey.toFixed(1)+'" r="'+frH+'">'
    +'<stop offset="0" stop-color="#000"/>'
    +'<stop offset="0.45" stop-color="#000" stop-opacity="0.9"/>'
    +'<stop offset="1" stop-color="#000" stop-opacity="0"/>'
@@ -4590,7 +4921,7 @@ function armsSVG(layer){
    +'<mask id="armFadeH'+k+'" maskUnits="userSpaceOnUse" x="-2000" y="-2600"'
    +' width="6000" height="6000">'
    +'<rect x="-2000" y="-2600" width="6000" height="6000" fill="#fff"/>'
-   +'<circle cx="'+A.wax.toFixed(1)+'" cy="'+A.way.toFixed(1)+'" r="'+frH+'"'
+   +'<circle cx="'+A.wex.toFixed(1)+'" cy="'+A.wey.toFixed(1)+'" r="'+frH+'"'
    +' fill="url(#armFadeHG'+k+')"/>'
    +'</mask></defs>'
    +'<g class="armWrap'+k+'" fill="none" stroke="currentColor"'
@@ -4617,6 +4948,7 @@ function armsSVG(layer){
  * far, and they are meant to be carrying it together.
  */
 function armCSS(total){
+ ARM_EXT=null;
  var V=armVisit(total); if(!V) return '';
  var VIS=[{t0:V.t0, vis:0}]; if(V.t0b!==null&&V.t0b!==undefined) VIS.push({t0:V.t0b, vis:1});
  var at=function(u, vi){ return (VIS[vi||0].t0+u*V.f)*100 };
@@ -4716,9 +5048,10 @@ function armCSS(total){
    */
   var SS=armScript(A);
   var visAt=function(q,u){
-   if(u<PH.land || u>=SS.uR) return 0;
+   var tL2=(SS.tL!==undefined)?SS.tL:PH.land;
+   if(u<tL2 || u>=SS.uR) return 0;
    var ease2=function(t){ t=Math.max(0,Math.min(1,t)); return t*t*(3-2*t) };
-   return Math.min(ease2((u-PH.land)/0.06), ease2((SS.uR-u)/0.05));
+   return Math.min(ease2((u-tL2)/0.06), ease2((SS.uR-u)/0.05));
   };
   VIS.forEach(function(VV){ us.forEach(function(u){
    var q=armPose(k, u, VV.vis); if(!q) return;
@@ -4739,9 +5072,15 @@ function armCSS(total){
    * fading through the first and last beats of the visit while the
    * arm unrolls out of (and rolls back into) the body.
    */
+  // the window is the ARM's own, not the visit's: a compact pair's
+  // first hand is home and parked on its stub a third of the visit
+  // before the other — gated on the visit, it sat there peeking out
+  // from under the mark until the end
+  var o0=(SS.out0!==undefined)?SS.out0:0.04+SS.lag*0.10;
+  var bE=(SS.backEnd!==undefined)?SS.backEnd:Math.min(0.975, Math.max(0.95+SS.lag*0.04, SS.uR+0.10));
   var vis='@keyframes armVis'+k+'{0%{opacity:0}';
   VIS.forEach(function(VV){
-   var vw0=at(0,VV.vis), vw1=at(1,VV.vis);
+   var vw0=at(Math.max(0,o0-0.02),VV.vis), vw1=at(Math.min(1,bE+0.03),VV.vis);
    vis+=vw0.toFixed(2)+'%{opacity:0}'
     +(vw0+(vw1-vw0)*0.10).toFixed(2)+'%{opacity:1}'
     +(vw1-(vw1-vw0)*0.03).toFixed(2)+'%{opacity:1}'
@@ -6337,6 +6676,10 @@ function setArms(v){ P.arms=v?1:0; build(); sync(); sch(); }
  * mark looking untouched, so every preset loops clean.
  */
 var ARM_PRESETS={
+ // the pair that makes sense for the arrangement: in a row, two of a
+ // kind as far apart as the roots allow; in a grid, a row or a column
+ // of it, traded from that line's outer side
+ 'rearrange':{armAction:'lift',armCount:2,armTarget:-2,armTarget2:-2},
  // each arm takes the letter on its own side — top arm loops right and
  // takes the right one — the way the drawover has it
  'swap the Os':{armAction:'lift',armCount:2,armTarget:3,armTarget2:1},
@@ -6692,7 +7035,7 @@ function preset(n){P=migrate(JSON.parse(JSON.stringify(PRESETS[n])));
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeDart','eyeGlance','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeShut','blinkSync','eyeSpeed','eyeGlint','glintIn',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armDelay','armStagger','armGrip','armSquash','armSize','armFill','armCount','armCase','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armBow','armLift','armTilt','armEyes','armTarget','armTarget2',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armDelay','armStagger','armGrip','armSquash','armSpeed','armWait','armSize','armFill','armCount','armCase','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armBow','armLift','armTilt','armEyes','armTarget','armTarget2',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
@@ -7110,11 +7453,13 @@ eyeAxis:'Which way the eye prefers to look. Below 0 is a horizontal scan, above 
 eyeSeed:'A different set of glances from the same settings. Nothing else changes.',
 eyeEdge:'How far the pupil travels. At 1 it reaches the inside of the ring; past 1 it breaks through it.',
 lids:'Whether the eye has lids at all. None is an eye that cannot close.',
-armTarget:'Which letter the top hand takes. -1 is the left O. Letters count 0 to 3 from the left.',
+armTarget:'Which letter the top hand takes. -1 is the left O. Letters count 0 to 3 from the left. In a grid, a pair on one row or one column is traded in turn from that line\'s outer side — a diagonal pair has no side that is outside for both.',
 armTarget2:'Which letter the under hand takes. -1 is the right O. Never the same as the top hand — it bumps along if they collide.',
 armCount:'One arm, or a pair reaching from both sides at once.',
 armDelay:'Where in the round the arms make their visit. 0 starts at once, 1 leaves it late.',
 armStagger:'How far the second arm runs behind the first — out later, acts later, back later. 0 is lock-step.',
+armSpeed:'The tempo of the whole visit. 2 is twice as quick, 0.5 half speed.',
+armWait:'How long the hands hover over the letters they have placed before going home.',
 armGrip:'How far outside the letter\'s edge the wrist sits. Higher, only the fingertips wrap the rim; lower, the hand reaches in.',
 armSquash:'How much a letter gives when it is held, pressed or poked.',
 armDur:'How much of the eye round the visit takes. The rest of it the arm is off-frame.',
