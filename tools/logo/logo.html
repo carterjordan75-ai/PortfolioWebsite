@@ -3234,26 +3234,32 @@ function handOutline(r, curl){
  var ww=r*HAND_WRIST, pw=r*0.80;
  var knuck=-r*(0.72+curl*0.16);
  var hw=r*(0.122+curl*0.018);
- var len=[1.02,1.26,1.17,0.92].map(function(v){ return r*(v*(1-curl*0.76)+curl*0.10) });
+ var len=[1.02,1.26,1.17,0.92].map(function(v){ return r*(v*(1-curl*0.74)+curl*0.16) });
  var fan=[-0.30,-0.10,0.10,0.30];
  var x0=-r*0.54, slot=r*0.36;
  var F=function(n){ return n.toFixed(1) };
  var P0=function(x,y){ return F(x)+','+F(y) };
  // from the near side of the wrist, out around the thumb
  var d='C'+P0(-pw*1.02, -r*0.06)+' '+P0(-pw*1.00, -r*0.26)+' '+P0(-pw*0.94, knuck+r*0.46);
- var ta=(0.72+curl*0.30), tl=r*(0.82-curl*0.20), tw=r*0.135;
- var tbx=-pw*0.92, tby=knuck+r*(0.44+curl*0.10);
+ /**
+  * The thumb roots INTO the palm through a wide web — one that meets it
+  * at a point reads as a separate sausage lying nearby. And a fist
+  * tucks it down and across rather than leaving it waving off the side:
+  * the angle swings much further with curl than the fingers do.
+  */
+ var ta=(0.62+curl*1.02), tl=r*(0.80-curl*0.50), tw=r*(0.14+curl*0.04);
+ var tbx=-pw*0.90, tby=knuck+r*(0.42+curl*0.16);
  var tdx=-Math.sin(ta), tdy=-Math.cos(ta), tpx=-tdy, tpy=tdx;
  var ttx=tbx+tdx*tl, tty=tby+tdy*tl;
- d+='Q'+P0(tbx+tdx*tl*0.45-tpx*tw*1.35, tby+tdy*tl*0.45-tpy*tw*1.35)+' '
+ d+='Q'+P0(tbx+tdx*tl*0.40-tpx*tw*1.5, tby+tdy*tl*0.40-tpy*tw*1.5)+' '
     +P0(ttx-tpx*tw, tty-tpy*tw);
  d+='Q'+P0(ttx+tdx*tw*1.5, tty+tdy*tw*1.5)+' '+P0(ttx+tpx*tw, tty+tpy*tw);
- d+='Q'+P0(tbx+tdx*tl*0.42+tpx*tw*1.25, tby+tdy*tl*0.42+tpy*tw*1.25)+' '
-    +P0(tbx+tpx*tw*0.8, tby+tpy*tw*0.8);
- d+='Q'+P0(-pw*0.88, knuck+r*0.14)+' '+P0(-pw*0.64, knuck+r*0.02);
+ d+='Q'+P0(tbx+tdx*tl*0.30+tpx*tw*1.6, tby+tdy*tl*0.30+tpy*tw*1.6)+' '
+    +P0(tbx+tpx*tw*1.15, tby+tpy*tw*1.15);
+ d+='Q'+P0(-pw*0.84, knuck+r*0.10)+' '+P0(-pw*0.62, knuck-r*0.02);
  // over each fingertip, with a valley between
  for(var i=0;i<4;i++){
-  var xb=x0+i*slot, a=fan[i]*(1-curl*0.55), L=len[i];
+  var xb=x0+i*slot, a=fan[i]*(1-curl*0.30), L=len[i];
   var dx=Math.sin(a), dy=-Math.cos(a), px=-dy, py=dx;
   var bl=[xb-px*hw, knuck-py*hw], br=[xb+px*hw, knuck+py*hw];
   var tipL=[xb+dx*(L-hw)-px*hw, knuck+dy*(L-hw)-py*hw];
