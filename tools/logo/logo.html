@@ -3403,6 +3403,10 @@ function armGeom(k){
   }
  }
  if(li===undefined) li=armTargetLetter();
+ // Two arms never work the same letter: the second takes the letter
+ // half the mark away — for XOXO that maps O to the other O and X to
+ // the other X, so the pair always splits the work.
+ if((k||0)>0 && act0!=='swap' && LCEN.length>1) li=(li+2)%LCEN.length;
  var base=LCEN[li]; if(!base) return null;
  /**
   * Where the letter ACTUALLY is, not where it would be in a row.
@@ -3459,7 +3463,15 @@ function armGeom(k){
   * non-carried letter nearest that side's end.
   */
  var V=(k||0)===0 ? -1 : 1;
- var loopS=(c[0]<mid)?1:-1;
+ /**
+  * With two arms the loops go around OPPOSITE sides, always — the top
+  * arm's body sweeps the right, the under arm's the left. Deriving the
+  * side from the target put both loops around the same side whenever
+  * the targets sat in the same half, and the two bodies tangled into a
+  * nest. A single arm still sweeps the side opposite its target, so
+  * the reach stays long.
+  */
+ var loopS=(armSides().length>1) ? ((k||0)===0?1:-1) : ((c[0]<mid)?1:-1);
  var aLi=li, aBest=null;
  LCEN.forEach(function(cc,ii){
   if(ii===li) return;
@@ -3545,10 +3557,10 @@ function armScript(A){
  // rest: a stub out of the tuck, never exactly on it
  var rx=A.ax+(gx-A.ax)*0.10, ry=A.ay+(gy-A.ay)*0.10;
  var dirX=(gx<A.ax)?-1:1;
- // Angles: 180 points the fingers down (top arm), 0 points them up
- // (under arm). Leans mirror with the arm, so both trail their
- // fingertips through a snap the same way their side sees it.
- var base=(V<0)?180:0, LN=(V<0)?1:-1;
+ // Knot angles are LEANS over the arm's own flow — 0 means the hand
+ // runs straight off the wrist along the tube. Mirrored per side so
+ // both arms trail their fingertips the same way their side sees it.
+ var base=0, LN=(V<0)?1:-1;
  var K=[];
  var add=function(u,x,y,a){ K.push({u:u,x:x,y:y,a:(a===undefined?base:a)}) };
  add(0.00, rx, ry, base-LN*dirX*12);
@@ -3671,14 +3683,31 @@ function armPose(k, u){
   if(u>0.30 && u<0.68 && pen>0) carry=[0, -A.V*pen*0.85];
  }
 
- // The facing comes off the same knots as the position, through the
- // same basis — one description of the gesture, nothing derived live.
+ /**
+  * The hand follows the FLOW of the arm.
+  *
+  * Its axis lines up with the direction the tube arrives at the wrist —
+  * the last control to the wrist itself — so it picks letters up at
+  * whatever angle the arm happens to sweep in at, instead of being held
+  * vertical while the arm bends to meet it. That held vertical was most
+  * of what made the wrist look broken. The scripted knot angles are
+  * LEANS now, laid over the flow: the rear-back, the trailing
+  * fingertips, the wave's wag.
+  *
+  * The flow angle wraps like any atan2; the CSS emitter already unwraps
+  * the final angle sequence sample by sample, which is the only place a
+  * wrap could show.
+  */
  var aT=function(j){
   var pa=K[Math.max(0,j-1)].a, pb=K[Math.min(n-1,j+1)].a;
   var d2=Math.max(1e-6, K[Math.min(n-1,j+1)].u-K[Math.max(0,j-1)].u);
   return (pb-pa)/d2*hh;
  };
- var ang=h00*K[i].a+h10*aT(i)+h01*K[i+1].a+h11*aT(i+1);
+ var lean=h00*K[i].a+h10*aT(i)+h01*K[i+1].a+h11*aT(i+1);
+ var CC=armControls(A, x, y);
+ var fdx=x-CC[CC.length-2][0], fdy=y-CC[CC.length-2][1];
+ var flowAng=Math.atan2(fdy, fdx)*180/Math.PI+90;
+ var ang=flowAng+lean;
  return { A:A, x:x, y:y, ang:ang, curl:curl, carry:carry, act:act };
 }
 
@@ -3694,33 +3723,41 @@ function armPose(k, u){
  * quadratics through sample midpoints: the old ten-segment polyline WAS
  * the angular jank, whatever the centreline did.
  */
+/**
+ * The loop's control points, shared by the tube and by the hand's
+ * facing so the two cannot disagree about which way the arm arrives.
+ *
+ * Six controls: the tuck, a dive straight clear of the mark, then
+ * THREE points around the outside — low, outermost at mid-height, high
+ * — so the body is a round D rather than a triangle with elbows, and
+ * finally the wrist. The dive exists because a diagonal first leg cut
+ * through the strip where the other arm grips its letter.
+ */
+function armControls(A, hx, hy){
+ var bow=Math.max(0.2,Math.abs(P.armBow===undefined?1:P.armBow));
+ var bx=A.box[0], by=A.box[1], bw=A.box[2], bh=A.box[3];
+ var cy=by+bh/2;
+ var outX=(A.loop>0 ? bx+bw : bx) + A.loop*bw*0.24*bow;
+ var farX=outX+A.loop*bw*0.14*bow;
+ var m1y=cy - A.V*bh*1.35*bow;
+ var m2y=(A.V<0) ? Math.min(cy-bh*1.25*bow, hy-bh*0.35)
+                 : Math.max(cy+bh*1.25*bow, hy+bh*0.35);
+ return [[A.ax, A.ay],
+         [A.ax+A.loop*bw*0.05, cy - A.V*bh*1.20],
+         [outX, m1y],
+         [farX, cy - A.V*bh*0.05],
+         [outX, m2y],
+         [hx, hy]];
+}
+
 function armHose(k, u){
  var q=armPose(k, u); if(!q) return '';
  var A=q.A;
  var wob2=(P.armWobble===undefined?0.4:P.armWobble);
  var boil=Math.max(0,P.armBoil===undefined?0:P.armBoil);
  var take=boil>0 ? Math.floor(u*Math.max(1,Math.round(boil*8))) : 0;
- var bow=Math.max(0.2,Math.abs(P.armBow===undefined?1:P.armBow));
- var bx=A.box[0], by=A.box[1], bw=A.box[2], bh=A.box[3];
- var cy=by+bh/2;
- var outX=(A.loop>0 ? bx+bw : bx) + A.loop*bw*0.30*bow;
- // the loop's two outer controls: one on the far side of the mark from
- // the hand, one on the hand's side, both outside the letters — the
- // path tucks, swings low (or high), rounds the end, and comes back in
- var m1y=cy - A.V*bh*1.45*bow;
- var m2y=(A.V<0) ? Math.min(cy-bh*1.35*bow, q.y-bh*0.35)
-                 : Math.max(cy+bh*1.35*bow, q.y+bh*0.35);
- /**
-  * Five controls, not four: straight out of the tuck the tail DIVES
-  * clear of the mark before it sweeps sideways. With the leg running
-  * diagonally from the tuck it passed exactly through the strip where
-  * the other arm grips its letter, and the tube cut through that hand.
-  */
- var C=[[A.ax, A.ay],
-        [A.ax+A.loop*bw*0.05, cy - A.V*bh*1.25],
-        [outX, m1y],
-        [outX+A.loop*bw*0.02, m2y],
-        [q.x, q.y]];
+ var C=armControls(A, q.x, q.y);
+ var bh=A.box[3];
  var N=30, pts=[], nrm=[];
  var t0=q.ang*Math.PI/180, hnx=Math.cos(t0), hny=Math.sin(t0);
  // Catmull-Rom through the controls, tangents from neighbours
