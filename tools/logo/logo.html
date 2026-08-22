@@ -3026,7 +3026,7 @@ function eyeLoopSel(){
  var sel=[];
  B.forEach(function(b,i){ if(b.hp) sel.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i) });
  if(P.arms){ armSides().forEach(function(sd,k){
-   sel.push('.armHose'+k) });
+   sel.push('.armHose'+k,'.armHandF'+k) });
   var ag=armGeom(0); if(ag) sel.push('.gr'+ag.li,'.gr'+ag.other); }
  B.forEach(function(b,i){ if(b.hp){
   sel.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i);
@@ -3252,7 +3252,13 @@ function handOutline(r, curl){
  // up the near side of the palm — no thumb: four fingers is the whole
  // vocabulary, which is one fewer shape to go wrong and how the drawn
  // reference keeps its hands readable at any size
- var d='Q'+P0(-pw*1.04, r*0.04)+' '+P0(-pw*0.90, knuck+r*0.26);
+ /**
+  * The palm leaves the wrist ALONG the hand's axis and then flares. The
+  * old entry control pulled straight out sideways, which met the tube —
+  * arriving along the axis — at a right angle: the clunk at the wrist
+  * was drawn into the hand itself, before the arm even got there.
+  */
+ var d='C'+P0(-ww, -r*0.16)+' '+P0(-pw*1.03, r*0.02)+' '+P0(-pw*0.90, knuck+r*0.26);
  for(var i=0;i<4;i++){
   var xb=x0+i*slot, a=fan[i]*(1-curl*0.25), L=len[i], hw=hws[i];
   var dx=Math.sin(a), dy=-Math.cos(a), px=-dy, py=dx;
@@ -3266,8 +3272,29 @@ function handOutline(r, curl){
   d+='Q'+P0(br[0]+dx*L*0.55, br[1]+dy*L*0.55)+' '+P0(br[0], br[1]);
  }
  d+='Q'+P0(pw*0.90, knuck+r*0.26)+' '+P0(pw*0.96, knuck+r*0.44);
- d+='Q'+P0(pw*1.04, r*0.04)+' '+P0(ww, 0);
+ d+='C'+P0(pw*1.03, r*0.02)+' '+P0(ww, -r*0.16)+' '+P0(ww, 0);
  return d;
+}
+
+/**
+ * The hand again, as a CLOSED standalone shape for the front layer.
+ *
+ * The limb is one line drawn behind the letters, so a gripping hand was
+ * being eaten by the letter it held — fingers behind the ink, palm in
+ * the open, the hand cut in two by z-order. In the drawn reference the
+ * hands OCCLUDE whatever they cross, so the front copy is filled with
+ * the ground and outlined in ink, sitting over the letters: over the
+ * background it looks identical to the line hand, over a letter it
+ * holds its own. It traces the same outline, so it registers exactly
+ * with the limb behind it.
+ */
+function handClosedAt(r, curl, cx, cy, angDeg){
+ var t=angDeg*Math.PI/180, ca=Math.cos(t), sa=Math.sin(t);
+ var xf=function(x,y){ return (cx+x*ca-y*sa).toFixed(1)+','+(cy+x*sa+y*ca).toFixed(1) };
+ var ww=r*HAND_WRIST;
+ return 'M'+xf(-ww,0)
+  +handOutlineAt(r, curl, cx, cy, angDeg)
+  +'Q'+xf(0, r*0.24)+' '+xf(-ww,0)+'Z';
 }
 
 /** The same run, moved onto the wrist and turned to face where it faces. */
@@ -3771,16 +3798,33 @@ function armControls(A, hx, hy){
  var bow=Math.max(0.2,Math.abs(P.armBow===undefined?1:P.armBow));
  var bx=A.box[0], by=A.box[1], bw=A.box[2], bh=A.box[3];
  var cy=by+bh/2;
- var outX=(A.loop>0 ? bx+bw : bx) + A.loop*bw*0.24*bow;
- var farX=outX+A.loop*bw*0.14*bow;
- var m1y=cy - A.V*bh*1.35*bow;
- var m2y=(A.V<0) ? Math.min(cy-bh*1.25*bow, hy-bh*0.35)
-                 : Math.max(cy+bh*1.25*bow, hy+bh*0.35);
+ var outX=(A.loop>0 ? bx+bw : bx) + A.loop*bw*0.22*bow;
+ var farX=outX+A.loop*bw*0.20*bow;
+ var m1y=cy - A.V*bh*1.15*bow;
+ var m2y=(A.V<0) ? Math.min(cy-bh*1.15*bow, hy-bh*0.35)
+                 : Math.max(cy+bh*1.15*bow, hy+bh*0.35);
+ /**
+  * The loop INFLATES as the hand reaches out and DEFLATES back into the
+  * tuck when it comes home. With static outer controls the full circuit
+  * stayed drawn around the mark the whole round, hand out or not — the
+  * arms were simply always there. Scaled by how far the hand actually
+  * is from its tuck, the body sweeps out from behind the logo with the
+  * gesture and folds away behind it afterwards, and between visits
+  * nothing remains but a nub inside the dissolve.
+  *
+  * Floored well above zero: at nothing the tube has no length and its
+  * tangents are undefined — the collapse bug, twice fixed, not invited
+  * back a third time.
+  */
+ var ext=Math.hypot(hx-A.ax, hy-A.ay)/(bh*1.35);
+ ext=Math.max(0.10, Math.min(1, ext));
+ ext=ext*ext*(3-2*ext);
+ var L2=function(px2,py2){ return [A.ax+(px2-A.ax)*ext, A.ay+(py2-A.ay)*ext] };
  return [[A.ax, A.ay],
-         [A.ax+A.loop*bw*0.05, cy - A.V*bh*1.20],
-         [outX, m1y],
-         [farX, cy - A.V*bh*0.05],
-         [outX, m2y],
+         L2(A.ax+A.loop*bw*0.05, cy - A.V*bh*1.20),
+         L2(outX, m1y),
+         L2(farX, cy - A.V*bh*0.05),
+         L2(outX, m2y),
          [hx, hy]];
 }
 
@@ -3813,7 +3857,7 @@ function armHose(k, u){
   var t=i2/N;
   var smp=cr(Math.max(0.0001,Math.min(0.9999,t)));
   var tm=Math.hypot(smp.d[0],smp.d[1])||1, px=-smp.d[1]/tm, py=smp.d[0]/tm;
-  var blend=Math.max(0,(t-0.82)/0.18);
+  var blend=Math.max(0,(t-0.70)/0.30);
   if(blend>0){
    var bx2=px+(hnx-px)*blend, by2=py+(hny-py)*blend, bm=Math.hypot(bx2,by2)||1;
    px=bx2/bm; py=by2/bm;
@@ -3894,8 +3938,17 @@ function armPasses(id, w){
 
 function armsSVG(layer){
  if(MEASURING) return '';
- if(layer!=='back') return '';
  var out='';
+ if(layer==='front'){
+  armSides().forEach(function(sd, k){
+   var A=armGeom(k); if(!A) return;
+   var w=Math.max(0.6,(P.armW===undefined?1:P.armW)*A.box[3]*0.017);
+   out+='<path class="armHandF'+k+'" fill="var(--bg)" stroke="currentColor"'
+    +' stroke-width="'+w.toFixed(2)+'" stroke-linejoin="round" stroke-linecap="round"/>';
+  });
+  return out;
+ }
+ if(layer!=='back') return '';
  armSides().forEach(function(sd, k){
   var A=armGeom(k); if(!A) return;
   var w=Math.max(0.6,(P.armW===undefined?1:P.armW)*A.box[3]*0.017);
@@ -4034,9 +4087,18 @@ function armCSS(total){
    var q=armPose(k, u); if(!q) return;
    hose.push({p:at(u), v:'d:path("'+armHose(k, u)+'")'});
   });
+  var handF=[];
+  us.forEach(function(u){
+   var q=armPose(k, u); if(!q) return;
+   handF.push({p:at(u), v:'d:path("'+handClosedAt(A.hr, q.curl, q.x, q.y, q.ang)+'")'});
+  });
+  var q0=armPose(k, 0);
   var rest='d:path("'+armHose(k, 0)+'")';
+  var restF='d:path("'+handClosedAt(A.hr, q0.curl, q0.x, q0.y, q0.ang)+'")';
   out+='@keyframes armHose'+k+'{'+emit(hose,rest,rest)+'}'
    +'.armHose'+k+'{animation:armHose'+k+' '+ms+'ms linear both'+dashAnim+dash+'}'
+   +'@keyframes armHandF'+k+'{'+emit(handF,restF,restF)+'}'
+   +'.armHandF'+k+'{animation:armHandF'+k+' '+ms+'ms linear both}'
 
  });
 
@@ -4402,7 +4464,7 @@ function viewCSS(){
  LCEN.forEach(function(c,li){ live.push('.slr'+li) });
  if(P.slpRedraw>0) B.forEach(function(b,i){ if(lp(i,'lgw')>0) live.push('.p'+i) });
  if(P.arms){ armSides().forEach(function(sd,k){
-   live.push('.armHose'+k) });
+   live.push('.armHose'+k,'.armHandF'+k) });
   var ag=armGeom(0); if(ag) live.push('.gr'+ag.li,'.gr'+ag.other); }
 
  if(P.slpView==='in')
@@ -4883,6 +4945,7 @@ function svgRaw(){
  // Behind the letters. Inside the same wrapper the rest of the mark is
  // in, so a whole-mark squash takes the arm with it.
  body+=armsSVG('back');
+ var ARM_FRONT=armsSVG('front');
  LETTERS.forEach(function(L,li){
   var stv=lStart(li), o2=P.letters[li]||{}, tv=tiltOf(li);
   var wantS=P.target!=='letter'&&((o2.squash||0)>0||(o2.stretch||0)>0);
@@ -5013,8 +5076,9 @@ function svgRaw(){
   });
   body+=lc;
  });
- // Over the letters and inside the mark's own wrapper, so the arms take
- // the tilt, the spin and the breath with everything else.
+ // The hands again, IN FRONT of the letters — see handClosedAt. Inside
+ // the mark's own wrapper, so they take the tilt and breath with it.
+ body+=ARM_FRONT;
  body+=close;
  s+=(defs?'<defs>'+defs+'</defs>':'')
   +(function(){
