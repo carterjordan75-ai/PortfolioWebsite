@@ -382,9 +382,12 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
    nothing at the wrist. Boil redraws that wander a few times a visit, the way a
    hand-drawn line changes every time it is drawn again &mdash; 0 holds one
    drawing, which is steadier and cheaper.</p>
-  <p class="note">Lift raises it and puts it back. Swap carries it sideways into
-   a neighbour's place. Poke just prods it. Wave never touches a letter at all
-   &mdash; the hand comes in, waves, and goes.</p>
+  <p class="note">Lift raises it and puts it back. Swap brings both hands
+   whatever the count says: one picks up each O and they trade places &mdash;
+   one over the top, one ducking under &mdash; and stay traded, which the mark
+   cannot show because the two Os are identical. The eyes follow the hands, so
+   they land crossed, shake it off, and settle. Poke just prods it. Wave never
+   touches a letter at all.</p>
   </details>
 
   <details><summary>5 &mdash; Eyebrows</summary>
@@ -2051,9 +2054,16 @@ function eyeLookCSS(i, total){
  // moments. The return home is never skipped — it is what gets the
  // pupil back to centre before the round ends.
  var AV=armEyeWindow(total);
+ // A swap does not end when the hands leave: the eyes are still mid-gag
+ // — crossed, shaking it off, settling — and an ordinary glance landing
+ // in the middle of that would tear it up. The guard covers the whole
+ // performance; everything after it is the eye's own business again.
+ if(AV && (P.armAction||'lift')==='swap'){
+  AV.guardEnd=Math.min(100-homeP-1, AV.t1+(260+4*80+420)/Math.max(1,total)*100);
+ }
  var putAt=put;
  var putGlance=function(p,x,y,e){
-  if(AV && p>=AV.t0 && p<=AV.t1) return;
+  if(AV && p>=AV.t0 && p<=(AV.guardEnd||AV.t1)) return;
   put(p,x,y,e);
  };
  var prev=[0,0];
@@ -2095,12 +2105,72 @@ function eyeLookCSS(i, total){
  // reads, so the eye is looking where the hand actually is rather than
  // where a second description of the gesture thinks it is.
  if(AV){
-  var g0=T.g, look=8;
-  for(var w=0;w<=look;w++){
-   var uu=w/look, q=armPose(uu); if(!q) continue;
-   var vx=q.x-g0.cx, vy=q.y-g0.cy, vm=Math.hypot(vx,vy)||1;
-   var reach=room*AV.amt;
-   putAt(AV.t0+(AV.t1-AV.t0)*uu, vx/vm*reach, vy/vm*reach, w?EZ_MOVE:EZ_SETTLE);
+  var g0=T.g, reach=room*AV.amt, isSwap=(P.armAction||'lift')==='swap';
+  /**
+   * Which hand this eye watches.
+   *
+   * For a swap, its own: each O is being carried by one particular
+   * hand, and an eye watching the OTHER hand while its own letter is
+   * mid-air reads as broken rather than curious. Everything else has
+   * one hand worth watching, the first.
+   *
+   * armPose takes (arm, time). It was being called with the time alone,
+   * which made the time the arm index and the time undefined — NaN in,
+   * NaN out, and the browser silently dropped every stop. The eyes have
+   * not been watching the hands at all since the arms went plural.
+   */
+  var myArm=0, AG=armGeom(0);
+  if(isSwap){
+   for(var w2=0;w2<2;w2++){ var Aq=armGeom(w2); if(Aq&&Aq.li===i){ myArm=w2; AG=Aq; break } }
+  }
+  if(AG){
+   var look=10;
+   for(var w=0;w<=look;w++){
+    var uu=w/look, q=armPose(myArm, uu); if(!q) continue;
+    // The eye rides the letter it lives in, so the direction to the
+    // hand is taken from where the eye actually IS at that moment —
+    // half way through the carry it is half way across the mark.
+    var ex=g0.cx, ey=g0.cy;
+    if(AG.li===i){
+     if(isSwap){ ex+=q.swap*(AG.oc[0]-AG.c[0]); ey+=q.swap*(AG.oc[1]-AG.c[1])-q.lift }
+     else ey-=q.lift;
+    }
+    var vx=q.x-ex, vy=q.y-ey, vm=Math.hypot(vx,vy)||1;
+    putAt(AV.t0+(AV.t1-AV.t0)*uu, vx/vm*reach, vy/vm*reach, w?EZ_MOVE:EZ_SETTLE);
+   }
+
+   /**
+    * The payoff. The hands go home to opposite sides, and each eye
+    * follows its own — but the Os have traded places, so the eye now
+    * sitting on the right is following a hand that went LEFT, and vice
+    * versa. Cross-eyes fall straight out of "follow the hand"; nothing
+    * here aims them at each other.
+    *
+    * Then a shake — four quick alternating flicks, dying away — and a
+    * long settle back to centre. Compressed to fit whatever tail the
+    * round has left; a round with no tail skips the shake rather than
+    * cramming it under a frame.
+    */
+   if(isSwap && AG.li===i){
+    var cx2=AG.ax-(g0.cx+(AG.oc[0]-AG.c[0]));
+    var cy2=AG.ay-(g0.cy+(AG.oc[1]-AG.c[1]));
+    var cm=Math.hypot(cx2,cy2)||1;
+    var CX=cx2/cm*reach, CY=cy2/cm*reach;
+    var ms2p=100/Math.max(1,total);
+    var end2=100-homeP-1;
+    var wantP=(260+4*80+420)*ms2p;
+    var k3=Math.min(1, Math.max(0,end2-AV.t1)/Math.max(0.01,wantP));
+    var pos=AV.t1;
+    putAt(pos+=260*ms2p*k3, CX, CY, EZ_DRIFT);
+    if(k3>0.45){
+     var amp=reach*0.5;
+     for(var sh2=0; sh2<4; sh2++){
+      putAt(pos+=80*ms2p*k3, (sh2%2?1:-1)*amp, CY*0.5, EZ_MOVE);
+      amp*=0.72;
+     }
+    }
+    putAt(pos+=420*ms2p*k3, 0, 0, EZ_SETTLE);
+   }
   }
   prev=[0,0];
  }
@@ -3297,6 +3367,9 @@ function armVisit(total){
  * something — one on each edge.
  */
 function armSides(){
+ // A swap is a two-hand job by definition: one hand picks up each O.
+ // The count slider still governs every other action.
+ if((P.armAction||'lift')==='swap') return [-1,1];
  var n=Math.max(1,Math.min(2,Math.round(P.armCount===undefined?1:P.armCount)));
  if(n>1) return [-1,1];
  if(P.armSide==='left') return [-1];
@@ -3307,7 +3380,29 @@ function armSides(){
 function armGeom(k){
  if(!P.arms||!P.sleep) return null;
  if(!armVisit(eyeSpan(totalRun()))) return null;
- var li=armTargetLetter(), base=LCEN[li]; if(!base) return null;
+ var act0=P.armAction||'lift';
+ var sides0=armSides();
+ var sd0=sides0[Math.min(k||0, sides0.length-1)];
+ /**
+  * A swap is specifically the two Os trading places.
+  *
+  * Not a letter and its neighbour: the left hand takes the left O, the
+  * right hand takes the right O, and they cross. The Os are identical
+  * letterforms, so once they have traded the mark looks exactly as it
+  * did — which is what lets them STAY traded and the round still loop
+  * with nothing to carry back.
+  */
+ var li;
+ if(act0==='swap'){
+  var os=[]; LCEN.forEach(function(cc,ii){ if(B[ii]&&B[ii].hp) os.push(ii) });
+  if(os.length>=2){
+   os.sort(function(a2,b2){ return (LCEN[a2][0]+lRest(a2)[0])-(LCEN[b2][0]+lRest(b2)[0]) });
+   if(sd0===null) sd0=(k?1:-1);
+   li=(sd0<0)?os[0]:os[os.length-1];
+  }
+ }
+ if(li===undefined) li=armTargetLetter();
+ var base=LCEN[li]; if(!base) return null;
  /**
   * Where the letter ACTUALLY is, not where it would be in a row.
   *
@@ -3324,8 +3419,7 @@ function armGeom(k){
  var c=[base[0]+lo0[0], base[1]+lo0[1]];
  var b=B[li]||null;
  var box=markBox(), mid=box[0]+box[2]/2;
- var sides=armSides();
- var sd=sides[Math.min(k||0, sides.length-1)];
+ var sd=sd0;
  // Unpinned, an arm comes from the side that has letters on it — there
  // is no point emerging from behind a mark on the side where the mark
  // has run out.
@@ -3354,6 +3448,9 @@ function armGeom(k){
   */
  var aLi=li, aX=null;
  LCEN.forEach(function(cc,ii){
+  // During a swap both Os are mid-air at once, so an anchor behind
+  // either would sit exposed for the whole carry. The Xs stay put.
+  if(act0==='swap' && B[ii] && B[ii].hp) return;
   var o=lRest(ii), x=cc[0]+o[0];
   if(aX===null || (sd<0 ? x<aX : x>aX)){ aX=x; aLi=ii }
  });
@@ -3368,6 +3465,11 @@ function armGeom(k){
  var hr=Math.max(6, (P.armSize===undefined?1:P.armSize)*box[3]*0.30);
  var other=li-sd; if(!LCEN[other]) other=li+sd;
  if(!LCEN[other]) other=li;
+ if(act0==='swap'){
+  // the partner is the OTHER O, wherever it is, not a neighbour
+  var os2=[]; LCEN.forEach(function(cc,ii){ if(B[ii]&&B[ii].hp&&ii!==li) os2.push(ii) });
+  if(os2.length) other=os2[0];
+ }
  var lo1=LCEN[other]?lRest(other):[0,0];
  var oc=LCEN[other] ? [LCEN[other][0]+lo1[0], LCEN[other][1]+lo1[1]] : c;
  // How many times a repeating deed repeats, decided by how long it has
@@ -3473,11 +3575,31 @@ function armPose(k, u){
    var pk=Math.sin(t3*Math.PI*2*Math.max(1,A.cycles-1))*env(t3);
    y+=pk*A.hr*0.5; lift=-pk*A.lift*0.18;
   } else if(act==='swap'){
-   swap=bell(t3); lift=swap*0.35*A.lift;
-   x+=swap*(A.oc[0]-A.c[0]); y-=lift;
+   /**
+    * The carry goes out and STAYS. bell() would bring the letter home
+    * again inside the deed; the point of swapping the two Os is that
+    * they are identical, so they can keep each other's places and the
+    * loop closes with nothing to undo.
+    *
+    * One O arcs over the top, the other dips underneath — two identical
+    * letterforms crossing at the same height would merge into one blob
+    * for the middle of the carry.
+    */
+   swap=ease(t3);
+   lift=bell(t3)*A.lift*(A.k===0?1.15:-0.60);
+   x+=swap*(A.oc[0]-A.c[0]); y+=swap*(A.oc[1]-A.c[1]); y-=lift;
   } else {
    lift=bell(t3)*A.lift; y-=lift;
   }
+ }
+
+ // After the release the LETTER stays where it was put; the hand's own
+ // offset eases away as it withdraws to its side, so it releases at the
+ // letter's new position and drifts home.
+ if(act==='swap' && u>=P0.done){
+  swap=1; lift=0;
+  var fadeS=1-ease(Math.max(0,Math.min(1,(u-P0.done)/(1-P0.done))));
+  x+=fadeS*(A.oc[0]-A.c[0]); y+=fadeS*(A.oc[1]-A.c[1]);
  }
 
  /**
@@ -3773,26 +3895,50 @@ function armCSS(total){
    +'.armWrap'+k+'{animation:armShow '+ms+'ms linear both}';
  });
 
- // --- and what the letters do about it, from the first arm only -------
+ // --- and what the letters do about it ---------------------------------
  var act=P.armAction||'lift';
  if(act==='wave' || !first) return out;
- var A=first, tilt=(P.armTilt===undefined?1:P.armTilt);
- var moved=[[A.li, A.c, A.oc, A.base]];
- if(act==='swap' && A.other!==A.li) moved.push([A.other, A.oc, A.c, A.obase]);
- moved.forEach(function(m){
-  var li=m[0], from=m[1], to=m[2], org=m[3], stops=[];
-  us.forEach(function(u){
-   var q=armPose(0, u); if(!q) return;
-   var dx=(act==='swap') ? q.swap*(to[0]-from[0]) : 0;
-   var dy=(li===A.li) ? -q.lift : -q.lift*0.35;
-   stops.push({p:at(u), v:'transform:translate('+dx.toFixed(1)+'px,'+dy.toFixed(1)
-     +'px) rotate('+(dx*0.05*tilt).toFixed(2)+'deg)'});
+ var tilt=(P.armTilt===undefined?1:P.armTilt);
+ var none='transform:translate(0.0px,0.0px) rotate(0.00deg)';
+
+ if(act==='swap'){
+  /**
+   * Each O rides its OWN hand: the left hand's O and the right hand's O
+   * each get a track sampled from that arm's pose, so a letter and the
+   * hand carrying it cannot disagree by a frame.
+   *
+   * The tail is the SWAPPED offset, not zero. The letters keep each
+   * other's places for the rest of the round; because the two Os are
+   * identical the mark looks unchanged, and when the round loops and
+   * the offsets reset, nothing visibly moves.
+   */
+  armSides().forEach(function(sd2, k2){
+   var A2=armGeom(k2); if(!A2||A2.li===A2.other) return;
+   var stops=[];
+   us.forEach(function(u){
+    var q=armPose(k2, u); if(!q) return;
+    var dx=q.swap*(A2.oc[0]-A2.c[0]), dy=q.swap*(A2.oc[1]-A2.c[1])-q.lift;
+    stops.push({p:at(u), v:'transform:translate('+dx.toFixed(1)+'px,'+dy.toFixed(1)
+      +'px) rotate('+(q.lift*0.04*tilt).toFixed(2)+'deg)'});
+   });
+   var stay='transform:translate('+(A2.oc[0]-A2.c[0]).toFixed(1)+'px,'
+     +(A2.oc[1]-A2.c[1]).toFixed(1)+'px) rotate(0.00deg)';
+   out+='@keyframes gr'+A2.li+'{'+emit(stops,none,stay)+'}'
+    +'.gr'+A2.li+'{transform-box:view-box;transform-origin:'+A2.base[0].toFixed(1)+'px '
+    +A2.base[1].toFixed(1)+'px;animation:gr'+A2.li+' '+ms+'ms linear both}';
   });
-  var none='transform:translate(0.0px,0.0px) rotate(0.00deg)';
-  out+='@keyframes gr'+li+'{'+emit(stops,none,none)+'}'
-   +'.gr'+li+'{transform-box:view-box;transform-origin:'+org[0].toFixed(1)+'px '
-   +org[1].toFixed(1)+'px;animation:gr'+li+' '+ms+'ms linear both}';
+  return out;
+ }
+
+ var A=first, stops=[];
+ us.forEach(function(u){
+  var q=armPose(0, u); if(!q) return;
+  stops.push({p:at(u), v:'transform:translate(0.0px,'+(-q.lift).toFixed(1)
+    +'px) rotate('+(q.lift*0.04*tilt).toFixed(2)+'deg)'});
  });
+ out+='@keyframes gr'+A.li+'{'+emit(stops,none,none)+'}'
+  +'.gr'+A.li+'{transform-box:view-box;transform-origin:'+A.base[0].toFixed(1)+'px '
+  +A.base[1].toFixed(1)+'px;animation:gr'+A.li+' '+ms+'ms linear both}';
  return out;
 }
 
