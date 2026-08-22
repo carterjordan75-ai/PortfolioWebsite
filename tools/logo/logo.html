@@ -3235,25 +3235,17 @@ function handOutline(r, curl){
  curl=Math.max(0,Math.min(1,curl===undefined?0:curl));
  var ww=r*HAND_WRIST;
  var knuck=-r*(0.60+curl*0.10);
- var pw=r*(0.86+curl*0.06);
- var hw=r*0.165;
+ var pw=r*(0.80+curl*0.06);
+ var hw=r*0.175;
  var len=[0.58,0.74,0.68,0.50].map(function(v){ return r*(v*(1-curl*0.66)+curl*0.15) });
  var fan=[-0.42,-0.15,0.15,0.44];
- var x0=-r*0.44, slot=r*0.34;
+ var x0=-r*0.51, slot=r*0.34;
  var F=function(n){ return n.toFixed(1) };
  var P0=function(x,y){ return F(x)+','+F(y) };
- // up the near side of the palm, swelling smoothly out of the wrist
- var d='Q'+P0(-pw*1.02, r*0.06)+' '+P0(-pw*0.96, knuck+r*0.34);
- // the thumb: one blunt lobe, folding in as the hand closes
- var ta=(0.80+curl*0.85), tl=r*(0.55-curl*0.28), tw=r*0.17;
- var tbx=-pw*0.90, tby=knuck+r*(0.30+curl*0.12);
- var tdx=-Math.sin(ta), tdy=-Math.cos(ta);
- d+='Q'+P0(tbx+tdx*tl*0.9-tw*0.8, tby+tdy*tl*0.9+tw*0.4)+' '
-    +P0(tbx+tdx*tl, tby+tdy*tl);
- d+='Q'+P0(tbx+tdx*tl+tw*1.3, tby+tdy*tl-tw*1.1)+' '
-    +P0(tbx+tw*0.9, tby-tw*0.7);
- d+='Q'+P0(-pw*0.72, knuck+r*0.02)+' '+P0(-pw*0.52, knuck-r*0.02);
- // four blunt fingers, wide gaps, deep round valleys
+ // up the near side of the palm — no thumb: four fingers is the whole
+ // vocabulary, which is one fewer shape to go wrong and how the drawn
+ // reference keeps its hands readable at any size
+ var d='Q'+P0(-pw*1.04, r*0.04)+' '+P0(-pw*0.90, knuck+r*0.26);
  for(var i=0;i<4;i++){
   var xb=x0+i*slot, a=fan[i]*(1-curl*0.25), L=len[i];
   var dx=Math.sin(a), dy=-Math.cos(a), px=-dy, py=dx;
@@ -3261,15 +3253,13 @@ function handOutline(r, curl){
   var tipL=[xb+dx*(L-hw)-px*hw, knuck+dy*(L-hw)-py*hw];
   var tipR=[xb+dx*(L-hw)+px*hw, knuck+dy*(L-hw)+py*hw];
   if(i) d+='Q'+P0(xb-slot*0.52, knuck+r*0.15)+' '+P0(bl[0], bl[1]);
-  else  d+='Q'+P0(xb-slot*0.5, knuck+r*0.04)+' '+P0(bl[0], bl[1]);
-  // blunt capsule tips: up the side, a full round cap over, down again
+  else  d+='Q'+P0(-pw*0.62, knuck+r*0.02)+' '+P0(bl[0], bl[1]);
   d+='Q'+P0(bl[0]+dx*L*0.55, bl[1]+dy*L*0.55)+' '+P0(tipL[0], tipL[1]);
   d+='Q'+P0(xb+dx*(L+hw*1.1), knuck+dy*(L+hw*1.1))+' '+P0(tipR[0], tipR[1]);
   d+='Q'+P0(br[0]+dx*L*0.55, br[1]+dy*L*0.55)+' '+P0(br[0], br[1]);
  }
- // down the far side, carrying the width smoothly back to the wrist
- d+='Q'+P0(pw*0.96, knuck+r*0.10)+' '+P0(pw*0.98, knuck+r*0.40);
- d+='Q'+P0(pw*1.02, r*0.06)+' '+P0(ww, 0);
+ d+='Q'+P0(pw*0.90, knuck+r*0.26)+' '+P0(pw*0.96, knuck+r*0.44);
+ d+='Q'+P0(pw*1.04, r*0.04)+' '+P0(ww, 0);
  return d;
 }
 
@@ -3720,13 +3710,24 @@ function armHose(k, u){
  var m1y=cy - A.V*bh*1.45*bow;
  var m2y=(A.V<0) ? Math.min(cy-bh*1.35*bow, q.y-bh*0.35)
                  : Math.max(cy+bh*1.35*bow, q.y+bh*0.35);
- var C=[[A.ax, A.ay],[outX, m1y],[outX+A.loop*bw*0.02, m2y],[q.x, q.y]];
+ /**
+  * Five controls, not four: straight out of the tuck the tail DIVES
+  * clear of the mark before it sweeps sideways. With the leg running
+  * diagonally from the tuck it passed exactly through the strip where
+  * the other arm grips its letter, and the tube cut through that hand.
+  */
+ var C=[[A.ax, A.ay],
+        [A.ax+A.loop*bw*0.05, cy - A.V*bh*1.25],
+        [outX, m1y],
+        [outX+A.loop*bw*0.02, m2y],
+        [q.x, q.y]];
  var N=30, pts=[], nrm=[];
  var t0=q.ang*Math.PI/180, hnx=Math.cos(t0), hny=Math.sin(t0);
  // Catmull-Rom through the controls, tangents from neighbours
+ var NSEG=C.length-1;
  var cr=function(t){
-  var seg=Math.min(2, Math.floor(t*3)), lt=t*3-seg;
-  var p0=C[Math.max(0,seg-1)], p1=C[seg], p2=C[seg+1], p3=C[Math.min(3,seg+2)];
+  var seg=Math.min(NSEG-1, Math.floor(t*NSEG)), lt=t*NSEG-seg;
+  var p0=C[Math.max(0,seg-1)], p1=C[seg], p2=C[seg+1], p3=C[Math.min(C.length-1,seg+2)];
   var out=[0,0], dv=[0,0];
   for(var ax2=0;ax2<2;ax2++){
    var m1=(p2[ax2]-p0[ax2])/2, m2=(p3[ax2]-p1[ax2])/2;
@@ -3746,7 +3747,10 @@ function armHose(k, u){
    var bx2=px+(hnx-px)*blend, by2=py+(hny-py)*blend, bm=Math.hypot(bx2,by2)||1;
    px=bx2/bm; py=by2/bm;
   }
-  var n=(rnd(A.li*13+A.k*57.1+i2*7.3+take*3.1)-0.5)*bh*0.16*wob2*(1-Math.pow(t,2)*0.9);
+  // Smooth value-noise ALONG the arm, not an independent roll per
+  // sample: white noise between neighbouring points reads as kinks in
+  // the edge however densely it is drawn.
+  var n=(wob(t*2.3+take*7.7, A.li*13+A.k*57)-0.5)*bh*0.16*wob2*(1-Math.pow(t,2)*0.9);
   pts.push([smp.p[0]+px*n, smp.p[1]+py*n]); nrm.push([px,py]);
  }
  // near-constant width: the drawn reference's line barely tapers
@@ -3761,13 +3765,20 @@ function armHose(k, u){
  };
  var F=function(pt){ return pt[0].toFixed(1)+','+pt[1].toFixed(1) };
  // a smooth chain: quadratics through the midpoints, never a straight run
+ /**
+  * Midpoint-smoothed, and it ENDS in a curve. The first version closed
+  * with a literal L into the last point — a straight segment landing
+  * exactly on the wrist, which is precisely where a corner shows most.
+  * The last point becomes a Q endpoint with its neighbour as control,
+  * so the tangent runs through the blend and into the hand's own axis.
+  */
  var chain=function(e){
-  var d2='';
-  for(var i4=1;i4<e.length-1;i4++){
+  var d2='', n2=e.length;
+  for(var i4=1;i4<n2-2;i4++){
    var mx=(e[i4][0]+e[i4+1][0])/2, my=(e[i4][1]+e[i4+1][1])/2;
    d2+='Q'+F(e[i4])+' '+mx.toFixed(1)+','+my.toFixed(1);
   }
-  return d2+'L'+F(e[e.length-1]);
+  return d2+'Q'+F(e[n2-2])+' '+F(e[n2-1]);
  };
  var near=edge(-1), far=edge(1);
  var d='M'+F(near[0])+chain(near);
@@ -3826,8 +3837,29 @@ function armsSVG(layer){
    * arm HIDES it, which is not a problem to solve — it is the thing
    * that reads as the arm passing behind the mark.
    */
-  out+='<g class="armWrap'+k+'" fill="none" stroke="currentColor"'
-   +' stroke-linecap="round" stroke-linejoin="round" stroke-width="'+w.toFixed(2)+'">'
+  /**
+   * The arm FADES out of the body rather than stopping at a cut end. A
+   * stroke cannot carry opacity along its length, but a mask can put a
+   * ramp over the region where the arm meets the mark: white
+   * everywhere, black over the tuck. Colour-independent, so
+   * currentColor survives, and it takes the sketch passes with it.
+   */
+  var fr=(A.box[3]*1.15).toFixed(1);
+  out+='<defs><radialGradient id="armFadeG'+k+'" gradientUnits="userSpaceOnUse"'
+   +' cx="'+A.ax.toFixed(1)+'" cy="'+A.ay.toFixed(1)+'" r="'+fr+'">'
+   +'<stop offset="0" stop-color="#000"/>'
+   +'<stop offset="0.55" stop-color="#000" stop-opacity="0.85"/>'
+   +'<stop offset="1" stop-color="#000" stop-opacity="0"/>'
+   +'</radialGradient>'
+   +'<mask id="armFade'+k+'" maskUnits="userSpaceOnUse" x="-2000" y="-2600"'
+   +' width="6000" height="6000">'
+   +'<rect x="-2000" y="-2600" width="6000" height="6000" fill="#fff"/>'
+   +'<circle cx="'+A.ax.toFixed(1)+'" cy="'+A.ay.toFixed(1)+'" r="'+fr+'"'
+   +' fill="url(#armFadeG'+k+')"/>'
+   +'</mask></defs>'
+   +'<g class="armWrap'+k+'" fill="none" stroke="currentColor"'
+   +' stroke-linecap="round" stroke-linejoin="round" stroke-width="'+w.toFixed(2)+'"'
+   +' mask="url(#armFade'+k+')">'
    +'<path id="armHoseP'+k+'" class="armHose'+k+'" pathLength="1000"/>'
    +armPasses('armHoseP'+k, w)
    +'</g>';
