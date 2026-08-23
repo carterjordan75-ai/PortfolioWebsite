@@ -350,6 +350,12 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Under hand takes <b id="varmTarget2"></b></label><input id="armTarget2" type="range" min="-1" max="3" step="1"></div>
   <div class="row"><label>Comes out from behind</label></div>
   <div class="row" id="armfrompicker"></div>
+  <div class="row"><label>Putting back: hands</label></div>
+  <div class="row" id="armbackhandspicker"></div>
+  <div class="row"><label>Putting back: comes out from behind</label></div>
+  <div class="row" id="armbackfrompicker"></div>
+  <div class="row"><label>Putting back: the other way round</label></div>
+  <div class="row" id="armbacksidepicker"></div>
   <div class="row"><label>Starts when <b id="varmDelay"></b></label><input id="armDelay" type="range" min="0" max="1" step=".02"></div>
   <div class="row"><label>Speed <b id="varmSpeed"></b></label><input id="armSpeed" type="range" min=".4" max="2.5" step=".05"></div>
   <div class="row"><label>Wait before leaving <b id="varmWait"></b></label><input id="armWait" type="range" min="0" max="1" step=".05"></div>
@@ -779,7 +785,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeShut:.03,blinkSync:1,eyeSpeed:1,eyeGlint:.3,glintIn:0,
  eyeClose:140,eyeHold:60,eyeOpen:250,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeAxis:0,eyeVia:.5,
- eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armTarget2:-1,armFrom:'end',armStagger:.35,armGrip:.7,armSquash:.7,armSpeed:1,armWait:.3,armDur:.62,armDelay:.5,armSize:1.25,armFill:1,armCount:1,armCase:1,armPasses:1,armVary:1,armTaper:1.15,armDraw:0,armWobble:0,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
+ eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armTarget2:-1,armFrom:'end',armBackHands:'same',armBackFrom:'same',armBackSide:'same',armStagger:.35,armGrip:.7,armSquash:.7,armSpeed:1,armWait:.3,armDur:.62,armDelay:.5,armSize:1.25,armFill:1,armCount:1,armCase:1,armPasses:1,armVary:1,armTaper:1.15,armDraw:0,armWobble:0,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -2164,8 +2170,11 @@ function eyeLookCSS(i, total){
    var windows=[[AV.t0,AV.t1,0]]; if(AV.t0b!==null) windows.push([AV.t0b,AV.t1b,1]);
    windows.forEach(function(WW){
     var dWe=[AG.oc[0]-AG.c[0], AG.oc[1]-AG.c[1]];
+    // on the way back this letter may be in the other hand
+    var armW=myArm;
+    if(isSwap && WW[2]){ for(var w3=0;w3<2;w3++){ var Aw=armGeom(w3, 1); if(Aw&&Aw.li===i){ armW=w3; break } } }
     for(var w=0;w<=look;w++){
-     var uu=w/look, q=armPose(myArm, uu, WW[2]); if(!q) continue;
+     var uu=w/look, q=armPose(armW, uu, WW[2]); if(!q) continue;
      // The eye rides the letter it lives in, so the direction to the
      // hand is taken from where the eye actually IS at that moment —
      // half way through the carry it is half way across the mark; in
@@ -3082,7 +3091,51 @@ function eyeLoopSel(){
  * the default, which is what every loader made before this did.
  */
 function eyeSpan(total){
- return (P.sleep || P.eyeOwnLoop) ? Math.max(600,P.eyeCycle) : total;
+ if(!(P.sleep || P.eyeOwnLoop)) return total;
+ var span=Math.max(600,P.eyeCycle);
+ /**
+  * The round stretches to make room for the arms. Their performance
+  * has a floor — a grab cannot be squeezed under two seconds and still
+  * read — and at the default loop length that floor filled the whole
+  * round: the tempo slider could only make it quicker, never slower,
+  * and "starts when" had nothing to move it within. So the round is
+  * at least the visit with room either side, and for a trade, room
+  * for the second visit that puts the letters back. Rounded to the
+  * hundred so the readout stays a number a person would pick.
+  */
+ if(P.arms && P.sleep) span=Math.max(span, Math.ceil(armRoundMs()/100)*100);
+ return span;
+}
+
+/**
+ * The arm's one visit, in milliseconds: the floor for its deed, or the
+ * asked-for share of the loop length, at the asked-for tempo, with the
+ * wait after placing added on. From the LOOP LENGTH the user set, not
+ * the stretched round, so stretching the round never stretches the
+ * visit that asked for it.
+ */
+function armVisitMs(){
+ var act=armAct();
+ var floorMs=(act==='poke'||act==='wave') ? 1400 : (act==='swap') ? 2400 : 1800;
+ var dur=Math.max(0.15,Math.min(0.98,P.armDur===undefined?0.62:P.armDur));
+ var speed=Math.max(0.4,Math.min(2.5,P.armSpeed===undefined?1:P.armSpeed));
+ var waitK=1+Math.max(0,Math.min(1,P.armWait===undefined?0.3:P.armWait))*0.35;
+ var grid=(act==='swap' && P.layout==='grid')?1.4:1;
+ var cyc=Math.max(600,P.eyeCycle);
+ return { act:act, floorMs:floorMs,
+          want:Math.max(floorMs, dur*cyc)*waitK/speed*grid,
+          least:floorMs*waitK/speed*grid };
+}
+
+/** The round an arm needs: its shortest visit with room either side —
+    and for a trade, room for the visit that puts the letters back. */
+function armRoundMs(){
+ if(!P.arms||!P.sleep) return 0;
+ var v=armVisitMs();
+ // a trade's two visits are each capped at a third of the round, so
+ // only the floor stretches it; a single deed keeps its asked-for
+ // length and the round makes a quarter's room round it
+ return (v.act==='swap') ? v.least*2.94 : v.want*1.35;
 }
 
 
@@ -3273,7 +3326,7 @@ function handOutline(r, curl, fan, mirror){
  curl=Math.max(0,Math.min(1,curl||0));
  fan=Math.max(0,Math.min(1,fan===undefined?0.5:fan));
  var ww=r*HAND_WRIST;
- var pw=r*(0.60+curl*0.04);              // the heel of the palm, its widest
+ var pw=r*0.60;                           // the heel of the palm, its widest
  var dir=function(a){ return [Math.sin(a), -Math.cos(a)] };
  var nL=function(a){ return [-Math.cos(a), -Math.sin(a)] };
  var nR=function(a){ return [Math.cos(a), Math.sin(a)] };
@@ -3328,48 +3381,53 @@ function handOutline(r, curl, fan, mirror){
   * in the middle of that move, because fingers rotating past each
   * other while side by side crossed their own outlines.
   */
- var tO=Math.min(1, curl/0.5), tF=Math.max(0, (curl-0.5)/0.5);
- var t=tF, lp=function(a2,b2){ return a2+(b2-a2)*t };
+ /**
+  * One hand, two states, blended by curl.
+  *
+  * OPEN (curl 0): the glove — a round mitt, three sausage fingers side
+  * by side pointing forward, the thumb out to the side.
+  *
+  * GRIPPING (curl 1): the SAME hand. The fingers are half their
+  * length, pointing the same way with the faintest curl; the thumb is
+  * gone — folded away, its tube shrunk to nothing at its base and the
+  * base slid onto the back of the hand, so the outline simply carries
+  * on round from the last finger down to the wrist and into the arm.
+  * The fist, the claw and the stacked knuckles are all gone: they
+  * morphed through shapes that were never the glove.
+  */
+ var t=curl;
  // the front of the hand, wrist to first knuckle
- Q(lp(-ww,-ww), lp(-r*0.22,-r*0.10), lp(-ww-(pw-ww)*0.55,-r*0.40), lp(-r*0.38,-r*0.18));
- Q(lp(-pw,-r*0.43), lp(-r*0.48,-r*0.23), lp(-pw*0.97,-r*0.42), lp(-r*0.64,-r*0.26));
+ Q(-ww, -r*0.22, -ww-(pw-ww)*0.55, -r*0.38);
+ Q(-pw, -r*0.48, -pw*0.97, -r*0.64);
  var FX=[-0.36,0.0,0.36], KY=[-0.82,-0.95,-0.90], HW=[0.17,0.19,0.18], LEN=[0.48,0.62,0.56];
  var A0=[-0.12,0,0.10], A1=[-0.45,-0.02,0.38];
- var SY=[-0.42,-0.76,-1.10];                 // the stack, pinky lowest
- var dip=1-0.45*Math.sin(Math.PI*tF);        // the nub in the middle of the slide
  var prevR=null;
  for(var i=0;i<3;i++){
-  var aO=A0[i]+fan*(A1[i]-A0[i]), L=LEN[i]*r;
-  // open → claw
-  var Kc=[FX[i]*r*(1-0.06*tO), (KY[i]+0.05*tO)*r], ac=aO;
-  var L1c=L*(0.50-0.10*tO), L2c=L*(0.50-0.135*tO), bc=0.475*tO, hwc=HW[i]*r;
-  // claw → fist
-  // into the stack: spread along the stack EARLY, converge across it
-  // LATE — converging first brought neighbouring knuckles closer than
-  // two fingers' widths and their outlines crossed
-  var K=[Kc[0]+(-0.40*r-Kc[0])*tF*tF, Kc[1]+(SY[i]*r-Kc[1])*Math.sqrt(tF)];
-  var a=ac+(-Math.PI/2-ac)*tF, hw=hwc+(0.165*r-hwc)*tF;
-  // softer knuckles: a gentle scallop down the front, not a row of bumps
-  var L1=(L1c+(0.10*r-L1c)*tF)*dip, L2=(L2c+(0.06*r-L2c)*tF)*dip, bend=bc+(0.35-bc)*tF;
+  var a=A0[i]+fan*(A1[i]-A0[i]), L=LEN[i]*r*(1-0.5*t);      // gripping: half the length
+  var K=[FX[i]*r, KY[i]*r], hw=HW[i]*r;
   var kl=nL(a), KL=[K[0]+kl[0]*hw, K[1]+kl[1]*hw];
-  if(i===0) Q(lp(-pw*0.92,-r*0.44), lp(K[1]+r*0.06, K[1]+hw*1.1), KL[0], KL[1]);
+  if(i===0) Q(-pw*0.92, K[1]+r*0.06, KL[0], KL[1]);
   else {
    // the valley dips INTO the hand, opposite the fingers' direction
    var dd=dir(a), mx=(prevR[0]+KL[0])/2-dd[0]*hw*0.5, my=(prevR[1]+KL[1])/2-dd[1]*hw*0.5;
    Q(mx, my, KL[0], KL[1]);
   }
-  prevR=tube(K, a, L1, L2, bend, hw);
+  prevR=tube(K, a, L*0.5, L*0.5, 0.14*t, hw);
  }
- // the thumb: out to the side open, rising a little in the claw, over
- // the top of the fist closed
- var aT=lp(0.95-0.25*tO, 0.90), LT=r*lp(0.50-0.05*tO, 0.42), hwT=r*lp(0.17, 0.16);
- var B=[r*lp(0.62, 0.05), -r*lp(0.55+0.06*tO, 1.28)];
+ // the thumb: out to the side open; gripping, folded away — the tube
+ // shrinks to a point at its base and the base sits on the back of
+ // the hand (a hair of width stays, so the tube's maths never divides
+ // by nothing)
+ var aT=0.95, LT=r*0.50*(1-t), hwT=r*0.17*Math.max(0.03, 1-t);
+ // folded away, the base sits where the web's curve runs straight on
+ // into the back of the hand — no corner where the thumb was
+ var B=[r*(0.62-0.05*t), -r*(0.55-0.09*t)];
  var tl=nL(aT), TBL=[B[0]+tl[0]*hwT, B[1]+tl[1]*hwT];
- Q(lp(prevR[0]+r*0.03, -r*0.30), lp(-r*0.80, -r*1.40), TBL[0], TBL[1]);     // the web
- tube(B, aT, LT*0.55, LT*0.45, lp(0.12*tO, 0.25), hwT);
+ Q(prevR[0]+r*(0.03-0.07*t), -r*(0.80-0.08*t), TBL[0], TBL[1]);          // the web
+ tube(B, aT, LT*0.55, LT*0.45, 0.12, hwT);
  // the back of the hand, round, down to the wrist
- Q(lp(pw*1.06, r*0.64), lp(-r*0.24, -r*1.08), lp(ww+(pw-ww)*0.30, r*0.66), lp(-r*0.09, -r*0.52));
- Q(lp(ww, r*0.60), lp(-r*0.02, -r*0.08), ww, 0);
+ Q(pw*1.06, -r*0.24, ww+(pw-ww)*0.30, -r*0.09);
+ Q(ww, -r*0.02, ww, 0);
  /**
   * Mirroring flips x, which also reverses the run — it would now start
   * at the right wrist edge. Walk the segments backwards so it still
@@ -3528,21 +3586,14 @@ function armVisit(total){
  // draws that smoothly. One comfortable cycle wants 330ms, so the visit
  // wants four times it. Measured clean at 1500ms and broken at 700 for
  // exactly and only those two actions.
- var act=armAct();
  // A grab is a whole performance now — anticipation, snap, hang, land,
  // bounce, withdraw — and squeezing that under two seconds crushes the
  // holds that make it read. The oscillating deeds keep their own floor.
- var floorMs=(act==='poke'||act==='wave') ? 1400 : (act==='swap') ? 2400 : 1800;
- var dur=Math.max(0.15,Math.min(0.98,P.armDur===undefined?0.62:P.armDur));
- // tempo: 2 is twice as quick, 0.5 half; the wait after placing
- // lengthens the visit so the gesture is not squeezed to pay for it
- var speed=Math.max(0.4,Math.min(2.5,P.armSpeed===undefined?1:P.armSpeed));
- var waitK=1+Math.max(0,Math.min(1,P.armWait===undefined?0.3:P.armWait))*0.35;
- var want=Math.max(floorMs, dur*total)*waitK/speed;
- // a compact pair is traded in sequence — one hand's whole performance,
- // then the other's — so the visit wants longer; the floor is the same,
- // so the arms still come out in a round that fits one trade
- if(act==='swap' && P.layout==='grid') want*=1.4;
+ // Tempo: 2 is twice as quick, 0.5 half; the wait after placing
+ // lengthens the visit so the gesture is not squeezed to pay for it. A
+ // compact pair is traded in sequence — one hand's whole performance,
+ // then the other's — so its visit wants longer.
+ var v=armVisitMs(), act=v.act, floorMs=v.floorMs, want=v.want;
  if(total<floorMs*1.05) return null;
  var dl=Math.max(0,Math.min(1,P.armDelay===undefined?0.5:P.armDelay));
  /**
@@ -3553,8 +3604,8 @@ function armVisit(total){
   * start has its seam on show. Each visit gets at most 37% of the
   * round, so the gaps are each a sixth; a round too short for two gets one.
   */
- if(act==='swap' && total>=floorMs*2.75){
-  var f2=Math.max(floorMs/total, Math.min(0.34, want/total));
+ if(act==='swap' && total>=Math.min(want,floorMs)*2.75){
+  var f2=Math.max(Math.min(want,floorMs)/total, Math.min(0.34, want/total));
   var Q=1-2*f2, mid=Q*0.5, head=dl*(Q-mid);
   return { f:f2, t0:head, t0b:head+f2+mid, restore:true };
  }
@@ -3723,8 +3774,17 @@ function armGeom(k, vis){
   var topFirst=(Math.abs(pa[1]-pb[1])>LH*0.3) ? (pa[1]<pb[1]) : (pa[0]>pb[0]);
   if(!topFirst){ var tmp=liA; liA=liB; liB=tmp }
  }
+ // the way back: each hand may take the letter the OTHER carried out
+ var back=!!(vis && act0==='swap');
+ var backHands=back && P.armBackHands==='swapped';
+ var backMirror=back && P.armBackSide==='mirrored';
+ if(backHands){ var tmpH=liA; liA=liB; liB=tmpH }
  var li=(k||0)===0 ? liA : liB;
  var partner=(k||0)===0 ? liB : liA;
+ // a compact pair: one hand carries, the other lifts aside and waits;
+ // mirrored on the way back, they change jobs
+ var role=((k||0)===0) ? 'carry' : 'lift';
+ if(backMirror && gridSwap) role=(role==='carry')?'lift':'carry';
  var base=LCEN[li]; if(!base) return null;
  var c=LP[li], b=B[li]||null;
  var sd=sd0;
@@ -3747,6 +3807,8 @@ function armGeom(k, vis){
   * different half-planes, above and below, and never meet.
   */
  var loopS=!rowLike ? ((c[0]<mid)?-1:1) : twoArms ? ((k||0)===0?1:-1) : ((c[0]<mid)?1:-1);
+ // mirrored on the way back: round the other ends
+ if(backMirror && rowLike) loopS=-loopS;
  /**
   * Where the arm comes out from behind the mark — the letter it is
   * tucked behind. Four variants: the letter at the loop-side END (the
@@ -3756,6 +3818,7 @@ function armGeom(k, vis){
   * arrangements always use the neighbour; their hooks need it.
   */
  var from=P.armFrom||'end';
+ if(back && P.armBackFrom && P.armBackFrom!=='same') from=P.armBackFrom;
  // out of the target's OWN letter only when the letter stays put: a
  // letter about to be lifted leaves its root in an empty slot, with
  // the hand coming down through it
@@ -3789,6 +3852,20 @@ function armGeom(k, vis){
   if(from!=='own' && tS>-0.15 && tS<1.15) d+=1e6;      // under the carry: last resort
   // nor in the target's own column: the root would rise through it
   if(Math.abs(pt[0]-c[0])<LH*0.5 && Math.abs(pt[1]-c[1])>LH*0.3) d+=1e6;
+  /**
+   * The line leaves the root through its face on the arm's side and
+   * must come straight out into the open: a letter standing in that
+   * direction would have the line run behind it, visible through its
+   * counter or between its limbs. And a root WITH an eye shows the
+   * line through the eye's counter more readily than a root without,
+   * so the plain letters come first.
+   */
+  LCEN.forEach(function(c3,i3){
+   if(i3===ii) return;
+   var p3=LP[i3];
+   if(Math.abs(p3[0]-pt[0])<LH*0.8 && (p3[1]-pt[1])*V>LH*0.3) d+=1e6;
+  });
+  if(B[ii]&&B[ii].hp) d+=5e5;
   if(aBest===null || d<aBest){ aBest=d; aLi=ii }
  });
  var aC=LP[aLi], aB=B[aLi]||null;
@@ -3807,9 +3884,9 @@ function armGeom(k, vis){
  var span=eyeSpan(totalRun()), VIS=armVisit(span);
  var actMs=VIS ? VIS.f*span*(ARM_PH.done-ARM_PH.act) : 0;
  var cycles=Math.max(1, Math.min(4, Math.round(actMs/330)));
- // the RESTORE visit: the letter is in the other slot now and goes
- // back — the same performance with source and destination traded
- if(vis && act0==='swap'){ var cSw=c; c=oc; oc=cSw }
+ // the RESTORE visit: the letter this hand takes is in its partner's
+ // slot now and goes home to its own — whichever letter that is
+ if(back){ c=LP[partner]; oc=LP[li] }
  /**
   * The compact pair's root: the other line's letter on the side of
   * this arm's CURRENT slot, left through its outer face. On the
@@ -3846,7 +3923,7 @@ function armGeom(k, vis){
           obase:LCEN[other]||base, side:sd, V:V, loop:loopS, hr:hr, LH:LH,
           cycles:cycles, actMs:actMs, ax:ax, ay:ay, wax:wt[0], way:wt[1], wex:wex[0], wey:wex[1],
           box:box, rowLike:rowLike, F:F, vis:vis?1:0, toLeft:toLeft,
-          gridSwap:gridSwap, sx:sx, rootB:aB, mid:mid, midY:midY,
+          gridSwap:gridSwap, sx:sx, rootB:aB, mid:mid, midY:midY, role:role,
           lift:(P.armLift===undefined?1:P.armLift)*LH*0.55 };
 }
 
@@ -4017,6 +4094,14 @@ function armCentreV(A, hx, hy, axX, axY){
  var sy=(A.V<0)? Math.min(faceY, W[1]-A.hr*0.4) : Math.max(faceY, W[1]+A.hr*0.4);
  var S=[A.ax, sy];
  var exit=[A.ax, A.ay+A.V*(tuckH*0.5+A.LH*0.10)];
+ /**
+  * The line begins just INSIDE the face, not at the letter's centre.
+  * Run from the centre it crossed the counter of an O and the notch
+  * of an X on its way out — visible through both, however the mask
+  * faded it, and through the counter of a letter with an eye in it
+  * plainest of all.
+  */
+ var root=[A.ax, A.ay+A.V*(tuckH*0.5-A.LH*0.12)];
  // the arc goes toward the hand's side of the exit; up first for a top
  // arm, down first for an under arm
  // decided once per arm from where its letter sits, not per frame:
@@ -4062,7 +4147,7 @@ function armCentreV(A, hx, hy, axX, axY){
  var Cy=S2.cy, Cx=S[0]-rx*Math.cos(ths);
  S=[S[0], Cy];
 
- var fixed=[[A.ax,A.ay], exit];
+ var fixed=[root, exit];
  for(var ai=0;ai<=6;ai++){ var th=ths+(the-ths)*ai/6; fixed.push([Cx+rx*Math.cos(th), Cy+ry*Math.sin(th)]) }
  var c4=[Cx+rx*Math.cos(ths+(the-ths)*0.5), Cy+ry*Math.sin(ths+(the-ths)*0.5)];
  var F=armCurve(fixed);
@@ -4211,7 +4296,8 @@ function armScript(A){
   var clearG=(V<0)? bTop-H*0.55 : bBot+H*0.55;
   var apexG=(V<0)? bTop-lh-H*0.45*L2 : bBot+lh+H*0.45*L2;   // the first letter's centre, at its apex
   // the LIFTER lands first and lifts first; the carrier a beat behind
-  tL=(A.k===1)?0.10:0.12; out0=(A.k===1)?0.02:0.04;
+  var lifter=(A.role==='lift');
+  tL=lifter?0.10:0.12; out0=lifter?0.02:0.04;
   add(tL, hovX, hovY, base);                               // land, and hold
   add(tL+0.02, hovX, hovY, base);
   add(tL+0.03, hovX, hovY+V*A.hr*0.5, base);               // breathe away
@@ -4220,7 +4306,7 @@ function armScript(A){
   tC=tL+0.05; add(tC, gx, gy, base);                       // grip
   tA=tL+0.085; add(tA, gx, gy, base);                      // fingers closed
   add(tA+0.01, gx, gy, base-LN*dirG*9);                    // lean into it
-  if(A.k===0){
+  if(!lifter){
    // the CARRIER: across on the arc once the other letter is up and
    // out of its way, down with a bounce, let go, and all the way home
    var uA=0.25;
@@ -4374,7 +4460,7 @@ function armScript(A){
   add(0.315, gx, gy, base);                                // grip
   add(0.375, gx, gy, base);                                // fingers closed
   add(0.41, gx-dirX*A.hr*0.55, gy, base-LN*dirX*12);       // wind the swipe
-  add(0.46, gx+dirX*A.hr*1.15, gy-V*A.hr*0.12, base+LN*dirX*24); // FLICK
+  add(0.46, gx+dirX*A.hr*0.8, gy-V*A.hr*0.12, base+LN*dirX*24); // FLICK — short of the neighbour
   add(0.53, gx+dirX*A.hr*0.85, gy+V*A.hr*1.1, base+LN*dirX*8);   // lift off
   add(0.625, hovX, hovY, base);                            // watch it whirl
   add(0.68, hovX, hovY, base);
@@ -4691,7 +4777,10 @@ function armExtAdd(x, y){
 }
 
 function armHose(k, u, vis){
- var mode=(vis==='edges')?'edges':null; if(mode) vis=0;
+ // 'edges' / 'edges1': the two tube edges as point lists, for the
+ // harness — of the first visit, or of the one that puts the letters back
+ var mode=(vis==='edges'||vis==='edges1')?'edges':null;
+ if(mode){ vis=(vis==='edges1')?1:0 }
  var q=armPose(k, u, vis); if(!q) return '';
  var A=q.A, R=q.route;
  var wob2=(P.armWobble===undefined?0.4:P.armWobble);
@@ -4893,9 +4982,11 @@ function armsSVG(layer){
   var fr=(A.LH*0.80).toFixed(1), frH=(A.LH*0.80).toFixed(1);
   out+='<defs><radialGradient id="armFadeG'+k+'" gradientUnits="userSpaceOnUse"'
    +' cx="'+A.wex.toFixed(1)+'" cy="'+A.wey.toFixed(1)+'" r="'+fr+'">'
-   // a soft ramp from nothing at the face to full a letter-height out
+   // nothing at all until the line is clear of the face — a notch or a
+   // counter at the face showed a line that was only half faded — then
+   // a ramp to full a letter-height out
    +'<stop offset="0" stop-color="#000"/>'
-   +'<stop offset="0.35" stop-color="#000" stop-opacity="0.7"/>'
+   +'<stop offset="0.42" stop-color="#000"/>'
    +'<stop offset="1" stop-color="#000" stop-opacity="0"/>'
    +'</radialGradient>'
    +'<mask id="armFade'+k+'" maskUnits="userSpaceOnUse" x="-2000" y="-2600"'
@@ -5120,13 +5211,22 @@ function armCSS(total){
    * identical the mark looks unchanged, and when the round loops and
    * the offsets reset, nothing visibly moves.
    */
+  /**
+   * One track per LETTER. In each visit the letter is sampled from
+   * whichever hand is carrying it then — on the way back that may be
+   * the other hand.
+   */
   armSides().forEach(function(sd2, k2){
    var A2=armGeom(k2); if(!A2||A2.li===A2.other) return;
-   var stops=[];
+   var letter=A2.li, stops=[];
    var FD=A2.F.deg.toFixed(2);
+   // the trade: where this letter sits, relative to home, once it has been carried out
    var dW=A2.F.vecW([A2.oc[0]-A2.c[0], A2.oc[1]-A2.c[1]]);
-   VIS.forEach(function(VV){ us.forEach(function(u){
-    var q=armPose(k2, u, VV.vis); if(!q) return;
+   VIS.forEach(function(VV){
+    var kc=k2;
+    armSides().forEach(function(sd3,k3){ var A3=armGeom(k3, VV.vis); if(A3 && A3.li===letter) kc=k3 });
+    us.forEach(function(u){
+    var q=armPose(kc, u, VV.vis); if(!q) return;
     // in the restore visit the letter starts in the OTHER slot: its
     // offset from home is the trade plus this visit's own carry
     var ox=(VV.vis?dW[0]:0)+q.carry[0]+q.pin[0], oy=(VV.vis?dW[1]:0)+q.carry[1]+q.pin[1];
@@ -5374,7 +5474,7 @@ function eyeWakeCSS(){
  // the eyes blink over ten seconds — the mark rested more slowly and the
  // face went slack with it. They are unrelated things: how often the
  // whole mark breathes has nothing to do with how often a face blinks.
- var out='', cyc=Math.max(600,P.eyeCycle);
+ var out='', cyc=eyeSpan(totalRun());
  // Both eyes on one clock, and the same phase, so they look and blink
  // together. An earlier version deliberately gave them different periods
  // to stop them marching in step; that was the wrong instinct — eyes
@@ -5428,7 +5528,7 @@ function eyeWakeCSS(){
        // ends of it in the same hundredth of a percent, which is a cut
        // wearing a fade's name. Sixty milliseconds is the shortest thing
        // that still reads as arriving.
-       var cyc=Math.max(600,P.eyeCycle);
+       var cyc=eyeSpan(totalRun());
        var f=Math.min(45, Math.max(60, P.glintIn)/cyc*100);
        var g0='opacity:0;transform:scale(0.05)', g1='opacity:1;transform:scale(1)';
        return '@keyframes eyGw'+i+'{0%{'+g0+'}'
@@ -6667,6 +6767,17 @@ function setOwnLoop(v){ P.eyeOwnLoop=v?1:0; build(); sync(); sch(); }
 var ARM_ACTS=['lift','swap','spin','poke','wave'];
 var ARM_SIDES=['auto','left','right'];
 var ARM_FROMS=['end','next','middle','own'];
+/**
+ * The visit that puts the letters back is its own performance, not
+ * the first one run backwards. Which hand takes which letter, where
+ * the arms come out, and whether they go round the other ends (in a
+ * compact pair: which hand carries and which holds aside) can each
+ * differ from the trade, so the return never reads as a rewind.
+ */
+var ARM_BACK_HANDS=['same','swapped'];
+var ARM_BACK_FROMS=['same','end','next','middle'];
+var ARM_BACK_SIDES=['same','mirrored'];
+function setArmBack(key, v){ P[key]=v; drawArms(); build(); sch(); }
 function setArmFrom(v){ P.armFrom=v; drawArms(); build(); sch(); }
 function setArms(v){ P.arms=v?1:0; build(); sync(); sch(); }
 /**
@@ -6714,6 +6825,13 @@ function drawArms(){
  if(f2) f2.innerHTML=ARM_FROMS.map(function(n){
   return '<button class="'+((P.armFrom||'end')===n?'on':'')+'" onclick="setArmFrom(\''+n+'\')">'+n+'</button>'
  }).join('');
+ [['armbackhandspicker','armBackHands',ARM_BACK_HANDS],['armbackfrompicker','armBackFrom',ARM_BACK_FROMS],
+  ['armbacksidepicker','armBackSide',ARM_BACK_SIDES]].forEach(function(pk){
+  var el=document.getElementById(pk[0]); if(!el) return;
+  el.innerHTML=pk[2].map(function(n){
+   return '<button class="'+((P[pk[1]]||'same')===n?'on':'')+'" onclick="setArmBack(\''+pk[1]+'\',\''+n+'\')">'+n+'</button>'
+  }).join('');
+ });
  ['arOff','arOn'].forEach(function(id,n){
   var e=document.getElementById(id);
   if(e) e.classList.toggle('on', n===0 ? !P.arms : !!P.arms);
@@ -7061,6 +7179,9 @@ function labels(){
      ||k==='eyeClose'||k==='eyeHold'||k==='eyeOpen'||k==='eyeSettle'
      ||k==='eyeHome'||k==='eyeCycle'||k==='slpWake'?'ms':(k==='aangle'||k==='aspin'||k==='orbtilt'||k==='orbtvary'
      ||k==='rotX'||k==='rotO'||k==='slpRotX'||k==='slpRotO')?'deg':k==='wpos'?'%':'')});
+ // the round the arms actually need, when it is longer than the loop asked for
+ var vc=document.getElementById('veyeCycle');
+ if(vc && P.arms && P.sleep){ var rs=eyeSpan(totalRun()); if(rs>Math.max(600,P.eyeCycle)) vc.textContent+=' \u2192 '+rs+'ms with the arms' }
 }
 function drawPicker(){var h='';Object.keys(MARKS).forEach(function(n){
  h+='<button class="'+(P.marks.indexOf(n)>=0?'on':'')+'" onclick="toggleMark(\''+n+'\')">'+n+'</button>'});
@@ -7399,7 +7520,7 @@ slpDur:'How long one breath of the ambient motion takes.',
 slpAmt:'How far the ambient motion travels. 0 holds still.',
 slpEase:'0 drifts evenly; 1 accents each end of the cycle.',
 slpHold:'Pauses at the extremes instead of turning round the moment it arrives.',
-eyeCycle:'How long one round of looking and blinking takes. Separate from the ambient breath.',
+eyeCycle:'How long one round of looking and blinking takes. Separate from the ambient breath. With the arms on, the round stretches if it has to, so the arms\' tempo and their wait always fit — the readout shows the round actually played.',
 slpWake:'Beat after the mark lands before the eyes open and it becomes a face.',
 // --- loader timing ---
 dur:'How long the entrance takes.',
@@ -7457,12 +7578,15 @@ armTarget:'Which letter the top hand takes. -1 is the left O. Letters count 0 to
 armTarget2:'Which letter the under hand takes. -1 is the right O. Never the same as the top hand — it bumps along if they collide.',
 armCount:'One arm, or a pair reaching from both sides at once.',
 armDelay:'Where in the round the arms make their visit. 0 starts at once, 1 leaves it late.',
+armBackHands:'The visit that puts the letters back: which hand takes which letter. Swapped, each hand takes the letter the OTHER one carried out, so it is not the first move in reverse.',
+armBackFrom:'Where the arms come out from behind for the visit that puts the letters back. Same as the trade, or its own choice.',
+armBackSide:'Mirrored, the arms go round the other ends of the mark to put the letters back — and in a compact pair, the hand that carried now holds aside and the other carries.',
 armStagger:'How far the second arm runs behind the first — out later, acts later, back later. 0 is lock-step.',
 armSpeed:'The tempo of the whole visit. 2 is twice as quick, 0.5 half speed.',
 armWait:'How long the hands hover over the letters they have placed before going home.',
 armGrip:'How far outside the letter\'s edge the wrist sits. Higher, only the fingertips wrap the rim; lower, the hand reaches in.',
 armSquash:'How much a letter gives when it is held, pressed or poked.',
-armDur:'How much of the eye round the visit takes. The rest of it the arm is off-frame.',
+armDur:'How much of the loop length the visit takes, up to three quarters — the round stretches rather than squeeze it. A trade\'s two visits get a third of the round each.',
 armSize:'Hand size.',
 armFill:'How solidly the hand covers what is behind it. 0 is an open outline, which vanishes on a solid mark.',
 armCase:'A ground-coloured border under every line, so it stays readable where it crosses the letters. 0 removes it.',
