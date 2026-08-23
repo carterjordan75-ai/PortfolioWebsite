@@ -71,11 +71,11 @@ const Art = memo(function Art({ id, css, svg }: { id: string; css: string; svg: 
  * hold in your head, which the rewrite never was.
  */
 /**
- * The export's frame — its viewBox — is the crop the piece was framed
- * with in the tuner (dragged and zoomed there, saved with it). The
- * iframe takes that shape, so the frame shows whole: at a fixed 4:3 a
- * tall frame, which a sleep mark with arms reaching up and down always
- * is, was cut off top and bottom at the document's edge.
+ * The export's frame — its viewBox — is the box the whole animation
+ * needs: the mark and wherever its arms reach. The iframe takes that
+ * shape, so the frame shows whole: at a fixed 4:3 a tall frame, which a
+ * sleep mark with arms reaching up and down always is, was cut off top
+ * and bottom at the document's edge.
  */
 function frameRatio(html: string): string {
   const m = /viewBox="\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*"/.exec(html)
@@ -123,9 +123,9 @@ const Framed = memo(function Framed({
       aria-hidden
       style={{
         display: 'block', width: '100%', border: 0, background: 'transparent',
-        // The frame is the export's own: whatever crop the piece was
-        // framed with in the tuner, shown whole. (A document clips at its
-        // own edge, so the box must be the frame's shape, not a guess.)
+        // The frame is the export's own, shown whole. (A document clips
+        // at its own edge, so the box must be the frame's shape, not a
+        // guess.)
         aspectRatio: frameRatio(html),
         // A frame taller than the window is shown whole, smaller, rather
         // than running off the top and bottom of it.

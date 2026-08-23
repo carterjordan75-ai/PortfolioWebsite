@@ -716,6 +716,12 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   </div>
   </details>
   <details><summary>Export</summary>
+  <div class="row" id="expseqrow"><label>Sequence</label>
+   <select id="expSeq" title="What the files hold. The whole thing is the arrival and then the rest; the resting loop is one round of the rest alone — the arrival already parked — which loops back onto itself.">
+    <option value="whole">Whole thing</option>
+    <option value="rest">Resting loop only</option>
+   </select>
+  </div>
   <div class="row">
    <button onclick="exportHTML()">Download HTML</button>
    <button onclick="show('css')">CSS</button>
@@ -768,8 +774,8 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
     oninput="setZoom(+this.value)">
    <b id="zmval">100%</b>
    <label style="opacity:.55;margin-left:10px">Frame</label>
-   <b id="frval" title="The crop the export uses: drag the stage to pan it, wheel to zoom it. Saved with the piece.">1.00× (0, 0)</b>
-   <button onclick="resetFrame()" title="Back to the fitted box — the whole work in frame">Reset</button>
+   <b id="frval" title="How closely you are looking: drag the stage to pan, wheel to zoom. Only the stage — every export holds the whole animation.">1.00× (0, 0)</b>
+   <button onclick="resetFrame()" title="Back to the whole work in frame">Reset</button>
   </div>
   <div class="row transport">
    <button id="pauseb" onclick="togglePause()">Pause</button>
@@ -1486,7 +1492,7 @@ function lHalf(li){
  * so no measurement of the static mark can see them.
  */
 var BBCACHE={key:null, bb:null};
-function svg(){
+function svg(framed){
  var str=svgRaw();
  if(typeof document==='undefined') return str;
  // Measuring means inserting the whole mark into the document and asking
@@ -1501,7 +1507,7 @@ function svg(){
   P.glintShape,P.extrude,P.lgw,P.lgsp,P.lgbris,
   P.sleep,P.slpEntrance,P.brows,P.browShape,P.browLen,P.browW,P.browLift,P.browTilt,
   P.marks.join('|'),str.length].join(',');
- if(BBCACHE.key===key&&BBCACHE.bb) return fitViewBox(str, BBCACHE.bb);
+ if(BBCACHE.key===key&&BBCACHE.bb) return fitViewBox(str, BBCACHE.bb, framed);
  var hold=document.createElement('div');
  hold.setAttribute('style','position:fixed;left:-99999px;top:0;width:900px;opacity:0;pointer-events:none');
  MEASURING=true;
@@ -1514,11 +1520,20 @@ function svg(){
  hold.remove();
  if(!bb||!bb.width||!bb.height) return str;
  BBCACHE.key=key; BBCACHE.bb={x:bb.x,y:bb.y,width:bb.width,height:bb.height};
- return fitViewBox(str, BBCACHE.bb);
+ return fitViewBox(str, BBCACHE.bb, framed);
 }
 
-/** Fit the viewBox around a measured box, centred on the letters. */
-function fitViewBox(str, bb){
+/**
+ * Fit the viewBox around a measured box, centred on the letters.
+ *
+ * `framed` applies the stage's frame — the crop the viewer dragged and
+ * wheeled into — and only the stage asks for it. Nothing that writes a
+ * file does: an export holds the whole animation, whatever the layout
+ * and wherever the arms reach, because a crop that was only ever a way
+ * of looking closer had turned up in every export, and the files came
+ * out with the mark cut off at one edge.
+ */
+function fitViewBox(str, bb, framed){
 
  // Centred on the LETTERS, not on the measured content.
  //
@@ -1567,15 +1582,15 @@ function fitViewBox(str, bb){
   }
  }
  /**
-  * Then the FRAME: how the work is cropped, which is the user's to
-  * decide — dragged and wheeled on the stage, saved with the piece,
-  * carried into every export. It is kept as a fraction of the fitted
-  * box (a pan of 0.1 is a tenth of the box, at whatever size the box
-  * is), so the same framing holds when the arms reach further or a
-  * layout changes shape. Zoom 1 is the fitted box, the whole work.
+  * Then the FRAME, on the stage only: how closely the viewer is looking
+  * — dragged and wheeled there, saved with the piece so the view comes
+  * back. Kept as a fraction of the fitted box (a pan of 0.1 is a tenth
+  * of the box, at whatever size the box is), so the same view holds
+  * when the arms reach further or a layout changes shape. Zoom 1 is
+  * the fitted box, the whole work.
   */
- var fz=Math.max(0.25, Math.min(6, +P.frameZ||1));
- var W=hx*2/fz, H=hy*2/fz, ox=(+P.frameX||0)*hx*2, oy=(+P.frameY||0)*hy*2;
+ var fz=framed ? Math.max(0.25, Math.min(6, +P.frameZ||1)) : 1;
+ var W=hx*2/fz, H=hy*2/fz, ox=framed?(+P.frameX||0)*hx*2:0, oy=framed?(+P.frameY||0)*hy*2:0;
  var vb=[cx-W/2+ox, cy-H/2+oy, W, H];
  return str.replace(/viewBox="[^"]*"/,
   'viewBox="'+vb.map(function(n){return n.toFixed(1)}).join(' ')+'"');
@@ -7275,7 +7290,7 @@ function build(){
  // is looking at them.
  showTimes();
  document.getElementById('kf').textContent=css();
- document.getElementById('stage').innerHTML=svg();
+ document.getElementById('stage').innerHTML=svg(true);
  document.getElementById('stage').style.background=P.bg;
  frameReadout();
  applyRate();
@@ -7449,7 +7464,7 @@ function applyFrameLive(){
  // the fitted box again, then the frame on it — the same arithmetic
  // fitViewBox does, on the viewBox the stage is showing
  var sv=document.querySelector('#stage svg.xl'); if(!sv) return;
- var str=fitViewBox('<svg viewBox="0 0 1 1">', BBCACHE.bb||{x:0,y:0,width:1000,height:243});
+ var str=fitViewBox('<svg viewBox="0 0 1 1">', BBCACHE.bb||{x:0,y:0,width:1000,height:243}, true);
  var m=/viewBox="([^"]+)"/.exec(str); if(m) sv.setAttribute('viewBox', m[1]);
  frameReadout();
 }
@@ -7867,6 +7882,8 @@ function syncSleep(){
   var e=document.getElementById(id), row=e&&e.closest('.row');
   if(row) row.style.display=P.sleep?'none':'';
  });
+ // a loader has no resting loop to export alone
+ var esr=document.getElementById('expseqrow'); if(esr) esr.style.display=P.sleep?'':'none';
  var bar=document.getElementById('slpviewbar');
  if(bar) bar.style.display=P.sleep?'':'none';
  var on={in:'vwin',ambient:'vwamb',full:'vwful'};
@@ -8275,6 +8292,22 @@ function withFullSequence(fn){
  P.slpView='full';
  try { return fn() } finally { P.slpView=was }
 }
+/** Which sequence the export chooser asks for: 'whole', or 'rest' for a sleep mark. */
+function exportSeq(){
+ var e=document.getElementById('expSeq');
+ return (P.sleep && e && e.value==='rest') ? 'rest' : 'whole';
+}
+/**
+ * Runs fn with the stage's view set to the sequence the chooser asks
+ * for — the whole thing, or the resting loop alone (the arrival parked
+ * on its last frame, only the rest running, from the top of a round) —
+ * then puts the view back.
+ */
+function withExportSequence(fn){
+ var was=P.slpView;
+ P.slpView=(exportSeq()==='rest')?'ambient':'full';
+ try { return fn() } finally { P.slpView=was }
+}
 
 function standalone(){
  var mono=isMono();
@@ -8429,10 +8462,12 @@ function exportJSON(){
 }
 function exportHTML(){
  // Whatever half of a sleep mark the stage happens to be showing, the
- // file is the whole sequence.
- var b=new Blob([withFullSequence(standalone)],{type:'text/html'});
+ // file is the sequence the chooser asks for — the whole thing unless
+ // the resting loop alone was wanted.
+ var rest=exportSeq()==='rest';
+ var b=new Blob([withExportSequence(standalone)],{type:'text/html'});
  var a=document.createElement('a');a.href=URL.createObjectURL(b);
- a.download='xoxo-loader.html';a.click();
+ a.download=rest?'xoxo-sleep-resting-loop.html':'xoxo-loader.html';a.click();
  setTimeout(function(){URL.revokeObjectURL(a.href)},2000)}
 
 /**
@@ -8506,7 +8541,11 @@ function frameSVG(only){
  clone.style.animation='none';
  clone.style.color=getComputedStyle(src).color;
  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
- var vb=src.viewBox.baseVal;
+ // the whole animation's box — the stage may be zoomed in on a corner
+ // of it, and a video is not a view
+ var full=/viewBox="([^"]+)"/.exec(fitViewBox('<svg viewBox="0 0 1 1">', BBCACHE.bb||{x:0,y:0,width:1000,height:243}, false));
+ if(full) clone.setAttribute('viewBox', full[1]);
+ var vb=clone.viewBox.baseVal;
  return { xml:new XMLSerializer().serializeToString(clone), aspect:vb.width/Math.max(1e-6,vb.height) };
 }
 function loadSVG(xml, w, h){
@@ -8517,12 +8556,21 @@ function loadSVG(xml, w, h){
  });
 }
 async function renderFrames(fps, width, alpha, say, sink){
- var T=scrubSpan(), n=Math.max(2, Math.round(T/1000*fps));
+ /**
+  * The sequence the chooser asks for, not whatever the stage happened
+  * to be showing: the whole thing, or — for a sleep mark — one round of
+  * the rest alone, from its top, so the clip loops back onto itself.
+  * The stage is rebuilt in that view for the render and put back after.
+  */
+ var rest=exportSeq()==='rest', wasView=P.slpView;
+ var wasPaused=paused, wasT=scrubT;
+ P.slpView=rest?'ambient':'full'; syncSleep(); build();
+ var T=rest ? Math.round(eyeSpan(totalRun())) : scrubSpan();
+ var n=Math.max(2, Math.round(T/1000*fps));
  // what is kept of each frame: a PNG by default, or whatever the sink
  // makes of the canvas (the MOV writer takes the pixels straight)
  sink=sink||function(c){ return new Promise(function(r){ c.toBlob(r,'image/png') }) };
- var wasPaused=paused, wasT=scrubT;
- if(!paused){ paused=true; clearInterval(timer); document.getElementById('pauseb').classList.add('on'); document.getElementById('pauseb').textContent='Play' }
+ paused=true; clearInterval(timer); document.getElementById('pauseb').classList.add('on'); document.getElementById('pauseb').textContent='Play';
  var first=null, frames=[], W=width, H=0;
  var bg=getComputedStyle(document.getElementById('stage')).backgroundColor;
  for(var k=0;k<n;k++){
@@ -8545,9 +8593,9 @@ async function renderFrames(fps, width, alpha, say, sink){
   if(k%5===0) say('rendering '+(k+1)+'/'+n);
  }
  // the stage as it was
- scrubT=wasT; paused=wasPaused;
- if(!wasPaused){ document.getElementById('pauseb').classList.remove('on'); document.getElementById('pauseb').textContent='Pause'; build(); sch() } else applyPause();
- return { frames:frames, W:W, H:H, fps:fps, T:T };
+ scrubT=wasT; paused=wasPaused; P.slpView=wasView; syncSleep();
+ if(!wasPaused){ document.getElementById('pauseb').classList.remove('on'); document.getElementById('pauseb').textContent='Pause'; build(); sch() } else { build(); applyPause() }
+ return { frames:frames, W:W, H:H, fps:fps, T:T, rest:rest };
 }
 /** Plays rendered stills into a canvas stream at the true rate, recording it. */
 async function recordFrames(R, mime, alpha, say){
@@ -8703,7 +8751,7 @@ async function exportVideo(kind){
   var fpsM=+document.getElementById('vidFps').value||30, widthM=+document.getElementById('vidSize').value||1080;
   try{
    var RM=await renderFrames(fpsM, widthM, true, vidSay, function(c){ return Promise.resolve(qtrleFrame(c.getContext('2d').getImageData(0,0,c.width,c.height), c.width, c.height)) });
-   var stemM='xoxo-'+(P.sleep?'sleep':'loader')+'-'+RM.W+'x'+RM.H+'-'+fpsM+'fps';
+   var stemM='xoxo-'+(P.sleep?(RM.rest?'sleep-loop':'sleep'):'loader')+'-'+RM.W+'x'+RM.H+'-'+fpsM+'fps';
    vidSay('writing MOV');
    saveBlob(movOf(RM.frames, RM.W, RM.H, fpsM), stemM+'-alpha.mov');
    vidSay('✓ '+RM.frames.length+' frames, '+(RM.T/1000).toFixed(1)+'s — Animation codec, straight alpha');
@@ -8719,7 +8767,7 @@ async function exportVideo(kind){
  var alpha=(kind!=='mp4');
  try{
   var R=await renderFrames(fps, width, alpha, vidSay);
-  var stem='xoxo-'+(P.sleep?'sleep':'loader')+'-'+R.W+'x'+R.H+'-'+fps+'fps';
+  var stem='xoxo-'+(P.sleep?(R.rest?'sleep-loop':'sleep'):'loader')+'-'+R.W+'x'+R.H+'-'+fps+'fps';
   if(kind==='png'){
    vidSay('zipping '+R.frames.length+' frames');
    var entries=[];
