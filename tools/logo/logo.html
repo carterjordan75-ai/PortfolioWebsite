@@ -728,7 +728,8 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
    <select id="vidSize" title="Width of the video; the frame decides the height"><option value="1080">1080 wide</option><option value="1920">1920 wide</option><option value="720">720 wide</option></select>
    <select id="vidFps" title="Frames per second"><option value="30">30 fps</option><option value="60">60 fps</option><option value="25">25 fps</option></select>
    <button onclick="exportVideo('mp4')" title="H.264 MP4, the background colour baked in. Records what the stage is showing, in the frame it shows.">MP4</button>
-   <button onclick="exportVideo('webm')" title="WebM (VP9) with a transparent background. Plays in Chrome, Edge and Firefox; not Safari.">WebM &alpha;</button>
+   <button onclick="exportVideo('mov')" title="QuickTime MOV, Animation codec, 8 bits + alpha — lossless, and what Premiere Pro, After Effects and Resolve import with transparency.">MOV &alpha; (Premiere)</button>
+   <button onclick="exportVideo('webm')" title="WebM (VP9) with a transparent background, for the web. Plays in Chrome, Edge and Firefox; not Safari, and not Premiere.">WebM &alpha;</button>
    <button onclick="exportVideo('png')" title="Every frame as a PNG with transparency, zipped — for After Effects, Premiere, Resolve.">PNG seq &alpha;</button>
    <b id="vidStatus" style="font:10px ui-monospace,monospace;opacity:.7"></b>
   </div>
@@ -8515,8 +8516,11 @@ function loadSVG(xml, w, h){
   img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(xml.replace(/^<svg /,'<svg width="'+w+'" height="'+h+'" '));
  });
 }
-async function renderFrames(fps, width, alpha, say){
+async function renderFrames(fps, width, alpha, say, sink){
  var T=scrubSpan(), n=Math.max(2, Math.round(T/1000*fps));
+ // what is kept of each frame: a PNG by default, or whatever the sink
+ // makes of the canvas (the MOV writer takes the pixels straight)
+ sink=sink||function(c){ return new Promise(function(r){ c.toBlob(r,'image/png') }) };
  var wasPaused=paused, wasT=scrubT;
  if(!paused){ paused=true; clearInterval(timer); document.getElementById('pauseb').classList.add('on'); document.getElementById('pauseb').textContent='Play' }
  var first=null, frames=[], W=width, H=0;
@@ -8537,8 +8541,7 @@ async function renderFrames(fps, width, alpha, say){
    ctx.globalCompositeOperation='destination-out'; ctx.drawImage(imF,0,0,W,H);
    ctx.globalCompositeOperation='source-over'; ctx.drawImage(imL,0,0,W,H);
   }
-  var blob=await new Promise(function(r){ c.toBlob(r,'image/png') });
-  frames.push(blob);
+  frames.push(await sink(c));
   if(k%5===0) say('rendering '+(k+1)+'/'+n);
  }
  // the stage as it was
@@ -8574,6 +8577,102 @@ async function recordFrames(R, mime, alpha, say){
  rec.stop(); await stopped;
  return new Blob(chunks,{type:mime});
 }
+/**
+ * One frame in the QuickTime Animation codec, 32-bit (ARGB, straight
+ * alpha). Apple's own RLE, lossless, and the codec Premiere Pro, After
+ * Effects and Resolve all import — and export — with transparency.
+ *
+ * The bitstream: a 4-byte size, a 2-byte header (0 for a whole frame),
+ * then each line as a skip byte (1: skip nothing), a string of codes —
+ * a positive n means n literal pixels follow, a negative n means the
+ * one pixel that follows repeats −n times — and −1 to end the line; a
+ * 0 byte after the last line ends the frame. Flat artwork is nearly
+ * all repeats, so a frame is a few tens of kilobytes.
+ */
+function qtrleFrame(img, W, H){
+ var d=img.data, out=[], row;
+ var put8=function(v){ out.push(v&255) };
+ out.push(0,0,0,0);           // size, patched below
+ out.push(0,0);               // header: a whole frame
+ for(var y=0;y<H;y++){
+  put8(1);                    // no skip at the start of the line
+  var x=0, base=y*W*4;
+  while(x<W){
+   var i=base+x*4;
+   // how long does this pixel repeat?
+   var run=1;
+   while(x+run<W && run<128){
+    var j=i+run*4;
+    if(d[j]!==d[i]||d[j+1]!==d[i+1]||d[j+2]!==d[i+2]||d[j+3]!==d[i+3]) break;
+    run++;
+   }
+   if(run>=3){
+    put8(-run); put8(d[i+3]); put8(d[i]); put8(d[i+1]); put8(d[i+2]);   // A R G B
+    x+=run; continue;
+   }
+   // a stretch of literals: up to the next repeat of three, or 127
+   var lit=1;
+   while(x+lit<W && lit<127){
+    var k2=i+lit*4, r2=1;
+    while(x+lit+r2<W && r2<3){ var m2=k2+r2*4; if(d[m2]!==d[k2]||d[m2+1]!==d[k2+1]||d[m2+2]!==d[k2+2]||d[m2+3]!==d[k2+3]) break; r2++ }
+    if(r2>=3) break;
+    lit++;
+   }
+   put8(lit);
+   for(var q=0;q<lit;q++){ var p2=i+q*4; put8(d[p2+3]); put8(d[p2]); put8(d[p2+1]); put8(d[p2+2]) }
+   x+=lit;
+  }
+  put8(0xFF);                 // end of line
+ }
+ put8(0);                     // end of frame
+ var u=new Uint8Array(out);
+ var sz=u.length; u[0]=(sz>>>24)&255; u[1]=(sz>>>16)&255; u[2]=(sz>>>8)&255; u[3]=sz&255;
+ return u;
+}
+/**
+ * A QuickTime movie around those frames: one video track, 'rle '
+ * samples at 32-bit depth (which is what says "with alpha"), every
+ * frame a keyframe, all samples in one chunk after the header.
+ */
+function movOf(frames, W, H, fps){
+ var enc=new TextEncoder();
+ var be32=function(v){ return [(v>>>24)&255,(v>>>16)&255,(v>>>8)&255,v&255] };
+ var be16=function(v){ return [(v>>>8)&255,v&255] };
+ var str4=function(t){ return Array.from(enc.encode(t)) };
+ var box=function(type, parts){
+  var body=[].concat.apply([], parts), len=8+body.length;
+  return be32(len).concat(str4(type), body);
+ };
+ var zeros=function(n){ var a=[]; for(var i=0;i<n;i++) a.push(0); return a };
+ var pascal=function(t, len){ var b=Array.from(enc.encode(t)).slice(0,len-1); return [b.length].concat(b, zeros(len-1-b.length)) };
+ var n=frames.length, total=0; frames.forEach(function(f){ total+=f.length });
+ var ftyp=box('ftyp',[str4('qt  '), be32(0x200), str4('qt  ')]);
+ var mdatHead=be32(8+total).concat(str4('mdat'));
+ var dataStart=ftyp.length+mdatHead.length;
+ var matrix=[].concat(be32(0x10000),be32(0),be32(0), be32(0),be32(0x10000),be32(0), be32(0),be32(0),be32(0x40000000));
+ var mvhd=box('mvhd',[be32(0), be32(0), be32(0), be32(fps), be32(n), be32(0x10000), be16(0x100), zeros(10), matrix, zeros(24), be32(2)]);
+ var tkhd=box('tkhd',[be32(0x7), be32(0), be32(0), be32(1), be32(0), be32(n), zeros(8), be16(0), be16(0), be16(0), be16(0), matrix, be32(W<<16), be32(H<<16)]);
+ var mdhd=box('mdhd',[be32(0), be32(0), be32(0), be32(fps), be32(n), be16(0x55c4), be16(0)]);
+ var hdlr=box('hdlr',[be32(0), str4('mhlr'), str4('vide'), str4('appl'), be32(0), be32(0), pascal('VideoHandler',13)]);
+ var vmhd=box('vmhd',[be32(1), be16(0), be16(0), be16(0), be16(0)]);
+ var dhlr=box('hdlr',[be32(0), str4('dhlr'), str4('alis'), str4('appl'), be32(0), be32(0), pascal('DataHandler',12)]);
+ var dinf=box('dinf',[box('dref',[be32(0), be32(1), box('alis',[be32(1)])])]);
+ var rle=box('rle ',[zeros(6), be16(1), be16(0), be16(0), str4('appl'), be32(0), be32(0x200), be16(W), be16(H), be32(0x480000), be32(0x480000), be32(0), be16(1), pascal('Animation',32), be16(32), be16(0xFFFF)]);
+ var stsd=box('stsd',[be32(0), be32(1), rle]);
+ var stts=box('stts',[be32(0), be32(1), be32(n), be32(1)]);
+ var stsc=box('stsc',[be32(0), be32(1), be32(1), be32(n), be32(1)]);
+ var sizes=[]; frames.forEach(function(f){ sizes=sizes.concat(be32(f.length)) });
+ var stsz=box('stsz',[be32(0), be32(0), be32(n), sizes]);
+ var stco=box('stco',[be32(0), be32(1), be32(dataStart)]);
+ var stbl=box('stbl',[stsd, stts, stsc, stsz, stco]);
+ var minf=box('minf',[vmhd, dhlr, dinf, stbl]);
+ var mdia=box('mdia',[mdhd, hdlr, minf]);
+ var trak=box('trak',[tkhd, mdia]);
+ var moov=box('moov',[mvhd, trak]);
+ var parts=[new Uint8Array(ftyp), new Uint8Array(mdatHead)].concat(frames, [new Uint8Array(moov)]);
+ return new Blob(parts, {type:'video/quicktime'});
+}
+
 /** A zip with no compression: PNGs are already compressed. */
 function zipOf(entries){
  var crcT=(function(){ var t=[]; for(var n=0;n<256;n++){ var c=n; for(var k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0 } return t })();
@@ -8599,6 +8698,19 @@ async function exportVideo(kind){
  if(VID_BUSY) return;
  if(!document.querySelector('#stage svg.xl')){ vidSay('nothing on the stage'); return }
  var mime = kind==='mp4' ? 'video/mp4;codecs=avc1' : kind==='webm' ? 'video/webm;codecs=vp9' : null;
+ if(kind==='mov'){
+  VID_BUSY=true;
+  var fpsM=+document.getElementById('vidFps').value||30, widthM=+document.getElementById('vidSize').value||1080;
+  try{
+   var RM=await renderFrames(fpsM, widthM, true, vidSay, function(c){ return Promise.resolve(qtrleFrame(c.getContext('2d').getImageData(0,0,c.width,c.height), c.width, c.height)) });
+   var stemM='xoxo-'+(P.sleep?'sleep':'loader')+'-'+RM.W+'x'+RM.H+'-'+fpsM+'fps';
+   vidSay('writing MOV');
+   saveBlob(movOf(RM.frames, RM.W, RM.H, fpsM), stemM+'-alpha.mov');
+   vidSay('✓ '+RM.frames.length+' frames, '+(RM.T/1000).toFixed(1)+'s — Animation codec, straight alpha');
+  } catch(errM){ vidSay('✗ '+(errM&&errM.message||errM)) }
+  finally { VID_BUSY=false; setTimeout(function(){ vidSay('') }, 8000) }
+  return;
+ }
  if(mime && !(window.MediaRecorder && MediaRecorder.isTypeSupported(mime))){
   vidSay(kind==='mp4' ? 'this browser cannot write MP4 — use Chrome' : 'this browser cannot write WebM — use Chrome'); return;
  }
