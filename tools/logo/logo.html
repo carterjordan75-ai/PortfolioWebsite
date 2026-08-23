@@ -256,6 +256,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
 
   <details><summary>1 &mdash; The eye</summary>
   <div class="row"><label>Pupil size <b id="veyeSize"></b></label><input id="eyeSize" type="range" min=".3" max="3.4" step=".01"></div>
+  <div class="row"><label>Unevenness <b id="veyeAsym"></b></label><input id="eyeAsym" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Oval <b id="veyeOval"></b></label><input id="eyeOval" type="range" min=".45" max="2.2" step=".01"></div>
   <div class="row"><label>Dome <b id="veyeDome"></b></label><input id="eyeDome" type="range" min="0" max="1" step=".01"></div>
   <div class="row"><label>Glint shape</label></div>
@@ -292,6 +293,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Up-down vs side to side <b id="veyeAxis"></b></label><input id="eyeAxis" type="range" min="-1" max="1" step=".05"></div>
   <div class="row"><label>Glance seed <b id="veyeSeed"></b></label><input id="eyeSeed" type="range" min="0" max="40" step="1"></div>
   <div class="row"><label>Via centre <b id="veyeVia"></b></label><input id="eyeVia" type="range" min="0" max="1" step=".05"></div>
+  <div class="row"><label>Wander <b id="veyeWander"></b></label><input id="eyeWander" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Glance overshoot <b id="veyeOver"></b></label><input id="eyeOver" type="range" min="1" max="1.6" step=".01"></div>
   <div class="row"><label>Look back <b id="veyeHome"></b></label><input id="eyeHome" type="range" min="80" max="6000" step="20"></div>
   <div class="row"><label>Stretch in motion <b id="veyeStretch"></b></label><input id="eyeStretch" type="range" min="0" max="1.5" step=".05"></div>
@@ -320,6 +322,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Settle open <b id="veyeSettle"></b></label><input id="eyeSettle" type="range" min="0" max="6000" step="20"></div>
   <div class="row"><label>Anticipation <b id="veyeAnt"></b></label><input id="eyeAnt" type="range" min="0" max=".3" step=".01"></div>
   <div class="row"><label>Open past rest <b id="veyeBounce"></b></label><input id="eyeBounce" type="range" min="0" max=".3" step=".01"></div>
+  <div class="row"><label>Reopen pop <b id="veyePop"></b></label><input id="eyePop" type="range" min="0" max="1" step=".05"></div>
   <div class="row"><label>Lower lid share <b id="veyeLower"></b></label><input id="eyeLower" type="range" min="0" max="1" step=".02"></div>
   <div class="row"><label>Lower lid delay <b id="veyeLag"></b></label><input id="eyeLag" type="range" min="0" max=".6" step=".02"></div>
   <div class="row"><label>Landing ease <b id="veyeEase"></b></label><input id="eyeEase" type="range" min="0" max="1" step=".05"></div>
@@ -721,6 +724,14 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
    <button onclick="exportJSON()">Download JSON</button>
    <button onclick="show('json')">Settings</button>
   </div>
+  <div class="row"><label>Video</label>
+   <select id="vidSize" title="Width of the video; the frame decides the height"><option value="1080">1080 wide</option><option value="1920">1920 wide</option><option value="720">720 wide</option></select>
+   <select id="vidFps" title="Frames per second"><option value="30">30 fps</option><option value="60">60 fps</option><option value="25">25 fps</option></select>
+   <button onclick="exportVideo('mp4')" title="H.264 MP4, the background colour baked in. Records what the stage is showing, in the frame it shows.">MP4</button>
+   <button onclick="exportVideo('webm')" title="WebM (VP9) with a transparent background. Plays in Chrome, Edge and Firefox; not Safari.">WebM &alpha;</button>
+   <button onclick="exportVideo('png')" title="Every frame as a PNG with transparency, zipped — for After Effects, Premiere, Resolve.">PNG seq &alpha;</button>
+   <b id="vidStatus" style="font:10px ui-monospace,monospace;opacity:.7"></b>
+  </div>
   <textarea id="ta" readonly onclick="this.select()"></textarea>
   </details>
  </div>
@@ -787,7 +798,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyes:0,eyeDart:4,eyeGlance:1,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
  eyeShut:.03,blinkSync:1,eyeSpeed:1,eyeGlint:.3,glintIn:0,
  eyeClose:140,eyeHold:60,eyeOpen:250,eyeSettle:260,eyeEase:.7,
- eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeAxis:0,eyeVia:.5,
+ eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeAxis:0,eyeVia:.5,eyeWander:.35,eyeAsym:.35,eyePop:.5,
  eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armTarget2:-1,armFrom:'end',armBackHands:'same',armBackFrom:'same',armBackSide:'same',armStagger:.35,armGrip:.7,armSquash:.7,armSpeed:.8,armWait:.3,armDur:.62,armDelay:.5,armSize:1.15,armFill:1,armCount:1,armCase:1,armPasses:1,armVary:1,armTaper:1.15,armDraw:0,armWobble:0,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
@@ -2060,6 +2071,12 @@ function armEyeWindow(total){
           windows:windows };
 }
 
+/** Which eye this is among the eyes: 0 for the first O, 1 for the next. */
+function eyeRank(i){
+ var r=0; for(var k=0;k<i;k++) if(B[k]&&B[k].hp) r++;
+ return r;
+}
+
 function eyeLookCSS(i, total){
  var S=lookSchedule(i,total); if(!S) return '';
  var T=S.T;
@@ -2118,11 +2135,28 @@ function eyeLookCSS(i, total){
   AV.guardEnd=Math.min(100-homeP-1, AV.t1+(260+4*80+420)/Math.max(1,total)*100);
  }
  var putAt=put;
+ /**
+  * The second eye runs a beat behind the first on every glance — the
+  * reference's eyes are never quite a matched pair — by as much as
+  * eighty milliseconds at full unevenness. The blink stays yoked; it
+  * is the look that lags.
+  */
+ var asym=Math.max(0,Math.min(1,P.eyeAsym===undefined?0.35:P.eyeAsym));
+ var lagP=(eyeRank(i)===1 && total) ? asym*80/total*100 : 0;
  var putGlance=function(p,x,y,e){
   if(AV && p>=AV.t0 && p<=(AV.guardEnd||AV.t1)) return;
  if(AV && AV.t0b!==null && p>=AV.t0b && p<=AV.t1b+2) return;
-  put(p,x,y,e);
+  put(p+lagP,x,y,e);
  };
+ /**
+  * The wander. A pupil holding a look is never parked: it creeps, and
+  * at 0 it creeps a hair. Higher, it roams — slowly, as the reference's
+  * dot pupils drift about inside their ovals between looks — over
+  * three drift stops spread through the hold so the motion is
+  * continuous rather than a twitch and a wait.
+  */
+ var wander=Math.max(0,Math.min(1,P.eyeWander===undefined?0.35:P.eyeWander));
+ var wA=0.09+wander*0.36, wB=0.07+wander*0.28;
  var prev=[0,0];
  // The opening stop carries an easing like every other. Left bare it
  // defaults to linear, so a run that starts by moving started at full
@@ -2142,10 +2176,12 @@ function eyeLookCSS(i, total){
    putGlance(t0-moveP-span*0.5, 0, 0, EZ_SETTLE);
    putGlance(t0-moveP-span*0.5+span*0.26*P.eyeVia, 0, 0, EZ_MOVE);
   }
-  // two creep stops through the hold, so it is never parked
+  // creep stops through the hold, so it is never parked
   var from=(P.eyeVia>0&&k>1)?[0,0]:prev;
-  var c1=[from[0]+(rnd(T.seed+k*7)-0.5)*T.reach*0.09, from[1]+(rnd(T.seed+k*17)-0.5)*T.reach*0.09];
-  var c2=[c1[0]+(rnd(T.seed+k*23)-0.5)*T.reach*0.07, c1[1]+(rnd(T.seed+k*31)-0.5)*T.reach*0.07];
+  var c0=[from[0]+(rnd(T.seed+k*53)-0.5)*T.reach*wA*0.7, from[1]+(rnd(T.seed+k*59)-0.5)*T.reach*wA*0.7];
+  var c1=[from[0]+(rnd(T.seed+k*7)-0.5)*T.reach*wA, from[1]+(rnd(T.seed+k*17)-0.5)*T.reach*wA];
+  var c2=[c1[0]+(rnd(T.seed+k*23)-0.5)*T.reach*wB, c1[1]+(rnd(T.seed+k*31)-0.5)*T.reach*wB];
+  if(wander>0) putGlance(t0-moveP-span*0.52, c0[0], c0[1], EZ_DRIFT);
   putGlance(t0-moveP-span*0.28, c1[0], c1[1], EZ_DRIFT);
   // Into the apex and out of it. Both are the throw, and the apex
   // between them is where the pupil turns round, so both come to rest
@@ -2809,7 +2845,11 @@ function pokeBlinks(i, total, out){
  * narrows the pupil narrows an oval one rather than turning it round.
  */
 function pupilScaleCSS(i, total, g){
- var base=[P.eyeSize/Math.sqrt(P.eyeOval), P.eyeSize*Math.sqrt(P.eyeOval)];
+ // Unevenness: the first eye a little larger, the second a little
+ // smaller — a matched pair is the one thing the reference never has.
+ var asym=Math.max(0,Math.min(1,P.eyeAsym===undefined?0.35:P.eyeAsym));
+ var uneven=(eyeRank(i)===0) ? 1+asym*0.10 : 1-asym*0.06;
+ var base=[P.eyeSize/Math.sqrt(P.eyeOval)*uneven, P.eyeSize*Math.sqrt(P.eyeOval)*uneven];
  var org='transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;';
  var sc=function(m){ return 'transform:scale('+(base[0]*m[0]).toFixed(3)+','
    +(base[1]*m[1]).toFixed(3)+')' };
@@ -2841,6 +2881,38 @@ function pupilScaleCSS(i, total, g){
   +(wake?'':'')+';animation-iteration-count:1}';
 }
 
+
+/**
+ * The reopen pop. As the lid comes up after a blink the pupil is for a
+ * moment a little wider and flatter than itself, then settles round —
+ * the reference eye reopens as a circle before it is an oval again.
+ * Timed off the blink schedule the lids use, so the pop and the lift
+ * are one event; on its own group, because the size track above
+ * carries the wake, which happens once, and this has to come round
+ * with every blink.
+ */
+function pupilPopCSS(i, total, g){
+ var pop=Math.max(0,Math.min(1,P.eyePop===undefined?0.5:P.eyePop));
+ var org='transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;';
+ if(!(pop>0 && B[i].hp && P.lids)) return '.eyZ'+i+'{'+org+'}';
+ var times=blinkTimes(i,total); if(!times.length) return '.eyZ'+i+'{'+org+'}';
+ var raw=[], ms2p=total?100/total:0;
+ var at=function(p,m,e){ raw.push({p:Math.max(0,Math.min(100,p)), m:m, e:e||null}) };
+ at(0,[1,1],EZ_MOVE);
+ times.forEach(function(T){
+  var up=T.t+T.shut;                       // the lid starts to lift
+  at(up*ms2p, [1,1], EZ_MOVE);
+  at((up+T.open*0.55)*ms2p, [1+pop*0.16, 1-pop*0.11], EZ_SETTLE);
+  at((up+T.open*1.25)*ms2p, [1,1], EZ_SETTLE);
+ });
+ at(100,[1,1],EZ_MOVE);
+ var kf='';
+ thinStops(raw,total).forEach(function(st){
+  kf+=st.p.toFixed(2)+'%{transform:scale('+st.m[0].toFixed(3)+','+st.m[1].toFixed(3)+')'+(st.e?';animation-timing-function:'+st.e:'')+'}';
+ });
+ return '@keyframes eyZ'+i+'{'+kf+'}'
+  +'.eyZ'+i+'{'+org+'animation:eyZ'+i+' '+Math.round(total)+'ms linear both}';
+}
 
 /**
  * How the lids move: the blink, and the face's resting lid.
@@ -2946,7 +3018,8 @@ function eyeBlinkCSS(i, total){
  // when this body was rewritten took pupil size, oval, the wake grow-in
  // and every expression's scale with it, all silently.
  return '.eyP'+i+'{d:path("'+lidPath(i,1)+'")}'
-  +pupilScaleCSS(i,total,g);
+  +pupilScaleCSS(i,total,g)
+  +pupilPopCSS(i,total,g);
 }
 
 
@@ -3168,7 +3241,7 @@ function sleepSpinCSS(){
  */
 function eyeLoopSel(){
  var sel=[];
- B.forEach(function(b,i){ if(b.hp) sel.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i) });
+ B.forEach(function(b,i){ if(b.hp) sel.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i,'.eyZ'+i) });
  // EVERY arm track, the gate included: the gate ends at nothing, so
  // left to play once it kept the arms dark from the second round on —
  // the line and the fill were looping underneath, unseen
@@ -6340,8 +6413,8 @@ function viewCSS(){
  // parked at its rest pose, and the Resting view showed a mark that
  // never moved while every number said it should.
  var live=[];
- B.forEach(function(b,i){ if(b.hp) live.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i) });
- B.forEach(function(b,i){ if(b.hp) live.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i,'.eyS'+i,'.brw'+i,'.eyQ'+i);
+ B.forEach(function(b,i){ if(b.hp) live.push('.eyM'+i,'.eyTop'+i,'.eyBot'+i,'.eyZ'+i) });
+ B.forEach(function(b,i){ if(b.hp) live.push('.eyL'+i,'.eyD'+i,'.eyP'+i,'.eyG'+i,'.eyS'+i,'.brw'+i,'.eyQ'+i,'.eyZ'+i);
   glintSet().forEach(function(sh,n){ live.push('.eyGs'+i+'_'+n) }) });
  LCEN.forEach(function(c,li){ live.push('.slr'+li) });
  if(P.slpRedraw>0) B.forEach(function(b,i){ if(lp(i,'lgw')>0) live.push('.p'+i) });
@@ -6888,7 +6961,7 @@ function svgRaw(){
      +'<g class="eyL'+i+'"><g class="eyD'+i+'"><g class="eyB'+i+'">'
      // black is cut away: the pupil, at full size and staying that way —
      // inside a group that squeezes it while a hand has hold of the letter
-     +'<g class="eyQ'+i+'"><path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000"/></g>'
+     +'<g class="eyZ'+i+'"><g class="eyQ'+i+'"><path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000"/></g></g>'
      // white is kept: a piece of ink left standing inside the pupil,
      // which reads as a catchlight
      +(P.eyeGlint>0 ? '<g class="eyG'+i+'"><g class="eyGi'+i+'">'+glintLayers(i)+'</g></g>' : '')
@@ -8004,7 +8077,7 @@ function preset(n){P=migrate(JSON.parse(JSON.stringify(PRESETS[n])));
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeDart','eyeGlance','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeShut','blinkSync','eyeSpeed','eyeGlint','glintIn',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armDelay','armStagger','armGrip','armSquash','armSpeed','armWait','armSize','armFill','armCount','armCase','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armBow','armLift','armTilt','armEyes','armTarget','armTarget2',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeWander','eyeAsym','eyePop','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armDelay','armStagger','armGrip','armSquash','armSpeed','armWait','armSize','armFill','armCount','armCase','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armBow','armLift','armTilt','armEyes','armTarget','armTarget2',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
@@ -8017,7 +8090,7 @@ function sync(){syncSleep();drawGlints();drawBlinks();drawBrows();drawArms();dra
  });
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
 function labels(){
- var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeEdge:2,eyeLidR:2,eyeLidRest:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
+ var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeWander:2,eyeAsym:2,eyePop:2,eyeEdge:2,eyeLidR:2,eyeLidRest:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
   lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
@@ -8362,6 +8435,198 @@ function exportHTML(){
  setTimeout(function(){URL.revokeObjectURL(a.href)},2000)}
 
 /**
+ * Video out of the stage.
+ *
+ * The animation is CSS, and a video is frames: every frame is the stage
+ * paused at its moment, with what the animations have done to each
+ * element — transform, opacity, the path's d — written onto the element
+ * itself, so the SVG stands alone, and drawn through an image onto a
+ * canvas. The frame is the stage's frame (drag and wheel it first);
+ * the width is the chooser's, the height follows.
+ *
+ * Three ways out of the canvas:
+ *   MP4      — H.264 through MediaRecorder, background baked in. The
+ *              browser plays the frames back into the recorder in real
+ *              time off the rendered stills, so the timing is exact
+ *              whatever a frame cost to render.
+ *   WebM α   — VP9 the same way, with a transparent background. The
+ *              recorder keeps the canvas's alpha in WebM (checked: the
+ *              recorded background decodes back fully transparent).
+ *              Not MP4: H.264 carries no alpha and the browser's
+ *              encoders refuse it.
+ *   PNG seq  — every still as a PNG with alpha in one zip: what an NLE
+ *              wants when it wants transparency.
+ *
+ * Rendering happens in the page, so the tab has to stay in front:
+ * timers in a hidden tab are throttled and the real-time playback
+ * into the recorder would stretch.
+ */
+var VID_BUSY=false;
+function vidSay(msg){ var b=document.getElementById('vidStatus'); if(b) b.textContent=msg||''; }
+function strippedStyles(){
+ // the mark's own rules without their keyframes — every animated value
+ // is written inline on the frame, so the rules only need to paint.
+ // Only the mark's: the page's stage sizing (a 440px cap on .xl) would
+ // otherwise cap the drawing inside the image too.
+ var kf=document.getElementById('kf'); var css=kf?kf.textContent:'';
+ css=css.replace(/@keyframes\s+[^{]+\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g,'');
+ return '.xl{width:100%;height:100%;max-width:none;max-height:none;overflow:visible}'
+  +'.xl .bl path{fill:currentColor;fill-rule:evenodd}.xl .mk,.xl .bw,.xl .arc path{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}'
+  +css;
+}
+/**
+ * `only` narrows the frame to a part of the mark: 'handFill' is the
+ * hands' solid shapes alone, 'handLine' their outlines alone. On a
+ * transparent frame a hand is not painted in the background colour —
+ * it is a HOLE: the solid shape is cut out of everything beneath, and
+ * the outline goes back on top. Over any background it then reads as
+ * a hand in front of the mark, which is what the knockout was for.
+ */
+function frameSVG(only){
+ var src=document.querySelector('#stage svg.xl'); if(!src) return null;
+ var clone=src.cloneNode(true);
+ var a=src.querySelectorAll('*'), b=clone.querySelectorAll('*');
+ var props=['transform','transformOrigin','transformBox','opacity','fill','stroke','strokeWidth','strokeDasharray','strokeDashoffset','filter'];
+ var want=only==='handFill' ? /^armHandF/ : only==='handLine' ? /^armHandO/ : null;
+ for(var i=0;i<a.length;i++){
+  var cs=getComputedStyle(a[i]), e=b[i];
+  props.forEach(function(pr){ var v=cs[pr]; if(v!==undefined && v!=='' && v!=='none' || pr==='opacity'){ if(pr==='transform' && v==='none') return; e.style[pr]=v } });
+  var d=cs.d; if(d && d!=='none'){ var m=/path\("(.*)"\)/.exec(d); if(m) e.setAttribute('d', m[1]) }
+  e.style.animation='none';
+  if(want){
+   // inline, so nothing baked above can argue: everything hidden but the part wanted
+   var cn=(e.getAttribute('class')||'');
+   if(want.test(cn)){ e.style.visibility='visible'; if(only==='handFill') e.style.fill='#000' }
+   else e.style.visibility='hidden';
+  }
+ }
+ var st=document.createElementNS('http://www.w3.org/2000/svg','style'); st.textContent=strippedStyles();
+ clone.insertBefore(st, clone.firstChild);
+ clone.style.animation='none';
+ clone.style.color=getComputedStyle(src).color;
+ clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+ var vb=src.viewBox.baseVal;
+ return { xml:new XMLSerializer().serializeToString(clone), aspect:vb.width/Math.max(1e-6,vb.height) };
+}
+function loadSVG(xml, w, h){
+ return new Promise(function(res, rej){
+  var img=new Image(); img.width=w; img.height=h;
+  img.onload=function(){ res(img) }; img.onerror=function(){ rej(new Error('frame failed to draw')) };
+  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(xml.replace(/^<svg /,'<svg width="'+w+'" height="'+h+'" '));
+ });
+}
+async function renderFrames(fps, width, alpha, say){
+ var T=scrubSpan(), n=Math.max(2, Math.round(T/1000*fps));
+ var wasPaused=paused, wasT=scrubT;
+ if(!paused){ paused=true; clearInterval(timer); document.getElementById('pauseb').classList.add('on'); document.getElementById('pauseb').textContent='Play' }
+ var first=null, frames=[], W=width, H=0;
+ var bg=getComputedStyle(document.getElementById('stage')).backgroundColor;
+ for(var k=0;k<n;k++){
+  scrubT=Math.round(k/fps*1000); applyPause();
+  var f=frameSVG(); if(!f) throw new Error('no stage');
+  if(!H){ H=Math.round(W/f.aspect/2)*2 }
+  var img=await loadSVG(f.xml, W, H);
+  var c=document.createElement('canvas'); c.width=W; c.height=H;
+  var ctx=c.getContext('2d',{alpha:true});
+  if(!alpha){ ctx.fillStyle=bg; ctx.fillRect(0,0,W,H) }
+  ctx.drawImage(img,0,0,W,H);
+  if(alpha && P.arms){
+   // the hands as holes, then their outlines back on top
+   var hf=frameSVG('handFill'), hl=frameSVG('handLine');
+   var imF=await loadSVG(hf.xml, W, H), imL=await loadSVG(hl.xml, W, H);
+   ctx.globalCompositeOperation='destination-out'; ctx.drawImage(imF,0,0,W,H);
+   ctx.globalCompositeOperation='source-over'; ctx.drawImage(imL,0,0,W,H);
+  }
+  var blob=await new Promise(function(r){ c.toBlob(r,'image/png') });
+  frames.push(blob);
+  if(k%5===0) say('rendering '+(k+1)+'/'+n);
+ }
+ // the stage as it was
+ scrubT=wasT; paused=wasPaused;
+ if(!wasPaused){ document.getElementById('pauseb').classList.remove('on'); document.getElementById('pauseb').textContent='Pause'; build(); sch() } else applyPause();
+ return { frames:frames, W:W, H:H, fps:fps, T:T };
+}
+/** Plays rendered stills into a canvas stream at the true rate, recording it. */
+async function recordFrames(R, mime, alpha, say){
+ var c=document.createElement('canvas'); c.width=R.W; c.height=R.H;
+ var ctx=c.getContext('2d',{alpha:alpha});
+ var stream=c.captureStream(0), track=stream.getVideoTracks()[0];
+ var rec=new MediaRecorder(stream,{ mimeType:mime, videoBitsPerSecond:Math.round(R.W*R.H*R.fps*0.28) });
+ var chunks=[]; rec.ondataavailable=function(e){ if(e.data.size) chunks.push(e.data) };
+ var stopped=new Promise(function(r){ rec.onstop=r });
+ // decode ahead, a few at a time, so the draw itself is instant
+ var bitmaps=[];
+ var decodeAhead=async function(i){ while(bitmaps.length<Math.min(R.frames.length,i+8)){ bitmaps.push(await createImageBitmap(R.frames[bitmaps.length])) } };
+ await decodeAhead(0);
+ rec.start();
+ var t0=performance.now();
+ for(var k=0;k<R.frames.length;k++){
+  await decodeAhead(k);
+  var due=t0+k*1000/R.fps;
+  var wait=due-performance.now(); if(wait>0) await new Promise(function(r){ setTimeout(r, wait) });
+  if(alpha) ctx.clearRect(0,0,R.W,R.H);
+  ctx.drawImage(bitmaps[k],0,0); bitmaps[k].close(); bitmaps[k]=null;
+  track.requestFrame();
+  if(k%10===0) say('recording '+(k+1)+'/'+R.frames.length);
+ }
+ // one more beat so the last frame has its full duration, then stop
+ await new Promise(function(r){ setTimeout(r, 1000/R.fps+60) });
+ rec.stop(); await stopped;
+ return new Blob(chunks,{type:mime});
+}
+/** A zip with no compression: PNGs are already compressed. */
+function zipOf(entries){
+ var crcT=(function(){ var t=[]; for(var n=0;n<256;n++){ var c=n; for(var k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0 } return t })();
+ var crc32=function(u8){ var c=0xFFFFFFFF; for(var i=0;i<u8.length;i++) c=crcT[(c^u8[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0 };
+ var parts=[], central=[], offset=0;
+ var u16=function(v){ return [v&255,(v>>8)&255] }, u32=function(v){ return [v&255,(v>>8)&255,(v>>16)&255,(v>>>24)&255] };
+ entries.forEach(function(en){
+  var name=new TextEncoder().encode(en.name), data=en.data, crc=crc32(data);
+  var head=new Uint8Array([].concat([0x50,0x4b,3,4], u16(20), u16(0x0800), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0)));
+  parts.push(head, name, data);
+  central.push(new Uint8Array([].concat([0x50,0x4b,1,2], u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset))), name);
+  offset+=head.length+name.length+data.length;
+ });
+ var cdStart=offset, cdLen=0; central.forEach(function(c){ cdLen+=c.length });
+ var end=new Uint8Array([].concat([0x50,0x4b,5,6], u16(0), u16(0), u16(entries.length), u16(entries.length), u32(cdLen), u32(cdStart), u16(0)));
+ return new Blob([].concat(parts, central, [end]), {type:'application/zip'});
+}
+function saveBlob(blob, name){
+ var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+ setTimeout(function(){ URL.revokeObjectURL(a.href) }, 4000);
+}
+async function exportVideo(kind){
+ if(VID_BUSY) return;
+ if(!document.querySelector('#stage svg.xl')){ vidSay('nothing on the stage'); return }
+ var mime = kind==='mp4' ? 'video/mp4;codecs=avc1' : kind==='webm' ? 'video/webm;codecs=vp9' : null;
+ if(mime && !(window.MediaRecorder && MediaRecorder.isTypeSupported(mime))){
+  vidSay(kind==='mp4' ? 'this browser cannot write MP4 — use Chrome' : 'this browser cannot write WebM — use Chrome'); return;
+ }
+ VID_BUSY=true;
+ var fps=+document.getElementById('vidFps').value||30, width=+document.getElementById('vidSize').value||1080;
+ var alpha=(kind!=='mp4');
+ try{
+  var R=await renderFrames(fps, width, alpha, vidSay);
+  var stem='xoxo-'+(P.sleep?'sleep':'loader')+'-'+R.W+'x'+R.H+'-'+fps+'fps';
+  if(kind==='png'){
+   vidSay('zipping '+R.frames.length+' frames');
+   var entries=[];
+   for(var i=0;i<R.frames.length;i++) entries.push({ name:stem+'/frame_'+String(i).padStart(4,'0')+'.png', data:new Uint8Array(await R.frames[i].arrayBuffer()) });
+   saveBlob(zipOf(entries), stem+'-png-alpha.zip');
+  } else {
+   var blob=await recordFrames(R, mime, alpha, vidSay);
+   saveBlob(blob, stem+(kind==='mp4'?'.mp4':'-alpha.webm'));
+  }
+  vidSay('✓ '+R.frames.length+' frames, '+(R.T/1000).toFixed(1)+'s');
+ } catch(err){
+  vidSay('✗ '+(err&&err.message||err));
+ } finally {
+  VID_BUSY=false;
+  setTimeout(function(){ vidSay('') }, 6000);
+ }
+}
+
+/**
  * What each control does, shown on hover.
  *
  * Written as a map rather than a title="" on every input: there are 142
@@ -8420,6 +8685,9 @@ eyeEase:'How softly the lid lands back open.',
 eyeStretch:'Draws the pupil out along its direction of travel while it moves. Back to its own shape once parked.',
 eyeSwell:'Size change while moving. Positive swells, negative shrinks. 0 keeps it steady.',
 eyeVia:'Returns to centre and pauses between glances instead of sliding corner to corner. Higher holds longer.',
+eyeWander:'How far the pupil drifts while it is holding a look. Never parked: at 0 it creeps a hair, higher it roams a good way, slowly, the way the reference\'s dot pupils wander between looks.',
+eyeAsym:'One eye a little bigger than the other, and a beat behind it on every glance. The reference\'s eyes are never a matched pair; at 0 they are.',
+eyePop:'On reopening after a blink the pupil pops a little wider and flatter, then settles round — the reference eye reopens as a circle before it is an oval again.',
 eyeGlance:'How fast the pupil travels between glances. Higher is a quicker dart.',
 browLen:'How wide a brow is, against the eye it sits over.',
 browW:'Brow weight.',
