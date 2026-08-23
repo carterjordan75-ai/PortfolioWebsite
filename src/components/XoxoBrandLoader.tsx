@@ -4,6 +4,7 @@ import { memo, useId } from 'react'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 import { BUILT_IN, type LoaderArt } from '@/lib/loaderPool'
 import { XOXO_BRAND_DURATION } from './xoxoBrandLoaderAssets'
+import { solidO } from '@/lib/solidO'
 
 export { XOXO_BRAND_DURATION }
 export type { LoaderArt }
@@ -69,6 +70,21 @@ const Art = memo(function Art({ id, css, svg }: { id: string; css: string; svg: 
  * way to be told. That is the whole contract, and it is small enough to
  * hold in your head, which the rewrite never was.
  */
+/**
+ * The export's frame — its viewBox — is the crop the piece was framed
+ * with in the tuner (dragged and zoomed there, saved with it). The
+ * iframe takes that shape, so the frame shows whole: at a fixed 4:3 a
+ * tall frame, which a sleep mark with arms reaching up and down always
+ * is, was cut off top and bottom at the document's edge.
+ */
+function frameRatio(html: string): string {
+  const m = /viewBox="\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*"/.exec(html)
+  if (!m) return '1 / 0.75'
+  const w = parseFloat(m[3]), h = parseFloat(m[4])
+  if (!(w > 0) || !(h > 0)) return '1 / 0.75'
+  return `${w} / ${h}`
+}
+
 const Framed = memo(function Framed({
   html, ink, knockout, title,
 }: { html: string; ink?: string; knockout: string; title: string }) {
@@ -88,7 +104,9 @@ const Framed = memo(function Framed({
     // gave the loader. So the mark fills the frame and the FRAME carries
     // the proportion instead, below. Callers keep asking for a width and
     // getting a mark that wide, which is what they meant.
-    '.xl{width:100%!important;max-width:none!important;max-height:none!important}' +
+    // Both ways, so the frame is letterboxed whole inside whatever box
+    // the iframe ends up with — never cut at the document's edge.
+    '.xl{width:100%!important;height:100%!important;max-width:none!important;max-height:none!important}' +
     (ink ? 'body,.xl{color:' + ink + '!important}' : '') +
     '.xl{--bg:' + knockout + '}' +
     '</style>'
@@ -105,10 +123,13 @@ const Framed = memo(function Framed({
       aria-hidden
       style={{
         display: 'block', width: '100%', border: 0, background: 'transparent',
-        // The wordmark is 1000x243, but arcs and accents throw well
-        // outside that box and a document clips at its own edge. A frame
-        // three times the mark's height leaves them room, centred.
-        aspectRatio: '1 / 0.75',
+        // The frame is the export's own: whatever crop the piece was
+        // framed with in the tuner, shown whole. (A document clips at its
+        // own edge, so the box must be the frame's shape, not a guess.)
+        aspectRatio: frameRatio(html),
+        // A frame taller than the window is shown whole, smaller, rather
+        // than running off the top and bottom of it.
+        maxHeight: '100vh',
         // It is decoration over a page, and an iframe would otherwise
         // swallow the movement that dismisses the sleep overlay.
         pointerEvents: 'none',
@@ -180,8 +201,8 @@ export default function XoxoBrandLoader({
         file was stored — re-upload one of those and it moves over.
       */}
       {art.html
-        ? <Framed html={art.html} ink={colour} knockout={knockout} title="XOXO" />
-        : <Art id={id} css={art.css} svg={art.svg} />}
+        ? <Framed html={solidO(art.html)} ink={colour} knockout={knockout} title="XOXO" />
+        : <Art id={id} css={art.css} svg={solidO(art.svg)} />}
     </div>
   )
 }
