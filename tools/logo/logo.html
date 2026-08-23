@@ -2897,11 +2897,19 @@ function lidCSS(i, total){
    // that hand over mid-swing. The old open began at two and a half
    // times its own average speed straight out of a held-shut lid, which
    // is a lid being yanked rather than one letting go.
+   /**
+    * How the drop and the lift are paced is the blink shape's to say.
+    * The stock curves are front-loaded (half the travel in the first
+    * third), which reads as a lid dropped and caught; the reference
+    * blink closes evenly — half way at half time — and only the last
+    * of it is quick, so a shape may bring its own curves.
+    */
+   var bs=BLINKS[P.blinkShape]||{};
    push(pct(T.t-T.close-T.close*0.55+lag), base, EZ_DRIFT);
    // anticipation: a small lift before the drop
-   push(pct(T.t-T.close+lag), Math.max(0,base-(P.eyeAnt===undefined?0.07:P.eyeAnt)*reach), EZ_SETTLE);
+   push(pct(T.t-T.close+lag), Math.max(0,base-(P.eyeAnt===undefined?0.07:P.eyeAnt)*reach), bs.closeEase||EZ_SETTLE);
    push(pct(T.t+lag), shut, EZ_DRIFT);
-   push(pct(T.t+T.shut+lag), shut, EZ_MOVE);
+   push(pct(T.t+T.shut+lag), shut, bs.openEase||EZ_MOVE);
    // overshoot: opens a little past its rest, then settles. Past-rest is
    // a turning point, so it is reached at rest like any other.
    push(pct(T.t+T.shut+T.open*0.78+lag), Math.max(0,base-(P.eyeBounce===undefined?0.06:P.eyeBounce)*reach), eyeEase(0.25+0.45*ez));
@@ -7518,9 +7526,23 @@ var BLINKS={
  shutter: {lidR:5.6, shut:.02, ant:0,   bounce:0,   lower:0,   lag:0,   ease:1,   r:[1,.5,1]},
  squint:  {lidR:1.4, shut:.18, ant:.03, bounce:.02, lower:.95, lag:.02, ease:.9,  r:[1.6,1.4,1.6]},
  flutter: {lidR:2.2, shut:.30, ant:.04, bounce:.09, lower:.30, lag:.32, ease:.35, r:[.55,0,.8]},
- heavy:   {lidR:1.6, shut:.03, ant:.14, bounce:.02, lower:.55, lag:.12, ease:1,   r:[1.5,2.2,3.2]}
+ heavy:   {lidR:1.6, shut:.03, ant:.14, bounce:.02, lower:.55, lag:.12, ease:1,   r:[1.5,2.2,3.2]},
+ /**
+  * From the reference (eyeref2.mov, frame by frame): the lid is a near-
+  * straight edge coming down from the top with the bottom of the eye
+  * fixed; it shuts quick (~90ms), HOLDS shut for a long beat (~200ms) as
+  * a thin curved line rather than nothing, and reopens slower than it
+  * shut (~160ms) with a small round pop past rest. No anticipation
+  * before the drop. Gaze changes happen under the blink. About 450ms
+  * of blink all told, roughly every five seconds. (The closed line is
+  * a fifth of the pupil here: the reference's eye is huge and its line
+  * hairline-thin; a mark's pupil is small, and a twentieth of it would
+  * not show.)
+  */
+ starboy: {lidR:5.0, shut:.18, ant:0,   bounce:.10, lower:0,   lag:0,   ease:.8,  r:[1,2.2,1.7],
+           closeEase:'cubic-bezier(0.45,0.05,0.55,0.95)', openEase:'cubic-bezier(0.4,0.05,0.5,0.95)'}
 };
-var BLINK_LIST=['soft','snap','shutter','squint','flutter','heavy'];
+var BLINK_LIST=['soft','snap','shutter','squint','flutter','heavy','starboy'];
 
 function setBlink(n){
  var b=BLINKS[n]; if(!b) return;
