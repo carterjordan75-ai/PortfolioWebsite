@@ -89,7 +89,7 @@ export async function POST(request: Request) {
     // the 9-item committed seed, so every real file looked like an orphan.
     // If a document here ever goes back to plain writes, this list has to
     // move with it — in the same commit.
-    const [pagesRead, miscRead, adminProjectsRead, lookOrderRead] = await Promise.all([
+    const [pagesRead, miscRead, adminProjectsRead, lookOrderRead, pinFeedRead] = await Promise.all([
       readVersionedJsonMeta<Record<string, unknown>>('state/pages.json', seedPages as Record<string, unknown>),
       readVersionedJsonMeta<{ items: unknown[] }>('state/misc.json', seedMisc as { items: unknown[] }),
       readVersionedJsonMeta<Record<string, unknown>>(
@@ -97,11 +97,18 @@ export async function POST(request: Request) {
         seedAdminProjects as Record<string, unknown>,
       ),
       readVersionedJsonMeta<string[] | null>('state/look-order.json', null),
+      // The Pinterest feed: its imported video pins live in
+      // media/look-pins/. That folder is not sweepable, and must not be
+      // made so without these refs — for a week in August it was swept
+      // as if it were, and every imported clip went. (Read here so the
+      // refs are right the day someone adds the prefix anyway.)
+      readVersionedJsonMeta<{ items: unknown[] } | null>('state/pinterest-feed.json', null),
     ])
     const pages = pagesRead.value
     const misc = miscRead.value
     const adminProjects = adminProjectsRead.value
     const lookOrder = lookOrderRead.value
+    const pinFeed = pinFeedRead.value
 
     // A sweep that can't see the state it's checking against cannot tell
     // "orphaned" from "unreadable", and the failure mode is deleting live
@@ -149,6 +156,7 @@ export async function POST(request: Request) {
     collectUrls(adminProjects, refs)
     collectUrls(lookOrder, refs)
     collectUrls(lookItems, refs)
+    collectUrls(pinFeed, refs)
     collectUrls(dailiesProjects, refs)
     collectUrls(dailiesEntries, refs)
 

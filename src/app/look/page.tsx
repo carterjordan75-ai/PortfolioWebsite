@@ -19,6 +19,9 @@ type GalleryItem = {
   source?: string
   /** Known up front for feed items; measured lazily for the rest. */
   aspect?: number
+  /** A still for a video: on the tile until it plays, and instead of it
+   *  if it never does. */
+  poster?: string
 }
 
 type RawItem = Omit<GalleryItem, 'cols' | 'rows'>
@@ -184,13 +187,15 @@ export default function LookPage() {
       }
       const pinCredit = pinsRes.boardTitle ? `Pinterest — ${pinsRes.boardTitle}` : 'Pinterest'
       for (const pin of (pinsRes.items || []) as Array<{
-        src: string; link: string; type?: string; width?: number; height?: number
+        src: string; link: string; type?: string; width?: number; height?: number; poster?: string
       }>) {
         // Video pins are imported as self-hosted MP4s by the sync; the
-        // feed marks them type: 'video' so they render as <video>.
+        // feed marks them type: 'video' so they render as <video>, and
+        // carries the pin's own still as the poster.
         raw.push({
           src: pin.src,
           type: pin.type === 'video' ? 'video' : 'image',
+          poster: pin.type === 'video' ? pin.poster : undefined,
           credit: pinCredit,
           source: pin.link,
           // Pinterest reports these, so the gallery never has to download
@@ -420,10 +425,13 @@ export default function LookPage() {
                   // No autoPlay + preload="none": the IntersectionObserver
                   // starts playback only for tiles actually on screen, so
                   // the browser's concurrent-decoder limit is never hit and
-                  // off-screen clips cost no bandwidth.
+                  // off-screen clips cost no bandwidth. Until a clip plays
+                  // — and for as long as one can't — the tile shows the
+                  // pin's still rather than a black box.
                   <video
                     ref={registerVideo}
                     src={item.src}
+                    poster={item.poster}
                     muted
                     loop
                     playsInline
@@ -524,6 +532,7 @@ export default function LookPage() {
                   // player controls work without closing the lightbox.
                   <video
                     src={activeData.src}
+                    poster={activeData.poster}
                     autoPlay
                     loop
                     playsInline

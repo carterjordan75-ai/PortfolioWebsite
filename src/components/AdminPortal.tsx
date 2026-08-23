@@ -1663,7 +1663,7 @@ function LookUploadPanel() {
   // hiddenIdsRef mirrors the server's hidden list; on every ✕ the FULL
   // updated list is sent (set-hidden) so rapid consecutive hides can't
   // lose each other to blob-propagation lag.
-  const [pinFeed, setPinFeed] = useState<{ id: string; src: string; link: string }[]>([])
+  const [pinFeed, setPinFeed] = useState<{ id: string; src: string; link: string; type?: string; poster?: string }[]>([])
   const hiddenIdsRef = useRef<string[]>([])
 
   useEffect(() => {
@@ -1838,8 +1838,28 @@ function LookUploadPanel() {
                 className="relative rounded-md overflow-hidden group"
                 style={{ aspectRatio: '1', border: '1px solid rgba(255,255,255,0.08)' }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={pin.src} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                {/* A video pin's src is an MP4, which an <img> shows as a
+                    broken picture — it gets its still instead, or the
+                    clip itself when there is no still, and a badge. */}
+                {pin.type === 'video' ? (
+                  <>
+                    {pin.poster ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={pin.poster} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <video src={pin.src} muted playsInline preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
+                    )}
+                    <span
+                      className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded text-[7px] uppercase tracking-[0.14em] font-bold text-white pointer-events-none"
+                      style={{ background: 'rgba(0,0,0,0.55)' }}
+                    >
+                      video
+                    </span>
+                  </>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={pin.src} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                )}
                 <button
                   onClick={() => handleHidePin(pin.id)}
                   title="Hide from Look"

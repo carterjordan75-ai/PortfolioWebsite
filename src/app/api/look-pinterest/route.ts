@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { list as listBlobsRaw } from '@vercel/blob'
 import { readVersionedJson, writeVersionedJson, putMediaBlob } from '@/lib/blobStore'
 
 // Live feed — never serve from the edge cache; freshness is handled by
@@ -265,6 +266,53 @@ function pickMp4(pin: unknown): VideoRendition | null {
 const needsVideoCheck = (i: PinItem) =>
   i.type !== 'video' && (i.videoCheckV ?? 0) < VIDEO_CHECK_VERSION
 
+// Where imported video pins live. Not in the storage sweep's list of
+// folders it may clear (see storage-cleanup) — it was, in effect, for a
+// week in August, and that is what happened to the first 24.
+const VIDEO_DIR = 'media/look-pins/'
+
+/**
+ * An imported video is only as good as its file. The sweep that clears
+ * unreferenced media didn't know this feed existed, and took every
+ * imported MP4 while the feed went on pointing at them: 24 black tiles
+ * on /look, marked as done, never to be imported again. So before each
+ * import pass the folder is listed once, and any video whose file is
+ * gone goes back to being a still — its cover as the picture, and
+ * unchecked, so the next pass imports it afresh. If the listing itself
+ * fails nothing is touched: a bad listing must not look like a missing
+ * folder.
+ */
+async function dropLostVideos(items: PinItem[]): Promise<number> {
+  const videos = items.filter(i => i.type === 'video')
+  if (videos.length === 0) return 0
+  // (the raw list, not the store's listBlobs: that one answers every
+  // failure with an empty folder, which is the one answer that must
+  // not be believed here)
+  const present = new Set<string>()
+  try {
+    let cursor: string | undefined
+    do {
+      const page = await listBlobsRaw({ prefix: VIDEO_DIR, cursor, limit: 1000 })
+      for (const b of page.blobs) present.add(b.pathname)
+      cursor = page.cursor
+    } while (cursor)
+  } catch {
+    return 0
+  }
+  let lost = 0
+  for (const item of videos) {
+    let pathname = ''
+    try { pathname = new URL(item.src).pathname.replace(/^\//, '') } catch { continue }
+    if (!pathname.startsWith(VIDEO_DIR) || present.has(pathname)) continue
+    delete item.type
+    if (item.poster) item.src = item.poster
+    item.videoCheckV = 0
+    item.videoChecked = false
+    lost++
+  }
+  return lost
+}
+
 async function importVideoPins(items: PinItem[]): Promise<{ imported: number; remaining: number }> {
   const unchecked = items.filter(needsVideoCheck)
   if (unchecked.length === 0) return { imported: 0, remaining: 0 }
@@ -376,8 +424,10 @@ async function refreshFeed(cached: FeedCache): Promise<FeedCache | null> {
     merged.push({ ...old, id: oldId })
   }
 
-  // Import video pins (self-hosted MP4s), then probe the remaining
-  // still pins for animated GIF originals.
+  // Import video pins (self-hosted MP4s) — first giving up on any whose
+  // file is no longer there, so they are imported again — then probe
+  // the remaining still pins for animated GIF originals.
+  await dropLostVideos(merged)
   const video = await importVideoPins(merged)
   await probeGifOriginals(merged.filter(i => i.type !== 'video'))
 
