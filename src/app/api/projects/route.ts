@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { projects as codeProjects } from '@/data/projects'
 import { readVersionedJson, writeVersionedJson } from '@/lib/blobStore'
+import { assignBrands, resolveProject } from '@/lib/projectUrl'
 import seedAdminProjects from '../../../../public/assets/_data/admin-projects.json'
 
 // Opt out of Next.js's default route-handler caching. Without this, the GET
@@ -41,9 +42,82 @@ async function getAdminData(): Promise<AdminData> {
       const slug = (p as Record<string, unknown>).slug as string | undefined
       if (slug) obj[slug] = p as Record<string, unknown>
     }
-    return obj
+    return foldStrays(obj)
   }
-  return data as AdminData
+  return foldStrays(data as AdminData)
+}
+
+/**
+ * The stored slug a write is meant for.
+ *
+ * A project answers to two names — the slug it is filed under and the
+ * brand address it is advertised at (/on-running for on-running-campaign)
+ * — and a caller holding the address must not be able to file a record
+ * under it: that is a second, nameless project, not an edit. Addresses
+ * (numbered ones included) resolve to the project they belong to; a name
+ * nothing answers to is taken as a new slug, as before.
+ */
+function storedSlugFor(adminData: AdminData, name: string): string {
+  if (!name) return name
+  if (adminData[name] && !isStray(adminData[name])) return name
+  if (codeProjects.some(p => p.slug === name)) return name
+  const owner = resolveProject(getMergedProjects(adminData) as Array<{ slug?: string; client?: string }>, name)
+  return owner?.slug || name
+}
+
+/**
+ * A record that is only a slug and some media, with no name of its own —
+ * the shape the project page's media drawer wrote when it saved under
+ * the brand address instead of the stored slug.
+ */
+function isStray(rec: Record<string, unknown> | undefined): boolean {
+  if (!rec || rec.__deleted) return false
+  if (rec.client || rec.title) return false
+  return Array.isArray(rec.media)
+}
+
+/**
+ * Fold strays back into the projects they were meant for.
+ *
+ * Media saved under an address (see storedSlugFor) landed in nameless
+ * records keyed by that address — and a nameless record keyed by a brand
+ * then CLAIMS the brand, so the real project is renumbered to /<brand>-2
+ * and the next save strands a second copy there. The address of a stray
+ * — with any such number stripped — names its owner among the real
+ * projects; its media joins the owner's, each file once, and the stray
+ * goes. Runs on every read, so the site is right at once; the next write
+ * of any kind persists it.
+ */
+function foldStrays(adminData: AdminData): AdminData {
+  const strays = Object.keys(adminData).filter(k => isStray(adminData[k]))
+  if (strays.length === 0) return adminData
+  const real = getMergedProjects(
+    Object.fromEntries(Object.entries(adminData).filter(([k]) => !strays.includes(k))),
+  ) as Array<{ slug: string; client?: string }>
+  const brands = assignBrands(real)
+  const ownerOf = (key: string) => {
+    const byBrand = (b: string) => real.find(p => brands.get(p.slug) === b)
+    const direct = byBrand(key)
+    if (direct) return direct
+    const m = /^(.*)-(\d+)$/.exec(key)
+    return m ? byBrand(m[1]) : undefined
+  }
+  for (const key of strays) {
+    const owner = ownerOf(key)
+    if (!owner || owner.slug === key) continue
+    const rec = adminData[owner.slug] || {}
+    const have = Array.isArray(rec.media) ? (rec.media as Array<Record<string, unknown>>) : []
+    const seen = new Set(have.map(m => String(m.path || '')))
+    const extra = (adminData[key].media as Array<Record<string, unknown>>).filter(m => {
+      const path = String(m.path || '')
+      if (!path || seen.has(path)) return false
+      seen.add(path)
+      return true
+    })
+    adminData[owner.slug] = { ...rec, slug: owner.slug, media: [...have, ...extra] }
+    delete adminData[key]
+  }
+  return adminData
 }
 
 function getMergedProjects(adminData: AdminData) {
@@ -112,7 +186,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'update') {
-      const targetSlug = slug || project?.slug
+      const targetSlug = storedSlugFor(adminData, slug || project?.slug)
       if (!targetSlug) return NextResponse.json({ error: 'No slug provided' }, { status: 400 })
       adminData[targetSlug] = { ...(adminData[targetSlug] || {}), ...project, slug: targetSlug }
       await writeVersionedJson(BLOB_KEY, adminData)

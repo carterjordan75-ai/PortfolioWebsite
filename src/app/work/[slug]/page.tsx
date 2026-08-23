@@ -849,8 +849,13 @@ Contact: carterjordan75@gmail.com`
             >
               🎞 Manage media ({(localMedia ?? []).length})
             </button>
+            {/* The STORED slug, never the address. The address is a brand
+                name (/on-running) and is not the key the project is filed
+                under (on-running-campaign); saving under it filed ON's
+                media as a new, nameless project that then claimed ON's
+                own address. */}
             <ProjectMediaPanel
-              slug={params.slug}
+              slug={project.slug}
               client={project.client}
               open={mediaPanelOpen}
               onClose={() => setMediaPanelOpen(false)}
