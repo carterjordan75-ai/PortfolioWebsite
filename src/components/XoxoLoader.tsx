@@ -71,12 +71,12 @@ export default function XoxoLoader({
         </defs>
       )}
       <g clipPath={variant === 'wipe' ? `url(#${clipId})` : undefined}>
-        {/* evenodd because the O's carry their counter as a second
-            subpath on the same path — without it they fill solid and
-            the wordmark reads as two blobs and two discs. */}
+        {/* The O's are solid discs now (the mark's counter was dropped),
+            so the fill rule no longer matters; it is kept as a single
+            source of truth beside the glyphs. */}
         {XOXO_GLYPHS.map((d, i) => (
           <g key={i} className={`xoxo-g xoxo-g${i}`}>
-            <path d={d} fillRule={XOXO_FILL_RULE as 'evenodd'} />
+            <path d={d} fillRule={XOXO_FILL_RULE as 'nonzero'} />
           </g>
         ))}
       </g>

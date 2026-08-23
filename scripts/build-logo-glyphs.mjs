@@ -30,15 +30,19 @@ const svg = readFileSync(SVG, 'utf8')
 const xd = svg.match(/<path id="x" d="([^"]+)"/)[1]
 const uses = [...svg.matchAll(/<use href="#x" x="([-\d.]+)" y="([-\d.]+)"/g)]
   .map(m => [parseFloat(m[1]), parseFloat(m[2])])
-// O's: outer circle then counter, both as "M cx-r,cy a r,r ..."
+// O's: one circle each, as "M cx-r,cy a r,r ...". The O is a SOLID disc
+// now — the counter the trace had was dropped from the mark — but the
+// animator still needs a circle at the O's middle to put an eye in, so
+// the eye ring is made here at the radius the old counter had.
+const EYE_R = 24.81
 const circles = [...svg.matchAll(/M([-\d.]+),([-\d.]+)a([-\d.]+),/g)]
   .map(m => {
     const r = parseFloat(m[3])
     return { cx: parseFloat(m[1]) + r, cy: parseFloat(m[2]), r }
   })
 const Os = [
-  { outer: circles[0], hole: circles[1] },
-  { outer: circles[2], hole: circles[3] },
+  { outer: circles[0], hole: { cx: circles[0].cx, cy: circles[0].cy, r: EYE_R } },
+  { outer: circles[1], hole: { cx: circles[1].cx, cy: circles[1].cy, r: EYE_R } },
 ]
 const viewBox = svg.match(/viewBox="0 0 1000 ([\d.]+)"/)[1]
 
@@ -144,9 +148,8 @@ order.forEach((item, g) => {
     let p = circleRing(outer.cx, outer.cy, outer.r, N)
     if (signedArea(p) < 0) p = p.slice().reverse()
     const box = bbox(p)
-    // The counter morphs by shrinking to nothing rather than to a ring
-    // of its own — a hole that grows open reads as the letter opening,
-    // which is what the O should do.
+    // The eye ring (hp) is where the animator draws the pupil; it is
+    // never cut out of the disc. hc is its collapsed form for morphs.
     const hp = circleRing(hole.cx, hole.cy, hole.r, N)
     const hc = circleRing(hole.cx, hole.cy, hole.r*0.06, N)
     blobs.push({ g, cx:+box.cx.toFixed(2), cy:+box.cy.toFixed(2),
