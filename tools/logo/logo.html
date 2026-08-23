@@ -703,6 +703,11 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   a second — 8 to 12 is the stop-motion range.</p>
   <div class="row"><label>Registration jitter <b id="vjitter"></b></label><input id="jitter" type="range" min="0" max="8" step=".1"></div>
   <p class="note">Nudges the frame between held frames, the way a rostrum never lines up twice.</p>
+  <div class="row"><label>Line boil <b id="vboil"></b></label><input id="boil" type="range" min="0" max="1" step=".05"></div>
+  <p class="note">Every line redrawn a few times a second — the wobble of a hand that never
+  traces the same path twice. Warps arms, letters and accents together, like a fresh drawing each frame.</p>
+  <div class="row"><label>Boil rate <b id="vboilHz"></b></label><input id="boilHz" type="range" min="2" max="15" step=".5"></div>
+  <p class="note">Fresh drawings a second. 8 is the classic ad boil; 12 is shot on twos.</p>
    </details>
   </details>
   <details><summary>Playback</summary>
@@ -823,7 +828,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  acc:5,asize:1,aw:5,draw:1,orient:1,place:-.35,aangle:0,jit:0,spread:1,drift:1,aspin:0,atime:1,
  arcs:0,orbw:5,halo:1,tapA:0,tapB:0,press:.35,preach:150,dentw:.55,orbSize:1,orbvary:.18,orbtilt:-12,orbtvary:24,orbarc:1,orbtime:1,orbstag:120,
  ink:'#ffffff',ink2:'#7c5cff',inkMode:'solid',inkAngle:90,bg:'#0a0a0a',
- grain:0,grainS:.55,lotBg:1,fps:0,jitter:0,bump:0,bumpS:.8,
+ grain:0,grainS:.55,lotBg:1,fps:0,jitter:0,boil:.4,boilHz:8,bump:0,bumpS:.8,
  texCol:'',texHt:'',texScale:260,texRot:0,texMix:.85,texHtAmt:10,
  spinY:0,spinX:0,spinP:1400,dither:1.1,
  bumpBlur:2,htBlur:2,hmBlur:0,texMap:'shared',
@@ -1558,6 +1563,8 @@ function fitViewBox(str, bb, framed){
  var grow=Math.max(1,P.over);
  if(P.sleep) grow*=1+Math.max(0,P.slpAmt)*0.03;
  hx=hx*grow*1.02; hy=hy*grow*1.02;
+ // The boil displaces pixels; the furthest line needs that much more room.
+ if(P.boil>0){ var bpad=mb[3]*P.boil*0.03+1; hx+=bpad; hy+=bpad }
  // The arms throw a carried letter well above the mark — up to 1.3
  // letter-heights plus the letter itself — and that flight is a CSS
  // transform too, invisible to the measurement. Without this the O
@@ -1803,6 +1810,38 @@ function jitCSS(){
  }
  return '@keyframes jit{'+kf+'}.jit{transform-box:view-box;transform-origin:'+markOrigin()[0].toFixed(1)+'px '+markOrigin()[1].toFixed(1)+'px;'
   +'animation:jit '+T+'ms step-end infinite}';
+}
+
+// Line boil — every line in the frame redrawn a few times a second, the
+// way a hand never traces the same path twice. A small displacement
+// field warps the finished render; HOLDING one field and then swapping
+// to a differently-seeded one, at a drawing rate, is what reads as
+// redrawn rather than smeared. One field for the whole frame — arms,
+// letters, eyes, accents together — because a boil is a fresh DRAWING,
+// not a per-line shiver. (armWobble/armBoil bend the arm's solved path;
+// this wobbles the ink of everything, after everything else has moved.)
+var BOIL_N=5;
+function boilFilters(){
+ if(!(P.boil>0)) return '';
+ var mb=markBox(), mh=Math.max(60, mb[3]);
+ var fx=2.4/mh, fy=fx*1.4, sc=P.boil*mh*0.05, out='';
+ for(var i=0;i<BOIL_N;i++){
+  out+='<filter id="boil'+i+'" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">'
+   +'<feTurbulence type="fractalNoise" baseFrequency="'+fx.toFixed(4)+' '+fy.toFixed(4)
+   +'" numOctaves="2" seed="'+Math.round(P.seed*7+i*37+11)+'" result="bn"/>'
+   +'<feDisplacementMap in="SourceGraphic" in2="bn" scale="'+sc.toFixed(2)
+   +'" xChannelSelector="R" yChannelSelector="G"/></filter>';
+ }
+ return out;
+}
+function boilCSS(){
+ if(!(P.boil>0)) return '';
+ var T=Math.round(BOIL_N/Math.max(.5,P.boilHz)*1000), kf='';
+ for(var i=0;i<BOIL_N;i++){
+  var a=i/BOIL_N*100, b=(i+1)/BOIL_N*100-(i===BOIL_N-1?0:0.01);
+  kf+=a.toFixed(2)+'%,'+b.toFixed(2)+'%{filter:url(#boil'+i+')}';
+ }
+ return '@keyframes boil{'+kf+'}.boilg{animation:boil '+T+'ms linear infinite}';
 }
 
 /**
@@ -6670,7 +6709,7 @@ function css(){
  if((P.spinY||P.spinX)&&!holdProjected())
   out+='.xl{transform:perspective('+P.spinP+'px) rotateY('+P.spinY
    +'deg) rotateX('+P.spinX+'deg)}';
- return poster(out)+jitCSS()+sleepCSS()+viewCSS();
+ return poster(out)+jitCSS()+boilCSS()+sleepCSS()+viewCSS();
 }
 
 // A strand is the same path, nudged sideways. Offsets alternate either
@@ -6900,7 +6939,7 @@ function svgRaw(){
   +LETTERS.map(function(L,li){var sf=lp(L[0],'lgSoft');
      return sf>0?'<filter id="soft'+li+'" x="-40%" y="-40%" width="180%" height="180%">'
       +'<feGaussianBlur stdDeviation="'+(sf*30).toFixed(1)+'"/></filter>':''}).join('')
-  +'</defs>'+(P.jitter>0?'<g class="jit">':'');
+  +boilFilters()+'</defs>'+(P.jitter>0?'<g class="jit">':'')+(P.boil>0?'<g class="boilg">':'');
  var defs='';
 
  // back halves of every arc, behind the letters
@@ -7082,7 +7121,7 @@ function svgRaw(){
  // not woven into it.
  var sp=scorePath();
  if(sp) s+='<path class="sc" pathLength="1000" d="'+sp+'"/>';
- return s+(P.jitter>0?'</g>':'')+'</svg>';
+ return s+(P.boil>0?'</g>':'')+(P.jitter>0?'</g>':'')+'</svg>';
 }
 
 
@@ -7357,7 +7396,7 @@ function build(){
   +'  bg '+P.bg+(P.grain>0?'  grain '+P.grain.toFixed(2):'')+'\n'
  +'logo outline '+P.lgw.toFixed(1)+' '+P.lgAlign+' rough '+P.lgTex.toFixed(1)
   +'  spread '+P.startSpread
-  +(P.fps>0?'   '+P.fps+'fps':'')+(P.jitter>0?' jitter '+P.jitter.toFixed(2):'')
+  +(P.fps>0?'   '+P.fps+'fps':'')+(P.jitter>0?' jitter '+P.jitter.toFixed(2):'')+(P.boil>0?' boil '+P.boil.toFixed(2)+'@'+P.boilHz:'')
   +(P.bump>0?' bumps '+P.bump.toFixed(1)+'/'+P.bumpS.toFixed(2):'')
   +(P.texCol?'   colour map '+P.texMap:'')+(P.texHt?'   height map '+P.texHtAmt:'')
   +((P.bumpBlur||P.htBlur||P.hmBlur)?'   blur '+P.bumpBlur.toFixed(1)+'/'
@@ -8097,7 +8136,7 @@ var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eye
  'eyeShut','blinkSync','eyeSpeed','eyeGlint','glintIn',
  'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeWander','eyeAsym','eyePop','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armDelay','armStagger','armGrip','armSquash','armSpeed','armWait','armSize','armFill','armCount','armCase','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armBow','armLift','armTilt','armEyes','armTarget','armTarget2',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
- 'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
+ 'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','boil','boilHz','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
 function sync(){syncSleep();drawGlints();drawBlinks();drawBrows();drawArms();drawSleepPickers();
@@ -8109,7 +8148,7 @@ function sync(){syncSleep();drawGlints();drawBlinks();drawBrows();drawArms();dra
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
 function labels(){
  var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeWander:2,eyeAsym:2,eyePop:2,eyeEdge:2,eyeLidR:2,eyeLidRest:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
-  lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
+  lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
   var b=document.getElementById('v'+e.id); if(b) b.textContent=P[e.dataset.p]+'ms';
@@ -8999,6 +9038,8 @@ spinP:'Perspective for that rotation.',
 // --- stage ---
 fps:'Frames per second the export is baked at.',
 jitter:'Shakes the whole mark.',
+boil:'Every line redrawn a few times a second — hand-drawn line boil over arms and letters alike.',
+boilHz:'Fresh drawings a second the boil holds between.',
 scrub:'Scrub the timeline. Pause first to hold a frame.'
 };
 
