@@ -189,9 +189,13 @@ export async function GET(request: NextRequest) {
   // The renderer needs to know how to paint it and where to put it, and
   // only the index knows either — both are presentation choices the admin
   // panel can change without touching the artwork.
+  // The mono flag is re-read from the file: marks stored before the
+  // importer learned to tell an arm's fade mask from an ink gradient are
+  // filed as coloured, and would otherwise paint by the visitor's OS.
+  const mono = !!art && (art.mono || (!!art.html && /prefers-color-scheme/.test(art.html)))
   return NextResponse.json(
     { index, chosen,
-      art: art ? { ...art, modes: chosen.modes || 'both', placement: chosen.placement } : art },
+      art: art ? { ...art, mono, modes: chosen.modes || 'both', placement: chosen.placement } : art },
     NO_CACHE,
   )
 }

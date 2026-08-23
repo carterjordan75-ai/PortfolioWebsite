@@ -261,12 +261,20 @@ export function importLoaderHtml(html: string): LoaderArt {
     `animation-delay:0ms!important;animation-iteration-count:1!important}}` +
     css
 
-  // Whether the mark carries a colour of its own. A gradient always
+  // Whether the mark carries a colour of its own. An ink gradient always
   // does; a solid one only if it is not greyscale. Newer exports already
   // omit the colour when they are mono, so an absent one counts as mono.
+  //
+  // Only the INK gradient counts (the tuner names it #inkg). Any gradient
+  // used to count, and the arms' fade masks are radial gradients — so
+  // every sleep mark with arms was filed as coloured, the site never
+  // forced its ink, and the file's own follow-the-theme rule painted it
+  // black for anyone whose OS was in light mode. Belt and braces: a file
+  // that carries that rule is mono by definition, whatever else is in it.
   const inkMatch = rounded.svg.match(/style="[^"]*color:\s*(#[0-9a-fA-F]{3,8})/)
-  const gradient = /<(linear|radial)Gradient/i.test(rounded.svg) || /url\(#inkg\)/.test(css)
-  const mono = !gradient && (!inkMatch || isGrey(inkMatch[1]))
+  const inkGradient = /<(linear|radial)Gradient[^>]*id="inkg"/i.test(rounded.svg) || /url\(#inkg\)/.test(css)
+  const followsTheme = /prefers-color-scheme/.test(html)
+  const mono = followsTheme || (!inkGradient && (!inkMatch || isGrey(inkMatch[1])))
 
   // Strip anything the export baked in that the renderer should decide:
   // the knockout colour always, and the ink too when it is mono. Inline

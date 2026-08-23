@@ -179,7 +179,14 @@ export default function XoxoBrandLoader({
   // explicit `ink` prop still wins, since a surface that knows what it is
   // (the gate, a preview swatch) is more specific than either.
   const pinned = art.modes === 'light' ? false : art.modes === 'dark' ? true : dark
-  const colour = ink ?? (art.mono ? (pinned ? '#ffffff' : '#111111') : undefined)
+  // Mono by its flag, or by its own file: a mono export carries a rule
+  // that follows the viewer's OS theme, and a mark that does that has to
+  // be told its ink here — left alone it paints itself by the visitor's
+  // OS rather than by the ground it is on. (Sleep marks with arms were
+  // filed as coloured by the importer and went black on light-mode
+  // laptops; reading the file makes the flag irrelevant.)
+  const mono = art.mono || (!!art.html && /prefers-color-scheme/.test(art.html))
+  const colour = ink ?? (mono ? (pinned ? '#ffffff' : '#111111') : undefined)
 
   return (
     <div
