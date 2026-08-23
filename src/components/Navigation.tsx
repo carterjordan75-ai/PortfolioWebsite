@@ -15,6 +15,7 @@ import {
   pauseAmbientAudio,
   isAmbientPlaying,
 } from '@/lib/ambientAudio'
+import { XOXO_LOGO_URL } from '@/lib/xoxoLogoUrl'
 
 const hoverColors = [
   '#e94560', '#ff6b35', '#00b4d8', '#7209b7', '#06d6a0',
@@ -413,7 +414,7 @@ export default function Navigation() {
                   1.00 here, so anything set there reads as a change from
                   this rather than from something nobody can see. */}
               <img
-                src="/assets/Logos/xoxo_Logo_005.svg"
+                src={XOXO_LOGO_URL}
                 alt="xoxo studio"
                 className="block w-auto"
                 style={{
@@ -1007,7 +1008,7 @@ export default function Navigation() {
                   the baseline the admin dial's 1.00 refers to. */}
               <div className="flex flex-col items-center mb-5 mt-1">
                 <img
-                  src="/assets/Logos/xoxo_Logo_005.svg"
+                  src={XOXO_LOGO_URL}
                   alt="XOXO"
                   className="block w-auto"
                   style={{

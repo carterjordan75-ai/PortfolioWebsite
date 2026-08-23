@@ -13,9 +13,11 @@
  * jszip and triggers the browser download.
  */
 
+import { XOXO_LOGO_URL } from '@/lib/xoxoLogoUrl'
+
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i
 
-const LOGO_URL = '/assets/Logos/xoxo_Logo_005.svg'
+const LOGO_URL = XOXO_LOGO_URL
 
 let cachedLogoImage: HTMLImageElement | null = null
 
