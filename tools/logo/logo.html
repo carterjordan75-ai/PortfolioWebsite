@@ -339,7 +339,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
    time guaranteed before the run ends, so the mark never finishes mid-blink.</p>
   </details>
 
-  <details><summary>6 &mdash; Arms</summary>
+  <details id="armsection"><summary>6 &mdash; Arms</summary>
   <div class="row"><label>Arms</label>
    <button id="arOff" onclick="setArms(0)">None</button>
    <button id="arOn" onclick="setArms(1)">Arms</button></div>
@@ -8081,6 +8081,10 @@ function syncSleep(){
  // a working view is meaningless when there is only one thing to watch.
  var sec=document.getElementById('slpsection');
  if(sec) sec.style.display=P.sleep?'':'none';
+ // Arms are a sleep mark's: for a loader the whole section was still
+ // on show, every slider in it draggable and silently dead.
+ var asec=document.getElementById('armsection');
+ if(asec) asec.style.display=P.sleep?'':'none';
  // Layout is for both kinds of mark. It was hidden for a sleep one
  // because Arriving carried a copy of it, and two sets of the same
  // sliders is worse than none — but the copy was PARTIAL, so hiding the
@@ -8322,6 +8326,19 @@ function sync(){syncSleep();drawGlints();drawBlinks();drawBrows();drawArms();dra
   var b=document.getElementById('v'+e.id); if(b) b.textContent=P[e.dataset.p]+'ms';
  });
  labels();drawPicker();drawLetters();drawSaved();drawTex()}
+/**
+ * The takes sliders point at letters, and "3" is not a letter: the
+ * readout names them as the wordmark spells them — x1 o1 x2 o2 —
+ * with the two standing choices spelled out too.
+ */
+function armTargetName(v){
+ v=Math.round(v);
+ if(v<=-2) return 'random';
+ if(v===-1) return 'auto';
+ if(typeof LCEN==='undefined'||!LCEN[v]) return ''+v;
+ var n=0; for(var i=0;i<=v;i++) if(isO(i)===isO(v)) n++;
+ return (isO(v)?'o':'x')+n;
+}
 function labels(){
  var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeWander:2,eyeAsym:2,eyePop:2,eyeEdge:2,eyeLidR:2,eyeLidRest:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
   lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
@@ -8331,6 +8348,7 @@ function labels(){
   e.value=P[e.dataset.p];
  });
  KEYS.forEach(function(k){var e=document.getElementById('v'+k);if(!e)return;
+  if(k==='armTarget'||k==='armTarget2'){ e.textContent=armTargetName(P[k]); return }
   e.textContent=(f[k]!==undefined?(+P[k]).toFixed(f[k]):P[k])
    +(k==='dur'||k==='stag'||k==='orbstag'||k==='slpDur'
      ||k==='eyeClose'||k==='eyeHold'||k==='eyeOpen'||k==='eyeSettle'
@@ -9076,8 +9094,8 @@ eyeAxis:'Which way the eye prefers to look. Below 0 is a horizontal scan, above 
 eyeSeed:'A different set of glances from the same settings. Nothing else changes.',
 eyeEdge:'How far the pupil travels. At 1 it reaches the inside of the ring; past 1 it breaks through it.',
 lids:'Whether the eye has lids at all. None is an eye that cannot close.',
-armTarget:'Which letter the top hand takes. -1 is the left O; -2 rearranges at random — as many trades as the loop has room for, steered so the mark reads the same at the end of the round. Letters count 0 to 3 from the left. In a grid, a pair on one row or one column is traded in turn from that line\'s outer side.',
-armTarget2:'Which letter the under hand takes. -1 is the right O. Set it to the SAME letter as the top hand and they fight for it — a tug-of-war one hand wins.',
+armTarget:'Which letter the top hand takes \u2014 x1 o1 x2 o2, as the wordmark spells them. auto is the left O; random rearranges \u2014 as many trades as the loop has room for, steered so the mark reads the same at the end of the round. Which HAND ends up on which letter is settled by geometry, so the pair of letters is what these two choose. In a grid, a pair on one row or one column is traded in turn from that line\'s outer side.',
+armTarget2:'Which letter the under hand takes \u2014 x1 o1 x2 o2. auto is the right O. Set it to the SAME letter as the other hand and they fight for it \u2014 a tug-of-war one hand wins.',
 armCount:'One arm, or a pair reaching from both sides at once.',
 armDelay:'Where in the round the arms make their visit. 0 starts at once, 1 leaves it late.',
 armBackHands:'For a trade that has to be undone (two different letters): which hand takes which letter on the way back. Swapped, each hand takes the letter the OTHER one carried out. Rearranging at random decides this for itself, visit by visit.',
