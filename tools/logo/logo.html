@@ -6330,6 +6330,20 @@ function armsSVG(layer){
    +'<mask id="armFade'+k+'" maskUnits="userSpaceOnUse" x="-2000" y="-2600"'
    +' width="6000" height="6000">'
    +'<rect x="-2000" y="-2600" width="6000" height="6000" fill="#fff"/>'
+   /**
+    * BEHIND THE MARK MEANS INVISIBLE. The whole letter band, soft-
+    * edged, hides the hose: a line whose route has to pass the mark
+    * simply does not exist until it emerges outside — which is what
+    * "the arms come out from behind the logo" always meant. Routes
+    * still steer around (the gap phantoms), but geometry that cannot
+    * be routed around can no longer be SEEN. The hands are the front
+    * layer and keep their own rules; a hand at a letter with its line
+    * swallowed behind the mark reads as reaching from behind it.
+    */
+   +(function(){ var mb=markBox(), gx2=mb[3]*0.07;
+     return '<rect x="'+(mb[0]-gx2).toFixed(1)+'" y="'+(mb[1]-gx2).toFixed(1)
+      +'" width="'+(mb[2]+gx2*2).toFixed(1)+'" height="'+(mb[3]+gx2*2).toFixed(1)
+      +'" rx="'+(mb[3]*0.2).toFixed(1)+'" fill="#000" filter="url(#hullSoft)"/>' })()
    +'<circle cx="'+A.wex.toFixed(1)+'" cy="'+A.wey.toFixed(1)+'" r="'+fr+'"'
    +' fill="url(#armFadeG'+k+')"/>'
    +'<circle cx="'+rcx+'" cy="'+rcy+'" r="'+rdR+'" fill="url(#armFadeC'+k+')"/>'
@@ -7380,7 +7394,7 @@ function svgRaw(){
     var slope=1+c*(hard?26:11)+(hard?6:0);
     var t=T[4]+(T[5]-T[4])*a;
     var inter=0.5-slope*t;
-    return '<filter id="grain" x="-12%" y="-12%" width="124%" height="124%" '
+    return '<filter id="inktex" x="-12%" y="-12%" width="124%" height="124%" '
     +'color-interpolation-filters="sRGB">'
     +'<feTurbulence type="'+T[0]+'" baseFrequency="'+T[1].toFixed(4)+' '+T[2].toFixed(4)
     +'" numOctaves="'+T[3]+'" seed="'+(P.seed*3)+'" result="n"/>'
@@ -7546,7 +7560,11 @@ function svgRaw(){
   +LETTERS.map(function(L,li){var sf=lp(L[0],'lgSoft');
      return sf>0?'<filter id="soft'+li+'" x="-40%" y="-40%" width="180%" height="180%">'
       +'<feGaussianBlur stdDeviation="'+(sf*30).toFixed(1)+'"/></filter>':''}).join('')
-  +boilFilters()+armBoilFilters()+'</defs>'+(P.jitter>0?'<g class="jit">':'')+(P.boil>0?'<g class="boilg">':'')
+  +boilFilters()+armBoilFilters()
+  +(function(){ var mb=markBox();
+    return '<filter id="hullSoft" x="-30%" y="-30%" width="160%" height="160%">'
+     +'<feGaussianBlur stdDeviation="'+(mb[3]*0.09).toFixed(1)+'"/></filter>' })()
+  +'</defs>'+(P.jitter>0?'<g class="jit">':'')+(P.boil>0?'<g class="boilg">':'')
   /**
    * The texture is the whole PRINT's, not each letter's: one field
    * across the mark, its arms and its accents, so the break-up runs
@@ -7555,7 +7573,15 @@ function svgRaw(){
    * cut per letter, the gaps would have shown the arms passing behind
    * them, which is the one thing the arms must never do.
    */
-  +(P.grain>0?'<g filter="url(#grain)">':'');
+  /**
+   * inktex, NOT grain: the Amount slider's input already owns the id
+   * "grain", and url() resolves against the whole DOCUMENT, first id
+   * wins — so in the live tool the filter reference pointed at a
+   * range input and Chrome dropped the filter. Exports resolved it
+   * correctly in their own document, which is why every export-based
+   * test passed while the stage showed nothing at any setting.
+   */
+  +(P.grain>0?'<g filter="url(#inktex)">':'');
  var defs='';
 
  // back halves of every arc, behind the letters
