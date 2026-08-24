@@ -4447,6 +4447,19 @@ function armGeom(k, vis){
             var pg1=LPc[gi], pg2=LPc[gj];
             var D2=Math.hypot(pg2[0]-pg1[0], pg2[1]-pg1[1]);
             if(D2>LH*4.2) continue;
+            // only true NEIGHBOURS: a pair with a letter already
+            // between them is not a gap — its chain would sit ON that
+            // letter, and the tug found "no room" on its own axis
+            var between=false;
+            for(var gk=0;gk<LCEN.length && !between;gk++){
+             if(gk===gi||gk===gj) continue;
+             var pk=LPc[gk];
+             var tg=((pk[0]-pg1[0])*(pg2[0]-pg1[0])+(pk[1]-pg1[1])*(pg2[1]-pg1[1]))/(D2*D2);
+             if(tg<=0.05||tg>=0.95) continue;
+             var qx=pg1[0]+(pg2[0]-pg1[0])*tg, qy=pg1[1]+(pg2[1]-pg1[1])*tg;
+             if(Math.hypot(pk[0]-qx, pk[1]-qy)<LHs[gk][1]*1.1) between=true;
+            }
+            if(between) continue;
             // a wide gap takes a CHAIN of discs — a spread row's spaces
             // are still the face of the mark
             var nP=Math.max(1, Math.ceil((D2-LHs[gi][1]-LHs[gj][1])/(LH*0.7)));
@@ -5105,7 +5118,8 @@ function tugOf(A){
  var lh=(A.b?A.b.h:A.LH)/2;
  return { uT0:0.42, uW:0.615, uSet:0.72,
           winV:(rnd(Math.round(P.eyeSeed||0)*3.9+17)<0.5)?-1:1,
-          amp:Math.min(lh*(0.14+0.24*sq)*(A.rowLike?1:0.62), axisRoom(A,0,1)*0.6) };
+          amp:Math.min(lh*(0.14+0.24*sq)*(A.rowLike?1:0.62), axisRoom(A,0,1)*0.42),
+          stMax:Math.min(0.30*sq, Math.max(0, axisRoom(A,0,1)*0.35/Math.max(1,lh))) };
 }
 function tugCarryY(u, tw){
  if(u<=tw.uT0 || u>=tw.uSet) return 0;
@@ -5118,6 +5132,26 @@ function tugCarryY(u, tw){
  // the decisive yank: sharply toward the winner, eased back to rest
  var w2=(u-tw.uW)/(tw.uSet-tw.uW);
  return tw.winV*tw.amp*1.5*Math.sin(Math.pow(w2,0.72)*Math.PI);
+}
+/**
+ * The letter STRETCHES in the fight — two hands pulling opposite
+ * edges is strain before it is movement. The strain climbs through
+ * the pulls and pulses on each yank; when the loser's grip tears the
+ * stretched letter RECOILS — snaps past its rest into a squash and
+ * bounces out — which is what a thing held at both ends does when one
+ * end lets go.
+ */
+function tugStretchY(u, tw){
+ if(u<=tw.uT0 || u>=tw.uSet+0.06) return 0;
+ var st=tw.stMax||0;
+ if(u<tw.uW){
+  var w=(u-tw.uT0)/(tw.uW-tw.uT0);
+  return st*(0.30+0.70*w)*(0.55+0.45*Math.abs(Math.sin(w*Math.PI*4)));
+ }
+ // torn free: stretched -> squashed past rest -> a small bounce -> flat
+ var w2=(u-tw.uW)/(tw.uSet+0.06-tw.uW);
+ var dec=Math.exp(-3.2*w2);
+ return st*Math.cos(w2*Math.PI*2.6)*dec*0.9;
 }
 
 /**
@@ -5655,9 +5689,9 @@ function armPose(k, u, vis){
  if(act==='spin'){
   // every finger shortens into the fist (thumb in with them), then ONE
   // whips out for the strike — the point channel, as the poke has it
-  KEYS=[[0.00,0.12,0.35,0],[0.24,0.45,0.25,0],[0.30,0.5,0.22,0],
-        [0.36,0.92,0.06,0],[0.44,0.96,0.05,0],[0.505,0.96,0.05,0],
-        [0.518,0.9,0.06,1],[0.55,0.85,0.08,1],[0.62,0.3,0.3,0.4],
+  KEYS=[[0.00,0.12,0.35,0],[0.24,0.45,0.25,0],[0.30,0.55,0.2,0],
+        [0.36,0.97,0.03,0],[0.44,1,0.02,0],[0.505,1,0.02,0],
+        [0.518,0.96,0.03,1],[0.55,0.9,0.05,1],[0.62,0.35,0.3,0.4],
         [0.70,0.15,0.4,0],[S.uR+0.03,0.15,0.4,0],[S.backEnd,0.9,0.2,0],[1,0.9,0.2,0]];
  } else if(act==='wave'){
   KEYS=[[0.00,0.55,0.10],[0.20,0.55,0.10],[0.30,0.10,0.95],[0.70,0.10,0.95],[0.82,0.45,0.20],[S.uR+0.03,0.45,0.20],[S.backEnd,0.9,0.2],[1,0.9,0.2]];
@@ -5702,9 +5736,11 @@ function armPose(k, u, vis){
    * the last half is the slowing; and a few degrees of overspin at the
    * end that come back, so it lands rather than just stops.
    */
-  var ts=(u-0.523)/0.30;
+  var ts=(u-0.523)/0.42;
   if(ts>0){ ts=Math.max(0,Math.min(1,ts));
-   var g=(1-Math.pow(1-ts,4))+0.245*Math.pow(ts,6)*(1-ts);
+   // a longer, softer settle, and a proper overshoot: it swings some
+   // twenty-five degrees past the landing and eases back on
+   var g=(1-Math.pow(1-ts,5))+0.85*Math.pow(ts,6)*(1-ts);
    spin=S.spinDir*ARM_SPIN*g }
  }
  if(act==='lift'||act==='swap'){
@@ -5727,7 +5763,9 @@ function armPose(k, u, vis){
   else if(u>=S.uOpen){
    carry=(act==='swap') ? [A.oc[0]-A.c[0], A.oc[1]-A.c[1]] : [0,0];
   }
- } else if(act==='poke'){
+ }
+ var tugSt;
+ if(act==='poke'){
   // the letter takes the bop: it gives as far as the hand sinks past
   // its edge — downward from a top-arm poke, upward from an under one
   var pen=(y-S.grip[1])*(A.V<0?1:-1);
@@ -5758,9 +5796,13 @@ function armPose(k, u, vis){
    */
   var tw2=tugOf(A);
   var cyT=tugCarryY(u, tw2);
+  var stT=tugStretchY(u, tw2);
   carry=[0, cyT];
   var glueEnd=(tw2.winV===A.V)? tw2.uSet : tw2.uW;
-  if(u>tw2.uT0 && u<glueEnd) y+=cyT;
+  // the hand rides its grip point ON THE STRETCHED EDGE: the edge it
+  // holds moves out by the strain, and the fingers move with it
+  if(u>tw2.uT0 && u<glueEnd) y+=cyT+A.V*((A.b?A.b.h:A.LH)/2)*stT;
+  tugSt=stT;
  }
 
  /**
@@ -5841,6 +5883,11 @@ function armPose(k, u, vis){
  var held=(phase==='act' && u>=tClose && u<S.uOpen+0.03 && act!=='wave') ? Math.max(0,Math.min(1,(curl-0.7)/0.3)) : 0;
  var pen=(phase==='act' && act!=='wave') ? Math.max(0,Math.min(1,((y-S.grip[1])*(-A.V))/(A.hr*0.4))) : 0;
  var sy=1-(0.06*held+0.22*pen)*sq, sx=1+(0.03*held+0.10*pen)*sq;
+ if(act==='tug' && typeof tugSt==='number' && tugSt!==0){
+  // the fight's strain: taller between the hands, thinner across —
+  // and past the tear, tugSt goes negative and this IS the recoil
+  sy=1+tugSt; sx=1-tugSt*0.45;
+ }
  var lhS=(A.b?A.b.h:A.LH)/2;
  var pin=[0, -A.V*lhS*(1-sy)];
  var F=A.F, w=F.toW([x,y]), wc=F.vecW(carry), wp=F.vecW(pin);
@@ -8158,6 +8205,8 @@ var ARM_PRESETS={
  'rearrange at random':{armAction:'lift',armCount:2,armTarget:-2,armTarget2:-2},
  // each arm takes the letter on its own side — top arm loops right and
  // takes the right one — the way the drawover has it
+ // both hands on ONE letter: the fight
+ 'tug of war':{armAction:'lift',armCount:2,armTarget:1,armTarget2:1},
  'swap the Os':{armAction:'lift',armCount:2,armTarget:3,armTarget2:1},
  'swap the Xs':{armAction:'lift',armCount:2,armTarget:2,armTarget2:0},
  'spin an X':{armAction:'spin',armCount:1,armTarget:2},
