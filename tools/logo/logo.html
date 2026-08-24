@@ -2897,7 +2897,7 @@ function pokeBlinks(i, total, out){
     var Av=armGeom(k, vi); if(!Av) return;
     var Sv=armScript(Av);
     pokes.push((t0+VP.f*(Sv.tL+0.01))*total);
-    if(act==='swap' || act==='lift') pokes.push((t0+VP.f*(Sv.uDone-0.005))*total);
+    if(act==='swap' || act==='lift' || (act==='tug' && Sv.tugWin)) pokes.push((t0+VP.f*(Sv.uDone-0.005))*total);
    });
   });
  }
@@ -3391,7 +3391,7 @@ function eyeSpan(total){
 function armVisitMs(){
  var act=armAct();
  // a spin's deed includes the reeling afterwards, so it is the longest
- var floorMs=(act==='poke'||act==='wave') ? 1800 : (act==='swap') ? 3100 : (act==='spin') ? 3800 : 2300;
+ var floorMs=(act==='poke'||act==='wave') ? 1800 : (act==='swap'||act==='tug') ? 3100 : (act==='spin') ? 3800 : 2300;
  // tempo: 1 is the deed at its written length, 0.5 half speed — down
  // to a fifth, because "too fast" was the note every time
  var speed=Math.max(0.15,Math.min(2,P.armSpeed===undefined?0.8:P.armSpeed));
@@ -3912,6 +3912,12 @@ function armVisit(total){
 function armAct(){
  var a=P.armAction||'lift';
  var n=Math.max(1,Math.min(2,Math.round(P.armCount===undefined?1:P.armCount)));
+ // Both takes set to ONE letter is not a collision to repair — it is
+ // a TUG-OF-WAR: both hands grip it, fight for it, and one wins.
+ if((a==='lift'&&n>1) || a==='swap'){
+  var pa=Math.round(P.armTarget===undefined?-1:P.armTarget), pb=Math.round(P.armTarget2===undefined?-1:P.armTarget2);
+  if(pa>=0 && pa===pb && typeof LCEN!=='undefined' && LCEN[pa]) return 'tug';
+ }
  if(a==='lift' && (n>1 || a==='swap')) return (n>1)?'swap':a;
  return a;
 }
@@ -3919,7 +3925,8 @@ function armAct(){
 function armSides(){
  // A swap is a two-hand job by definition: one hand picks up each
  // letter. The count slider still governs every other action.
- if(armAct()==='swap') return [-1,1];
+ var aS0=armAct();
+ if(aS0==='swap' || aS0==='tug') return [-1,1];
  var n=Math.max(1,Math.min(2,Math.round(P.armCount===undefined?1:P.armCount)));
  if(n>1) return [-1,1];
  if(P.armSide==='left') return [-1];
@@ -4023,7 +4030,10 @@ function armPlan(){
   var cur=queue[qi++], d0=dist[patOf(cur)];
   pairs.forEach(function(pr){ var nx=swapSlots(cur, pr).arr, key=patOf(nx); if(dist[key]===undefined){ dist[key]=d0+1; queue.push(nx) } });
  }
- var random=(Math.round(P.armTarget)===-2 || Math.round(P.armTarget2)===-2);
+ // BOTH takes on random, or neither: with either one explicit, the
+ // plan follows the sliders — dragging one slider out of a random
+ // preset used to change nothing at all.
+ var random=(Math.round(P.armTarget)===-2 && Math.round(P.armTarget2)===-2);
  var seedK=Math.round(P.eyeSeed||0)*7.1+3;
  var pick=function(i4){ return rnd(seedK+i4*13.7) };
  var visits=[], arr=ident, prev=null;
@@ -4131,7 +4141,9 @@ function armGeom(k, vis){
  // the letters this visit trades, by the plan — or the one letter a
  // lone hand goes for
  var liA=visit.pair?visit.pair[0]:visit.target, liB=visit.pair?visit.pair[1]:visit.target;
- if(!visit.pair){ var guardL=0; while(liB===liA && guardL++<LCEN.length) liB=(liB+1)%LCEN.length }
+ // a tug WANTS both hands on one letter; every other lone-target act
+ // still bumps the second arm along to its own
+ if(!visit.pair && act0!=='tug'){ var guardL=0; while(liB===liA && guardL++<LCEN.length) liB=(liB+1)%LCEN.length }
  /**
   * A compact pair on one LINE — two letters of a grid's row, or of its
   * column — is a different job from a row's swap, and it is the only
@@ -4755,7 +4767,16 @@ function armCentreV(A, hx, hy, axX, axY, obst){
      * by how far round it loops; a loop that stays out of the letters
      * beats a straighter line through one.
      */
-    score=1e9+viol*1e3+(over>0?1e4+over*180/Math.PI*200:0)+base*0.001;
+    /**
+     * The incumbent holds this regime too. With every candidate a
+     * little wrong — a grid's corridors leave nothing clean — two
+     * near-equal lines traded places as the hand's arrival axis
+     * leaned a few degrees, and the tube jumped 200 units mid-hold.
+     * Last frame's line is tolerated up to a third more wrong than
+     * the best before a switch: hysteresis, still bounded by the
+     * violation itself, so a line drifting into a letter is dropped.
+     */
+    score=1e9+viol*1e3*(inc?0.75:1)+(over>0?1e4+over*180/Math.PI*200:0)+base*0.001;
    }
    else if(inc) score=base*0.45+viol*20+turnPen*0.45;
    // a brush short of the slack is dear, not forbidden: dearer than
@@ -4877,6 +4898,55 @@ function armRoute(A, hov){
 }
 
 /**
+ * The tug-of-war: both takes on one letter. Both hands grip it and it
+ * is yanked alternately toward each — four half-pulls, each harder —
+ * then one side WINS: the letter springs to the winner, the loser's
+ * grip is torn off and slinks home early, and the winner sets the
+ * letter back where it was. Which side wins turns on the seed, so
+ * reruns argue it differently. ONE analytic curve serves the letter's
+ * track and both hands' glue, so nothing can disagree by a frame.
+ */
+/**
+ * How far a letter may move along an axis before it touches a
+ * neighbour: the reactions below — a poke's shake, a tug's pulls —
+ * displace a letter deliberately, and on a diagonal the shake brought
+ * two letters within a unit of touching. Per neighbour, the motion
+ * axis either passes clear (perpendicular distance already enough) or
+ * caps the travel at the edge of the forbidden span.
+ */
+function axisRoom(A, mx, my){
+ var ownH=(A.b?A.b.h:A.LH)/2, cap=1e9;
+ (A.others||[]).forEach(function(o3){
+  var dx=o3.p[0]-A.c[0], dy=o3.p[1]-A.c[1];
+  var need=o3.h+ownH+2;
+  var pr=dx*mx+dy*my, perp2=dx*dx+dy*dy-pr*pr;
+  if(perp2>=need*need) return;
+  var w=Math.sqrt(need*need-perp2);
+  cap=Math.min(cap, Math.max(0, Math.abs(pr)-w));
+ });
+ return cap;
+}
+function tugOf(A){
+ var sq=Math.max(0,Math.min(1,P.armSquash===undefined?0.7:P.armSquash));
+ var lh=(A.b?A.b.h:A.LH)/2;
+ return { uT0:0.42, uW:0.615, uSet:0.72,
+          winV:(rnd(Math.round(P.eyeSeed||0)*3.9+17)<0.5)?-1:1,
+          amp:Math.min(lh*(0.14+0.24*sq)*(A.rowLike?1:0.62), axisRoom(A,0,1)*0.6) };
+}
+function tugCarryY(u, tw){
+ if(u<=tw.uT0 || u>=tw.uSet) return 0;
+ if(u<tw.uW){
+  var w=(u-tw.uT0)/(tw.uW-tw.uT0);
+  // four half-pulls, growing; sin ends at zero, so the loser's torn
+  // grip and the winner's yank both pick up from a centred letter
+  return -Math.sin(w*Math.PI*4)*tw.amp*(0.55+0.45*w);
+ }
+ // the decisive yank: sharply toward the winner, eased back to rest
+ var w2=(u-tw.uW)/(tw.uSet-tw.uW);
+ return tw.winV*tw.amp*1.5*Math.sin(Math.pow(w2,0.72)*Math.PI);
+}
+
+/**
  * What the hand does once it is out: the action, as waypoints in time,
  * from the route's shoulder and back to it. Getting out and back is
  * not scripted here — that is the route, grown and withdrawn.
@@ -4916,7 +4986,7 @@ function armScript(A){
  // the hover is higher over a turned line, where a neighbour's limb
  // reaches up beside the letter, and higher after a spin, so the hand
  // that has just rolled off the top is clear of the next letter
- var hovY0=gy+V*A.hr*(1.7+(tilted?0.5:0)+(act==='spin'?0.55:0));
+ var hovY0=gy+V*A.hr*(1.7+(tilted?0.5:0)+(act==='spin'?0.55:0)+(act==='tug'?0.9:0));
  var hovX=gx, hovY=hovY0;
  /**
   * The route is the same at every frame of a visit — it depends on the
@@ -4942,7 +5012,7 @@ function armScript(A){
  // a swap sequences the second hand itself, so it takes no stagger
  var lag=(A.k===1 && act!=='swap')?Math.max(0,Math.min(1,P.armStagger===undefined?0.35:P.armStagger)):0;
  var wait=Math.max(0,Math.min(1,P.armWait===undefined?0.3:P.armWait));
- var K=[], uR, uDone=ARM_PH.done, uOpen=0.645;
+ var K=[], uR, uDone=ARM_PH.done, uOpen=0.645, tugWinS;
  var add=function(u,x,y,a){ K.push({u:(u>land?u+lag*0.03:u),x:x,y:y,a:(a===undefined?base:a)}) };
  var bx0=A.box[0]+A.box[2]/2, by0=A.box[1]+A.box[3]/2;
  var lastArc=null;
@@ -5190,6 +5260,34 @@ function armScript(A){
    add(0.785+wait*0.10, hovX, hovY, base);                  // and WAIT, as asked
    uR=0.785+wait*0.10; uDone=0.63; uOpen=0.665;
   }
+ } else if(act==='tug'){
+  var twS=tugOf(A); tugWinS=(twS.winV===V);
+  add(0.275, hovX, hovY+V*A.hr*0.5, base);                 // breathe away
+  add(0.30, gx, gy-V*A.hr*0.16, base);                     // DROP on, squash
+  add(0.305, gx, gy-V*A.hr*0.16, base);
+  add(0.315, gx, gy, base);                                // grip
+  add(0.375, gx, gy, base);                                // fingers close
+  add(0.40, gx, gy, base-LN*dirX*8);                       // shoulders set: heave
+  if(tugWinS){
+   // the winner rides every pull glued to its grip — armPose lays the
+   // tug over these knots — takes the yank, and sets the letter home
+   add(twS.uSet, gx, gy, base);                            // letter back in its slot
+   add(twS.uSet+0.04, gx, gy, base);                       // still holding
+   add(twS.uSet+0.075, gx, gy, base);                      // fingers open
+   add(twS.uSet+0.09, gx, gy+V*A.hr*0.9, base-LN*dirX*14); // flick away
+   add(twS.uSet+0.125, hovX, hovY, base);
+   add(twS.uSet+0.125+wait*0.06, hovX, hovY, base);
+   uR=twS.uSet+0.125+wait*0.06; uDone=twS.uSet; uOpen=twS.uSet+0.075;
+  } else {
+   // the loser: grip TORN off on the winner's yank, flung out to its
+   // own side, and home early — beaten
+   add(twS.uW, gx, gy, base-LN*dirX*12);
+   add(twS.uW+0.025, gx, gy+V*A.hr*1.3, base-LN*dirX*20);  // ripped off
+   add(twS.uW+0.06, hovX, hovY+V*A.hr*0.35, base+LN*dirX*8);
+   add(twS.uW+0.09, hovX, hovY, base);
+   add(twS.uW+0.09+wait*0.04, hovX, hovY, base);
+   uR=twS.uW+0.09+wait*0.04; uDone=twS.uW; uOpen=twS.uW-0.005;
+  }
  } else if(act==='spin'){
   /**
    * Grip the top, wind up, FLICK it sideways and let go — the letter
@@ -5282,7 +5380,7 @@ function armScript(A){
  for(var uw2=1; uw2<K.length; uw2++)
   K[uw2].a=K[uw2-1].a+((((K[uw2].a-K[uw2-1].a)+540)%360)-180);
  return armFit({ K:K, grip:[gx,gy], act:act, hov:[hovX,hovY], route:R, uR:uR+lag*0.09, lag:lag,
-          uDone:uDone+lag*0.03, uOpen:uOpen+lag*0.03, tL:tL, tC:tC, tA:tA,
+          uDone:uDone+lag*0.03, uOpen:uOpen+lag*0.03, tL:tL, tC:tC, tA:tA, tugWin:tugWinS,
           out0:0.04+lag*0.10, backEnd:uR+lag*0.09+0.13, spinDir:-V*dirX });
 }
 
@@ -5480,9 +5578,22 @@ function armPose(k, u, vis){
    var wS=(u-0.665)/(0.86-0.665), dcy=Math.pow(1-wS,1.35);
    var sqS=Math.max(0,Math.min(1,P.armSquash===undefined?0.7:P.armSquash));
    var mag=0.35+0.65*sqS, osc=Math.sin(wS*Math.PI*5.2)*dcy;
-   carry=[carry[0]+A.LH*0.05*mag*osc, carry[1]];
+   var ampX=Math.min(A.LH*0.05*mag, axisRoom(A,1,0)*0.9);
+   carry=[carry[0]+ampX*osc, carry[1]];
    spin+=7*mag*Math.sin(wS*Math.PI*5.2+0.8)*dcy;
   }
+ } else if(act==='tug'){
+  /**
+   * The letter is the ROPE. The one analytic curve drives its track
+   * and both hands alike: each hand rides its own grip point while it
+   * holds — the winner through the yank and the settle, the loser to
+   * the tear — so fingers never slide however hard the pulls get.
+   */
+  var tw2=tugOf(A);
+  var cyT=tugCarryY(u, tw2);
+  carry=[0, cyT];
+  var glueEnd=(tw2.winV===A.V)? tw2.uSet : tw2.uW;
+  if(u>tw2.uT0 && u<glueEnd) y+=cyT;
  }
 
  /**
@@ -5644,7 +5755,12 @@ function armHose(k, u, vis){
   // — steered clear of every letter: the one in this hand, and the one
   // in the other hand wherever it is at this moment
   var obstA=(A.others||[]).slice();
-  obstA.push({ p:[A.c[0]+q.lcarry[0], A.c[1]+q.lcarry[1]], h:(A.b?A.b.h:A.LH)/2, own:true });
+  // A tug's letter is a MOVING obstacle in a tight corridor, and a
+  // hose re-solved against every yank flipped routes mid-pull. The
+  // wrist rides the letter, so the tube tracks it anyway — the
+  // obstacle holds the REST spot and the solve is the same all visit.
+  var ownP=(q.act==='tug')?[A.c[0],A.c[1]]:[A.c[0]+q.lcarry[0], A.c[1]+q.lcarry[1]];
+  obstA.push({ p:ownP, h:(A.b?A.b.h:A.LH)/2, own:true });
   if(A.other!==A.li){
    var q2=armPose(1-k, u, vis);
    var pc=q2?[A.oc[0]+q2.lcarry[0], A.oc[1]+q2.lcarry[1]]:A.oc;
@@ -6198,8 +6314,9 @@ function pupilSqueezeCSS(i, total){
      var bops=Math.max(1,Math.min(3,Av.cycles||2)), u0=0.34, u1=0.62, spanB=(u1-u0)/bops;
      for(var b3=0;b3<bops;b3++){ var uc=u0+spanB*b3+spanB*0.48;
       stops.push({p:at(uc-0.03),v:1},{p:at(uc),v:0.68},{p:at(uc+0.05),v:1.12},{p:at(uc+0.10),v:1}); }
-    } else if(act==='swap' || act==='lift' || act==='spin'){
+    } else if(act==='swap' || act==='lift' || act==='spin' || act==='tug'){
      if(Av.li!==i) return;
+     if(act==='tug' && !Sv.tugWin) return;  // one squeeze, on the winner's clock
      var uRel=(act==='spin')?0.525:Sv.uOpen;
      stops.push({p:at(Sv.tC-0.01),v:1},{p:at(Sv.tC+0.03),v:0.84},{p:at(uRel),v:0.84},{p:at(uRel+0.04),v:1.16},{p:at(uRel+0.14),v:1});
     }
@@ -8960,7 +9077,7 @@ eyeSeed:'A different set of glances from the same settings. Nothing else changes
 eyeEdge:'How far the pupil travels. At 1 it reaches the inside of the ring; past 1 it breaks through it.',
 lids:'Whether the eye has lids at all. None is an eye that cannot close.',
 armTarget:'Which letter the top hand takes. -1 is the left O; -2 rearranges at random — as many trades as the loop has room for, steered so the mark reads the same at the end of the round. Letters count 0 to 3 from the left. In a grid, a pair on one row or one column is traded in turn from that line\'s outer side.',
-armTarget2:'Which letter the under hand takes. -1 is the right O. Never the same as the top hand — it bumps along if they collide.',
+armTarget2:'Which letter the under hand takes. -1 is the right O. Set it to the SAME letter as the top hand and they fight for it — a tug-of-war one hand wins.',
 armCount:'One arm, or a pair reaching from both sides at once.',
 armDelay:'Where in the round the arms make their visit. 0 starts at once, 1 leaves it late.',
 armBackHands:'For a trade that has to be undone (two different letters): which hand takes which letter on the way back. Swapped, each hand takes the letter the OTHER one carried out. Rearranging at random decides this for itself, visit by visit.',
