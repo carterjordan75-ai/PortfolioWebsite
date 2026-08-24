@@ -3066,14 +3066,21 @@ function lidCSS(i, total){
  // Where a lid sits when it is not blinking.
  var coverOf=function(fromTop){ return fromTop?Math.max(0,Math.min(1,rest)):0 };
  /**
-  * The SQUINT. While a hand is on this letter the eye is not merely
-  * braced in the pupil — the lids come partly down, both of them,
-  * which is what a squint is, and let go as the fingers do. Scaled by
-  * the same knob as every other eye reaction to the arms.
+  * A touched eye SHUTS. While a hand is on this letter the lids close
+  * all the way — to the same level a blink shuts to, so it reads as
+  * the eye simply closing — the moment the fingers do, held through
+  * the grip and the whole carry, and open again the instant the
+  * fingers let go. (A half squint read as bored rather than braced.)
+  * The arms' eye-reaction knob at zero switches it off.
   */
  var touch=eyeTouchSpans(i,total);
  var sqAmt=Math.max(0,Math.min(1.2,P.armEyes===undefined?0.8:P.armEyes));
- var sqOf=function(fromTop){ return Math.min(0.85, Math.max(coverOf(fromTop), (fromTop?0.5:0.32)*sqAmt)) };
+ if(sqAmt<=0) touch=[];
+ var sqOf=function(fromTop){
+  var base=coverOf(fromTop);
+  var reach=fromTop?1:Math.max(0,P.eyeLower===undefined?0.42:P.eyeLower);
+  return Math.max(base, base+(1-base)*reach*(1-P.eyeShut));
+ };
  var baseAt=function(ms, fromTop){
   for(var si=0;si<touch.length;si++){ if(ms>=touch[si][0]&&ms<=touch[si][1]) return sqOf(fromTop) }
   return coverOf(fromTop);
@@ -3087,13 +3094,13 @@ function lidCSS(i, total){
    stops.push({p:Math.max(0,Math.min(100,p)), y:lidOffset(i,cover,fromTop), e:e});
   };
   push(0, coverOf(fromTop), EZ_MOVE);
-  // the squint settles in as the fingers close, holds through the
-  // grip and the carry, and lets go as they open
+  // shuts as the fingers close, held through the grip and the carry,
+  // open again the instant they let go
   touch.forEach(function(sp){
-   push(pct(sp[0]-90), coverOf(fromTop), EZ_SETTLE);
-   push(pct(sp[0]+130), sqOf(fromTop), EZ_SETTLE);
+   push(pct(sp[0]-60), coverOf(fromTop), EZ_SETTLE);
+   push(pct(sp[0]+90), sqOf(fromTop), EZ_DRIFT);
    push(pct(sp[1]), sqOf(fromTop), EZ_MOVE);
-   push(pct(sp[1]+260), coverOf(fromTop), EZ_SETTLE);
+   push(pct(sp[1]+200), coverOf(fromTop), EZ_SETTLE);
   });
   times.forEach(function(T){
    // A blink can straddle the squint's edge — the landing blink ends
@@ -4100,7 +4107,23 @@ function armPlan(){
   var liB=(pb>=0 && LCEN[pb]) ? pb : (os[os.length-1]!==undefined?os[os.length-1]:liA);
   var guard=0; while(liB===liA && guard++<n) liB=(liB+1)%n;
   var first=swapSlots(arr, [liA,liB]);
-  visits.push({ arr:arr, pair:first.pair, hands:'same', mirror:false, from:P.armFrom||'end' });
+  // The sliders are the law: pair[0] is the TOP hand's letter, pair[1]
+  // the under hand's, exactly as the two takes were set. The visit is
+  // marked so the geometry does not "improve" the assignment; and a
+  // pair the presets never make — the two ENDS of a line, or a
+  // compact diagonal — is marked HARD, which switches on the extra
+  // continuity holds those configurations need. Ordinary pairs run
+  // the solver exactly as the presets always proved it.
+  var pA2=LP[liA], pB2=LP[liB], hardP=false;
+  if(rowLike){
+   var minX=1e9,maxX=-1e9; LP.forEach(function(pt){ minX=Math.min(minX,pt[0]); maxX=Math.max(maxX,pt[0]) });
+   var loX=Math.min(pA2[0],pB2[0]), hiX=Math.max(pA2[0],pB2[0]);
+   hardP=(loX-minX<LH*0.3) && (maxX-hiX<LH*0.3);
+  } else {
+   hardP=(Math.abs(pA2[1]-pB2[1])>=LH*0.3 && Math.abs(pA2[0]-pB2[0])>=LH*0.3);
+  }
+  visits.push({ arr:arr, pair:first.pair, hands:'same', mirror:false, from:P.armFrom||'end',
+                explicit:(pa>=0||pb>=0), hard:hardP });
   arr=first.arr; prev=[liA,liB];
   var guard2=0;
   while(dist[patOf(arr)]>0 && guard2++<6){
@@ -4213,8 +4236,17 @@ function armGeom(k, vis){
   var pg=LPc[liA], qg=LPc[liB];
   if(Math.abs(pg[1]-qg[1])<LH*0.3) gridSwap=true;
   else if(Math.abs(pg[0]-qg[0])<LH*0.3){ gridSwap=true; frameUp(90); }
+  // A DIAGONAL pair — only the sliders can ask for one — is traded in
+  // sequence like any other compact pair: one hand's whole performance
+  // while the other holds aside. Both out at once, the parked hose had
+  // to dodge the moving carry and its route flipped mid-hold.
+  else if(visit.explicit) gridSwap=true;
  }
- if(twoArms){
+ if(twoArms && !visit.explicit){
+  // No slider spoke: the drawover's rule. The top arm takes the one
+  // nearer the top; level, the right one. A visit the TAKES sliders
+  // set skips this — "top hand takes" means the top hand takes it,
+  // which is what the sliders kept failing to mean.
   var pa=LPc[liA], pb=LPc[liB];
   var topFirst=(Math.abs(pa[1]-pb[1])>LH*0.3) ? (pa[1]<pb[1]) : (pa[0]>pb[0]);
   if(!topFirst){ var tmp=liA; liA=liB; liB=tmp }
@@ -4251,7 +4283,15 @@ function armGeom(k, vis){
   * outgoing line. Two arms may then share a side; they are in
   * different half-planes, above and below, and never meet.
   */
- var loopS=!rowLike ? ((c[0]<mid)?-1:1) : twoArms ? ((k||0)===0?1:-1) : ((c[0]<mid)?1:-1);
+ var loopS=!rowLike ? ((c[0]<mid)?-1:1)
+  : twoArms ? (visit.explicit
+     // explicit takes: each body swings round the end OPPOSITE its own
+     // letter — the long sweep of the auto rule, kept under sliders
+     // that can put either letter in either hand. Distinct letters
+     // sit at distinct x, so the two arms take opposite ends.
+     ? ((c[0]<=((LPc[partner]&&LPc[partner][0])!==undefined?LPc[partner][0]:c[0]))?1:-1)
+     : ((k||0)===0?1:-1))
+  : ((c[0]<mid)?1:-1);
  // mirrored on the way back: round the other ends
  if(backMirror && rowLike) loopS=-loopS;
  /**
@@ -4379,7 +4419,7 @@ function armGeom(k, vis){
  var dg=th0g-(-V*Math.PI/2); while(dg<=-Math.PI) dg+=2*Math.PI; while(dg>Math.PI) dg-=2*Math.PI;
  var arcDir=(dg>0)?1:-1;
  return { k:(k||0), li:li, c:c, base:base, b:b, other:other, oc:oc, arcDir:arcDir,
-          obase:LCEN[other]||base, side:sd, V:V, loop:loopS, hr:hr, LH:LH,
+          obase:LCEN[other]||base, side:sd, V:V, loop:loopS, hr:hr, LH:LH, explicitV:!!visit.explicit, hardV:!!visit.hard,
           cycles:cycles, actMs:actMs, ax:ax, ay:ay, wax:wt[0], way:wt[1], wex:wex[0], wey:wex[1],
           // the visit's own number: the line's memory is kept per visit,
           // and folding every later visit onto the first handed the third
@@ -4506,7 +4546,10 @@ function armCentre(A, hx, hy, axX, axY, obst){
  var h2=rot(hx-ex, hy-ey), a2=rot(axX, axY);
  var rb=A.rootB;
  var A2={ hr:A.hr, LH:A.LH, box:[0,0,A.box[3],A.box[2]], V:-1, ax:0, ay:0,
-          b:{ h:(rb?rb.w:A.LH) }, toLeft:(h2[0]<0), rowLike:A.rowLike, sweepMax:Math.PI*1.6, sideExit:true, rootEye:A.rootEye, k:A.k, vis:A.vis, _tag:A._tag };
+          // the continuity flags ride along: without them every hold and
+          // morph was silently OFF for any arm solved in this rotated
+          // frame — which is every compact pair's
+          b:{ h:(rb?rb.w:A.LH) }, toLeft:(h2[0]<0), rowLike:A.rowLike, sweepMax:Math.PI*1.6, sideExit:true, rootEye:A.rootEye, k:A.k, vis:A.vis, _tag:A._tag, explicitV:A.explicitV, hardV:A.hardV, _fresh:A._fresh };
  var ob2=(obst||[]).map(function(o){ var q=rot(o.p[0]-ex, o.p[1]-ey); return { p:q, h:o.h, own:o.own } });
  var R=armCentreV(A2, h2[0], h2[1], a2[0], a2[1], ob2);
  var back=function(pt){ var w=unrot(pt[0],pt[1]); return [w[0]+ex, w[1]+ey] };
@@ -4515,7 +4558,7 @@ function armCentre(A, hx, hy, axX, axY, obst){
  return { raw:rawW, C:R.C.map(back), c4:back(R.c4) };
 }
 
-var ARM_LAST={}, ARM_MORPH=false, ARM_DBG=null, ARM_ROUTES={}, ARM_ROUTES_N=0, ARM_BUILD=0;
+var ARM_LAST={}, ARM_MORPH=true, ARM_DBG=null, ARM_ROUTES={}, ARM_ROUTES_N=0, ARM_BUILD=0;
 function armCentreV(A, hx, hy, axX, axY, obst){
  var bow=Math.max(0.2,Math.abs(P.armBow===undefined?1:P.armBow));
  if(!A.rowLike) bow=Math.max(0.8, Math.min(1.3, bow));
@@ -4774,7 +4817,44 @@ function armCentreV(A, hx, hy, axX, axY, obst){
   // line in hand — so near-identical lines do not trade places every
   // frame; the name is dropped only when it has jumped away (the seam)
   var same=null; all.forEach(function(cd){ if(cd.kind===mem.kind) same=cd });
-  if(same && same.dist<=nearD*1.5+w0*0.3) nearest=same;
+  // The jump bound carries a SIZE term: a long line's honest one-frame
+  // deformation grows with the geometry, and judged by stroke width
+  // alone an end-to-end trade's tube lost its name mid-approach — a
+  // 442-unit teleport as two families traded places. A real seam is
+  // still dropped: there the nearest matches the NEW spot closely and
+  // the name sits hundreds away, far past this allowance.
+  if(same && ((A._tag==='act'&&A._fresh) || same.dist<=nearD*1.5+w0*0.3+A.LH*0.22)) nearest=same;
+  /**
+   * The family in hand can VANISH — a discrete candidate that a
+   * moving hand tips out of existence — and blink back two frames
+   * later, teleporting the tube twice on the way. When it dies with
+   * nothing near its shape, the line is KEPT, its wrist dragged to
+   * the hand, until a shape worth adopting appears or patience runs
+   * out. Slider-set visits only, like the other holds.
+   */
+  if(A.hardV && mem.pts && !same && (!nearest || nearest.dist>A.LH*0.3) && (mem.hold||0)<10){
+   var holdN=(mem.hold||0)+1;
+   var oldW=mem.lastHand||[W[0],W[1]];
+   var dwx=W[0]-oldW[0], dwy=W[1]-oldW[1];
+   var resH=mem.pts.map(function(pt,i9){ var w9=Math.pow(i9/(mem.pts.length-1||1),2); return [pt[0]+dwx*w9, pt[1]+dwy*w9] });
+   // held only while it stays a sane line — dragged past a kink or
+   // into itself it is dropped, and the switch is a cut after all
+   var okH=true, kH=0;
+   for(var q9=1;q9+1<resH.length && okH;q9++){
+    var axH=resH[q9][0]-resH[q9-1][0], ayH=resH[q9][1]-resH[q9-1][1];
+    var bxH=resH[q9+1][0]-resH[q9][0], byH=resH[q9+1][1]-resH[q9][1];
+    var laH=Math.hypot(axH,ayH), lbH=Math.hypot(bxH,byH); if(laH<1e-6||lbH<1e-6) continue;
+    var agH=Math.acos(Math.max(-1,Math.min(1,(axH*bxH+ayH*byH)/(laH*lbH)))); if(agH>kH) kH=agH;
+   }
+   if(kH>=0.6 || selfHit(resH)>0) okH=false;
+   if(okH){
+   ARM_LAST[memKey]={ kind:mem.kind, s0:mem.s0, s1:mem.s1, pts:resH, hd:headings(resH), blend:null, lastHand:[W[0],W[1]], hold:holdN };
+   var rawH=[root, exit].concat(resH);
+   ARM_LAST[memKey].rawW=rawH;
+   for(var j9=1;j9<=10;j9++) rawH.push([W[0]+(hx-W[0])*j9/10, W[1]+(hy-W[1])*j9/10]);
+   return { raw:rawH, C:[root,exit,S,W], c4:rawH[Math.floor(rawH.length/2)], dbg:{ R:0, turn:0, kind:mem.kind, W:W, S:S, dist:dist, rMin:rMin } };
+   }
+  }
  }
  // cheapest first, and a candidate that cannot beat the best so far even
  // at its floor is not tested against the letters at all — the tests
@@ -4873,7 +4953,14 @@ function armCentreV(A, hx, hy, axX, axY, obst){
  // change, or a hook becoming two arcs — where the blend of the two is
  // itself a sane line; mirror-image switches stay a cut
  var sameSense=function(k1,k2){ return k1 && k2 && k1.slice(1,3)===k2.slice(1,3) };
- if(ARM_MORPH && mem && best && mem.kind!==best.kind && mem.pts && sameSense(mem.kind,best.kind)){ mem.blend={ from:mem.pts, left:7, total:7 } }
+ // A switch may TRY to morph — the blend is validated below (no fold,
+ // no self-pass, no kink) and falls back to a cut when the two shapes
+ // cannot sanely mix. Only for visits the TAKES sliders set: their
+ // pairings reach configurations the presets never make, where a
+ // mid-swing family death otherwise teleports the tube. The presets
+ // keep their exact old behaviour — a morph rewrites the memory it
+ // stores, and even a valid one nudged a distant spin's hand.
+ if(ARM_MORPH && mem && best && mem.kind!==best.kind && mem.pts && A.hardV){ mem.blend={ from:mem.pts, left:9, total:9 } }
  var blend=mem?mem.blend:null;
  if(blend && blend.left>0){
   // the blend is used only if it is itself a sane line — no fold, no
@@ -4890,7 +4977,7 @@ function armCentreV(A, hx, hy, axX, axY, obst){
   }
   if(okB && worstT<0.6){ res=mixed; blend.left--; } else { blend=null; }
  }
- ARM_LAST[memKey]={ kind:best?best.kind:'none', s0:best?best.s0:0, s1:best?best.s1:0, pts:res, hd:headings(res), blend:(blend&&blend.left>0)?blend:null };
+ ARM_LAST[memKey]={ kind:best?best.kind:'none', s0:best?best.s0:0, s1:best?best.s1:0, pts:res, hd:headings(res), blend:(blend&&blend.left>0)?blend:null, lastHand:[W[0],W[1]] };
  raw=[root, exit].concat(res);
  ARM_LAST[memKey].rawW=raw;
  for(var j=1;j<=10;j++) raw.push([W[0]+(hx-W[0])*j/10, W[1]+(hy-W[1])*j/10]);
@@ -5052,7 +5139,20 @@ function armScript(A){
  var rsig=[A.k||0, A.vis||0, hovX.toFixed(2), hovY.toFixed(2), A.ax.toFixed(2), A.ay.toFixed(2), A.sx||0, A.V, A.loop, A.hr.toFixed(3), A.LH.toFixed(2), A.rootLi, A.rootEye?1:0, A.partnerH||0,
            JSON.stringify(A.others||[]), JSON.stringify(A.box), P.armBow, P.armTaper, P.armLift, P.armSize, P.armGrip, P.layout, P.lturn, P.armFrom, ARM_BUILD].join('|');
  var R=ARM_ROUTES[rsig];
- if(!R){ R=armRoute(A,[hovX,hovY]); ARM_ROUTES[rsig]=R; if(++ARM_ROUTES_N>64){ ARM_ROUTES={}; ARM_ROUTES[rsig]=R; ARM_ROUTES_N=1 } }
+ if(!R){ R=armRoute(A,[hovX,hovY]); R._b=ARM_BUILD; ARM_ROUTES[rsig]=R;
+  if(++ARM_ROUTES_N>64){
+   /**
+    * Evict only STALE builds' routes. Wiping the whole cache at the
+    * cap could land mid-build: a route already used for half a visit
+    * was re-solved against LATER incumbency memory, came back as a
+    * different family, and the half-grown tube teleported 442 units.
+    * A build needs at most sixteen routes, so its own always fit.
+    */
+   var keep={}, n2=0;
+   Object.keys(ARM_ROUTES).forEach(function(kk){ var e2=ARM_ROUTES[kk]; if(e2 && e2._b===ARM_BUILD){ keep[kk]=e2; n2++ } });
+   ARM_ROUTES=keep; ARM_ROUTES_N=n2;
+  }
+ }
  var dirX=(gx<A.ax)?-1:1;
  // Knot angles are LEANS over the hand's facing — 0 means none.
  var base=0, LN=(V<0)?1:-1;
@@ -5731,7 +5831,7 @@ function armPose(k, u, vis){
  var lhS=(A.b?A.b.h:A.LH)/2;
  var pin=[0, -A.V*lhS*(1-sy)];
  var F=A.F, w=F.toW([x,y]), wc=F.vecW(carry), wp=F.vecW(pin);
- return { A:A, x:w[0], y:w[1], ang:ang+F.deg, carry:wc, spin:spin, act:act,
+ return { A:A, x:w[0], y:w[1], ang:ang+F.deg, carry:wc, spin:spin, act:act, landU:land, uOpenU:S.uOpen, hovL:S.hov,
           lx:x, ly:y, lang:ang, lcarry:carry,
           // the thumb is on the side the body comes from — as a row's
           // top hand, arriving from the right end, has always had it
@@ -5816,12 +5916,48 @@ function armHose(k, u, vis){
   var ownP=(q.act==='tug')?[A.c[0],A.c[1]]:[A.c[0]+q.lcarry[0], A.c[1]+q.lcarry[1]];
   obstA.push({ p:ownP, h:(A.b?A.b.h:A.LH)/2, own:true });
   if(A.other!==A.li){
+   /**
+    * The partner's carried letter is a MOVING obstacle, and during
+    * the withdraw it re-shaped this hose every frame — four route
+    * families in a tenth of a visit on an end-to-end trade. Once the
+    * fingers are open the hand is rising away in its own half-plane:
+    * the letters below no longer steer it, so the obstacle holds its
+    * rest and the solve stops churning.
+    */
    var q2=armPose(1-k, u, vis);
-   var pc=q2?[A.oc[0]+q2.lcarry[0], A.oc[1]+q2.lcarry[1]]:A.oc;
+   var late=(q.uOpenU!==undefined && u>q.uOpenU+0.01);
+   var pc=(q2&&!late)?[A.oc[0]+q2.lcarry[0], A.oc[1]+q2.lcarry[1]]:A.oc;
    obstA.push({ p:pc, h:A.partnerH||(A.LH/2) });
   }
+  /**
+   * Parked at the hover after letting go, the hand does not move —
+   * and a hose re-solved every frame anyway flipped families the
+   * moment the shrinking geometry lost one, teleporting the tube
+   * while everything looked still. Once the fingers are open and the
+   * hand is AT the hover, the line in hand is simply kept; the back
+   * phase rides the same store, so the seam into it is exact.
+   */
+  var mlA=ARM_LAST[(k||0)+':'+(vis||0)+':act'];
+  if(A.hardV && mlA && mlA.rawW && (
+      // the withdraw park at the hover, from its very first frame
+      (q.uOpenU!==undefined && u>q.uOpenU && q.hovL
+       && Math.hypot(q.lx-q.hovL[0], q.ly-q.hovL[1])<2)
+      // and any sustained park anywhere — a lifter's hold-aside, a wait
+   || (mlA.lastHand && u>(q.landU!==undefined?q.landU:0.12)+0.03
+       && Math.hypot(q.lx-mlA.lastHand[0], q.ly-mlA.lastHand[1])<0.75))){
+   raw=mlA.rawW;
+  } else {
   A._tag='act'; A._u=u;
+  // Straight off the route, the act hose HOLDS the route's family
+  // outright — the handover is no place to re-litigate the name. And
+  // from the moment the fingers open it holds again: the hand is only
+  // rising away, nothing is being steered around, and on a fast flick
+  // the deforming tube otherwise churned through four families in a
+  // tenth of a visit.
+  A._fresh=A.hardV && ((u<(q.landU!==undefined?q.landU:0.12)+0.08)
+        || (q.uOpenU!==undefined && u>q.uOpenU+0.005));
   raw=armCentre(A, q.lx, q.ly, axX, axY, obstA).raw;
+  }
  } else {
   // the route as far as it has grown, hand at the tip
   var dEnd=q.s*R.len, M=R.pts.length-1;
@@ -9148,8 +9284,8 @@ eyeAxis:'Which way the eye prefers to look. Below 0 is a horizontal scan, above 
 eyeSeed:'A different set of glances from the same settings. Nothing else changes.',
 eyeEdge:'How far the pupil travels. At 1 it reaches the inside of the ring; past 1 it breaks through it.',
 lids:'Whether the eye has lids at all. None is an eye that cannot close.',
-armTarget:'Which letter the top hand takes \u2014 x1 o1 x2 o2, as the wordmark spells them. auto is the left O; random rearranges \u2014 as many trades as the loop has room for, steered so the mark reads the same at the end of the round. Which HAND ends up on which letter is settled by geometry, so the pair of letters is what these two choose. In a grid, a pair on one row or one column is traded in turn from that line\'s outer side.',
-armTarget2:'Which letter the under hand takes \u2014 x1 o1 x2 o2. auto is the right O. Set it to the SAME letter as the other hand and they fight for it \u2014 a tug-of-war one hand wins.',
+armTarget:'The letter the TOP hand takes \u2014 x1 o1 x2 o2, as the wordmark spells them; the top hand goes to exactly this letter. auto is the left O; random rearranges \u2014 as many trades as the loop has room for, steered so the mark reads the same at the end of the round. In a grid, a pair on one row or one column is traded in turn from that line\'s outer side.',
+armTarget2:'The letter the UNDER hand takes \u2014 x1 o1 x2 o2; the under hand goes to exactly this letter. auto is the right O. The SAME letter on both takes is a fight for it \u2014 a tug-of-war one hand wins.',
 armCount:'One arm, or a pair reaching from both sides at once.',
 armDelay:'Where in the round the arms make their visit. 0 starts at once, 1 leaves it late.',
 armBackHands:'For a trade that has to be undone (two different letters): which hand takes which letter on the way back. Swapped, each hand takes the letter the OTHER one carried out. Rearranging at random decides this for itself, visit by visit.',
