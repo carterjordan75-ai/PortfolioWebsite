@@ -3028,6 +3028,33 @@ function pupilPopCSS(i, total, g){
  * it stays round and full behind them, which is what lets the eye still
  * read as an eye when it is three-quarters covered.
  */
+/**
+ * When a hand is ON this eye's letter: the union of every gripping
+ * window aimed at it — fingers closing to fingers opening, the carry
+ * included — so the lids can squint at the touch. A poke is not here:
+ * its contact is the bop instants, and those already blink.
+ */
+function eyeTouchSpans(i, total){
+ if(!(P.arms && P.sleep)) return [];
+ var V=armVisit(total); if(!V) return [];
+ var act=armAct(); if(act==='poke'||act==='wave') return [];
+ var spans=[];
+ V.starts.forEach(function(t0, vi){
+  armSides().forEach(function(sd,k){
+   var Av=armGeom(k,vi); if(!Av||Av.li!==i) return;
+   var Sv=armScript(Av);
+   var a=(t0+V.f*Sv.tC)*total, b=(t0+V.f*Math.min(0.97,Sv.uOpen))*total;
+   if(b>a) spans.push([a,b]);
+  });
+ });
+ spans.sort(function(x,y){ return x[0]-y[0] });
+ var out=[];
+ spans.forEach(function(sp){
+  if(out.length && sp[0]<=out[out.length-1][1]+120) out[out.length-1][1]=Math.max(out[out.length-1][1], sp[1]);
+  else out.push(sp.slice());
+ });
+ return out;
+}
 function lidCSS(i, total){
  var g=eyeGeom(i); if(!g||!B[i].hp||!P.lids) return '';
  var times=blinkTimes(i,total);
@@ -3038,6 +3065,19 @@ function lidCSS(i, total){
 
  // Where a lid sits when it is not blinking.
  var coverOf=function(fromTop){ return fromTop?Math.max(0,Math.min(1,rest)):0 };
+ /**
+  * The SQUINT. While a hand is on this letter the eye is not merely
+  * braced in the pupil — the lids come partly down, both of them,
+  * which is what a squint is, and let go as the fingers do. Scaled by
+  * the same knob as every other eye reaction to the arms.
+  */
+ var touch=eyeTouchSpans(i,total);
+ var sqAmt=Math.max(0,Math.min(1.2,P.armEyes===undefined?0.8:P.armEyes));
+ var sqOf=function(fromTop){ return Math.min(0.85, Math.max(coverOf(fromTop), (fromTop?0.5:0.32)*sqAmt)) };
+ var baseAt=function(ms, fromTop){
+  for(var si=0;si<touch.length;si++){ if(ms>=touch[si][0]&&ms<=touch[si][1]) return sqOf(fromTop) }
+  return coverOf(fromTop);
+ };
 
  var out='';
  [true,false].forEach(function(fromTop){
@@ -3047,8 +3087,20 @@ function lidCSS(i, total){
    stops.push({p:Math.max(0,Math.min(100,p)), y:lidOffset(i,cover,fromTop), e:e});
   };
   push(0, coverOf(fromTop), EZ_MOVE);
+  // the squint settles in as the fingers close, holds through the
+  // grip and the carry, and lets go as they open
+  touch.forEach(function(sp){
+   push(pct(sp[0]-90), coverOf(fromTop), EZ_SETTLE);
+   push(pct(sp[0]+130), sqOf(fromTop), EZ_SETTLE);
+   push(pct(sp[1]), sqOf(fromTop), EZ_MOVE);
+   push(pct(sp[1]+260), coverOf(fromTop), EZ_SETTLE);
+  });
   times.forEach(function(T){
-   var base=coverOf(fromTop);
+   // A blink can straddle the squint's edge — the landing blink ends
+   // INSIDE the grip — so it enters from the level where it starts
+   // and reopens to the level where it ends.
+   var base=baseAt(T.t-T.close, fromTop);
+   var baseEnd=baseAt(T.t+T.shut+T.open+1, fromTop);
    // How much of the work the lower lid does, and how far behind it
    // starts. These were 0.42 and 0.22 written into the line — good
    // numbers, but a blink's whole character lives in them and there was
@@ -3056,7 +3108,7 @@ function lidCSS(i, total){
    // blink; one doing as much as the top is a squint.
    var reach=fromTop?1:Math.max(0,P.eyeLower===undefined?0.42:P.eyeLower),
        lag=fromTop?0:T.close*(P.eyeLag===undefined?0.22:P.eyeLag);
-   var shut=Math.max(base, base+(1-base)*reach*(1-P.eyeShut));
+   var shut=Math.max(base, baseEnd, base+(1-base)*reach*(1-P.eyeShut));
    // Every one of these rests at both ends. The blink is still twice as
    // fast closing as opening — that asymmetry lives in the DURATIONS the
    // schedule hands out, which is where it belongs, and not in curves
@@ -3078,8 +3130,8 @@ function lidCSS(i, total){
    push(pct(T.t+T.shut+lag), shut, bs.openEase||EZ_MOVE);
    // overshoot: opens a little past its rest, then settles. Past-rest is
    // a turning point, so it is reached at rest like any other.
-   push(pct(T.t+T.shut+T.open*0.78+lag), Math.max(0,base-(P.eyeBounce===undefined?0.06:P.eyeBounce)*reach), eyeEase(0.25+0.45*ez));
-   push(pct(T.t+T.shut+T.open+lag), base, EZ_SETTLE);
+   push(pct(T.t+T.shut+T.open*0.78+lag), Math.max(0,baseEnd-(P.eyeBounce===undefined?0.06:P.eyeBounce)*reach), eyeEase(0.25+0.45*ez));
+   push(pct(T.t+T.shut+T.open+lag), baseEnd, EZ_SETTLE);
   });
   push(100, coverOf(fromTop), EZ_MOVE);
 
@@ -3838,7 +3890,9 @@ function cuffPath(r){
  */
 var ARM_PH={ in:0.00, land:0.20, close:0.315, act:0.375, done:0.625, open:0.665, out:0.85 };
 // a spun letter's turns: whole turns, so X and O both land as they were
-var ARM_SPIN=1080;
+// A turn and a half: three full turns read as a toy top rather than
+// a flicked letter, and the eye tumbles with it the whole way.
+var ARM_SPIN=540;
 
 function armTargetLetter(){
  var t=Math.round(P.armTarget===undefined?-1:P.armTarget);
