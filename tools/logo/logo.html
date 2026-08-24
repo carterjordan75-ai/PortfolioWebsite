@@ -594,16 +594,22 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Background</label><input id="bg" type="color"></div>
   <p class="note">The gradient spans the whole wordmark, so the letters read as one object
   rather than four gradients side by side.</p>
-  <h3>Surface texture</h3>
-  <p class="note">A flat 2D break-up over the colour — nothing to do with the 3D relief.
-  For taking the perfection off.</p>
-  <div class="row"><label>Kind</label>
+  <h3>Ink texture</h3>
+  <p class="note">The ink is eaten away rather than tinted, so a mark stops being a solid
+  fill and starts looking printed — imperfect the way a brush or a block leaves it.
+  <b>Dry brush</b> drags streaks down the stroke; <b>Lino</b> flecks and bites at it.
+  Amount is how much ink it takes; Scale is how big the texture is; Contrast is how hard
+  its edges are. It runs across the whole mark at once — letters, arms and accents in one
+  print — and it never touches colour, so it works on white, black or a gradient.</p>
+  <div class="row" id="texkindrow"><label>Kind</label>
    <button id="gtN" onclick="setTexType('noise')">Noise</button>
    <button id="gtP" onclick="setTexType('paper')">Paper</button>
    <button id="gtM" onclick="setTexType('mottle')">Mottle</button>
-   <button id="gtH" onclick="setTexType('halftone')">Halftone</button></div>
+   <button id="gtH" onclick="setTexType('halftone')">Halftone</button>
+   <button id="gtB" onclick="setTexType('brush')">Dry brush</button>
+   <button id="gtL" onclick="setTexType('lino')">Lino</button></div>
   <div class="row"><label>Amount <b id="vgrain"></b></label><input id="grain" type="range" min="0" max="1" step=".02"></div>
-  <div class="row"><label>Scale <b id="vgrainS"></b></label><input id="grainS" type="range" min=".1" max="2" step=".05"></div>
+  <div class="row"><label>Scale <b id="vgrainS"></b></label><input id="grainS" type="range" min=".15" max="6" step=".05"></div>
   <div class="row"><label>Contrast <b id="vgrainC"></b></label><input id="grainC" type="range" min="0" max="1" step=".02"></div>
    </details>
    <details><summary>Texture maps</summary>
@@ -7326,31 +7332,75 @@ function svgRaw(){
       +'<image href="'+P.texCol+'" x="0" y="0" width="'+P.texScale+'" height="'+P.texScale
       +'" preserveAspectRatio="none"/></pattern>'):'')
   +(P.grain>0?(function(){
-    // four procedural surfaces off one turbulence, differing in type,
-    // frequency, octaves and how hard the result is pushed
-    var T={noise:   ['fractalNoise', P.grainS*.14, 4],
-           paper:   ['fractalNoise', P.grainS*.045, 5],
-           mottle:  ['turbulence',   P.grainS*.016, 2],
-           halftone:['fractalNoise', P.grainS*.5,   1]}[P.texType]
-      ||['fractalNoise',P.grainS*.14,4];
-    var hard=P.texType==='halftone';
-    return '<filter id="grain" x="-10%" y="-10%" width="120%" height="120%">'
-    +'<feTurbulence type="'+T[0]+'" baseFrequency="'+T[1].toFixed(4)
-    +'" numOctaves="'+T[2]+'" seed="'+(P.seed*3)+'" result="n"/>'
-    +'<feColorMatrix in="n" type="saturate" values="0" result="ng"/>'
-    +'<feComponentTransfer in="ng" result="nk">'
-    +(hard
-      ?'<feFuncR type="discrete" tableValues="0 1"/><feFuncG type="discrete" tableValues="0 1"/>'
-       +'<feFuncB type="discrete" tableValues="0 1"/>'
-      :'<feFuncR type="linear" slope="'+(1+P.grainC*3).toFixed(2)+'" intercept="'
-       +(-P.grainC*1.5).toFixed(2)+'"/><feFuncG type="linear" slope="'
-       +(1+P.grainC*3).toFixed(2)+'" intercept="'+(-P.grainC*1.5).toFixed(2)
-       +'"/><feFuncB type="linear" slope="'+(1+P.grainC*3).toFixed(2)+'" intercept="'
-       +(-P.grainC*1.5).toFixed(2)+'"/>')
-    +'<feFuncA type="linear" slope="'+P.grain.toFixed(2)+'" intercept="0"/>'
+    /**
+     * The ink is EATEN, not tinted.
+     *
+     * This used to lay noise over the artwork with an overlay blend,
+     * and overlay against pure white is the identity: base 1 stays 1,
+     * base 0 stays 0. On a flat one-colour mark — which is every mark
+     * this tool makes — the four kinds could not do anything except
+     * haze the anti-aliased edge, which is exactly what "the textures
+     * don't work" was.
+     *
+     * So the noise drives COVERAGE instead: a mask whose alpha is the
+     * noise's own luminance, cut at a threshold the Amount slider
+     * moves and sharpened by Contrast, composited OUT of the mark. The
+     * ink is broken up wherever the noise runs high — the way ink
+     * fails to take on a rough surface — and it reads identically on
+     * white ink, black ink or a gradient, because it never touches
+     * colour at all.
+     */
+    var sc=Math.max(0.05, P.grainS);
+    // [type, frequency x, frequency y, octaves] — scale divides, so a
+    // bigger Scale is a bigger texture rather than a busier one
+    /**
+     * [type, frequency x, frequency y, octaves, clear, full]
+     *
+     * The last two are the threshold band: where the cut sits at
+     * Amount 0 and at Amount 1. It is per kind because the two noise
+     * types do not produce the same numbers — fractalNoise is signed
+     * and lands around a half, turbulence is its absolute value and
+     * lands around a quarter, so one band for both left every
+     * turbulence kind (mottle, lino) below the cut and eating nothing
+     * at any setting.
+     */
+    var T={noise:   ['fractalNoise', 0.115/sc, 0.115/sc, 4, 0.95, 0.42],
+           paper:   ['fractalNoise', 0.040/sc, 0.040/sc, 5, 0.95, 0.42],
+           mottle:  ['turbulence',   0.014/sc, 0.014/sc, 2, 0.72, 0.10],
+           halftone:['fractalNoise', 0.420/sc, 0.420/sc, 1, 0.95, 0.42],
+           // the hand-drawn pair: a dry brush dragged down the stroke,
+           // and a lino block's flecked bite
+           brush:   ['fractalNoise', 0.150/sc, 0.008/sc, 3, 0.98, 0.40],
+           lino:    ['turbulence',   0.055/sc, 0.070/sc, 3, 0.70, 0.09]}[P.texType]
+      ||['fractalNoise', 0.115/sc, 0.115/sc, 4, 0.95, 0.42];
+    var a=Math.max(0,Math.min(1,P.grain)), c=Math.max(0,Math.min(1,P.grainC));
+    // Amount lowers the threshold the noise has to clear to take ink
+    // away; a halftone or a lino wants a hard cut, a paper a soft one.
+    var hard=(P.texType==='halftone'||P.texType==='lino');
+    var slope=1+c*(hard?26:11)+(hard?6:0);
+    var t=T[4]+(T[5]-T[4])*a;
+    var inter=0.5-slope*t;
+    return '<filter id="grain" x="-12%" y="-12%" width="124%" height="124%" '
+    +'color-interpolation-filters="sRGB">'
+    +'<feTurbulence type="'+T[0]+'" baseFrequency="'+T[1].toFixed(4)+' '+T[2].toFixed(4)
+    +'" numOctaves="'+T[3]+'" seed="'+(P.seed*3)+'" result="n"/>'
+    /**
+     * ONE channel of the noise becomes the mask's alpha; its colour is
+     * thrown away, so nothing here can tint the mark.
+     *
+     * One, not the average of three: feTurbulence's R, G and B are
+     * independent noise fields, and averaging them divides the spread
+     * by root three. Every pixel then sat close to the middle, so the
+     * threshold crossed almost all of them at once — the slider did
+     * nothing at all until it did everything, which is no slider.
+     */
+    +'<feColorMatrix in="n" type="matrix" result="nl" values="'
+    +'0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0"/>'
+    +'<feComponentTransfer in="nl" result="nk">'
+    +'<feFuncA type="linear" slope="'+slope.toFixed(2)+'" intercept="'+inter.toFixed(3)+'"/>'
     +'</feComponentTransfer>'
-    +'<feComposite in="nk" in2="SourceAlpha" operator="in" result="ncc"/>'
-    +'<feBlend in="SourceGraphic" in2="ncc" mode="overlay"/></filter>'})():'');
+    // and the mark keeps only what the mask does not claim
+    +'<feComposite in="SourceGraphic" in2="nk" operator="out"/></filter>'})():'')
  if(P.tex>0)
   // feTurbulence displacement roughens the stroke edge — the closest
   // thing SVG gives to a brush without hand-drawing every mark.
@@ -7496,7 +7546,16 @@ function svgRaw(){
   +LETTERS.map(function(L,li){var sf=lp(L[0],'lgSoft');
      return sf>0?'<filter id="soft'+li+'" x="-40%" y="-40%" width="180%" height="180%">'
       +'<feGaussianBlur stdDeviation="'+(sf*30).toFixed(1)+'"/></filter>':''}).join('')
-  +boilFilters()+armBoilFilters()+'</defs>'+(P.jitter>0?'<g class="jit">':'')+(P.boil>0?'<g class="boilg">':'');
+  +boilFilters()+armBoilFilters()+'</defs>'+(P.jitter>0?'<g class="jit">':'')+(P.boil>0?'<g class="boilg">':'')
+  /**
+   * The texture is the whole PRINT's, not each letter's: one field
+   * across the mark, its arms and its accents, so the break-up runs
+   * continuously through everything the way a single pull off a block
+   * does. It also means a hole is a hole through the whole stack —
+   * cut per letter, the gaps would have shown the arms passing behind
+   * them, which is the one thing the arms must never do.
+   */
+  +(P.grain>0?'<g filter="url(#grain)">':'');
  var defs='';
 
  // back halves of every arc, behind the letters
@@ -7657,7 +7716,7 @@ function svgRaw(){
   +open+ARM_BACK
   +(function(){
      var inner=(P.d3d>0&&P.texMap!=='shape')?'<g filter="url(#shade3d)">'+body+'</g>':body;
-     return P.grain>0?'<g filter="url(#grain)">'+inner+'</g>':inner})()
+     return inner})()
   // the hands again, IN FRONT of the letters — see handClosedAt
   +ARM_FRONT+close;
 
@@ -7682,7 +7741,7 @@ function svgRaw(){
  // not woven into it.
  var sp=scorePath();
  if(sp) s+='<path class="sc" pathLength="1000" d="'+sp+'"/>';
- return s+(P.boil>0?'</g>':'')+(P.jitter>0?'</g>':'')+'</svg>';
+ return s+(P.grain>0?'</g>':'')+(P.boil>0?'</g>':'')+(P.jitter>0?'</g>':'')+'</svg>';
 }
 
 
@@ -7930,9 +7989,9 @@ function build(){
   if(b) b.classList.toggle('on',P.layout===['row','grid','stack','diagonal'][n])});
  ['tW','tL','tS'].forEach(function(id,n){
   document.getElementById(id).classList.toggle('on',P.target===['whole','letter','shape'][n])});
- ['gtN','gtP','gtM','gtH'].forEach(function(id,n){
-  document.getElementById(id).classList.toggle('on',
-   P.texType===['noise','paper','mottle','halftone'][n])});
+ ['gtN','gtP','gtM','gtH','gtB','gtL'].forEach(function(id,n){
+  var e=document.getElementById(id); if(e) e.classList.toggle('on',
+   P.texType===['noise','paper','mottle','halftone','brush','lino'][n])});
  ['tmS','tmP'].forEach(function(id,n){
   document.getElementById(id).classList.toggle('on',P.texMap===['shared','shape'][n])});
  ['ikS','ikL','ikR'].forEach(function(id,n){
@@ -8792,6 +8851,8 @@ function gates(){
  var bp=document.getElementById('browpicker');
  if(bp){ on=P.brows>0?'':'none'; bp.style.display=on;
   var pl=bp.previousElementSibling; if(pl&&pl.className==='row') pl.style.display=on; }
+ var tk=document.getElementById('texkindrow');
+ if(tk) tk.style.display=P.grain>0?'':'none';
  var gp=document.getElementById('glintpicker');
  if(gp){ on=P.eyeGlint>0?'':'none'; gp.style.display=on;
   var gl=gp.previousElementSibling; if(gl&&gl.className==='row') gl.style.display=on; }
@@ -9654,9 +9715,9 @@ rough:'Grain of that roughness. Lower is coarser.',
 oct:'Detail levels in the roughness.',
 // --- colour and grain ---
 inkAngle:'Angle of the ink gradient.',
-grain:'Amount of surface grain.',
-grainS:'Scale of the grain.',
-grainC:'Contrast of the grain.',
+grain:'How much ink the texture takes away. The mark stops being a solid fill and starts looking printed.',
+grainS:'How big the texture is. Small is a fine grain, large is a coarse weathered break-up.',
+grainC:'How hard the texture edges are \u2014 soft mottling at 0, a crisp bitten edge at 1.',
 texMix:'How strongly a supplied texture shows.',
 texHtAmt:'How much a supplied height map dents the surface.',
 texScale:'Scale of the supplied texture.',
