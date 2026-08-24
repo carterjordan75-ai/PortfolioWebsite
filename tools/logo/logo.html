@@ -2902,11 +2902,24 @@ function pokeBlinks(i, total, out){
   });
  }
  var clear=close+shut+open+settle;
+ var closeP=close*0.6, shutP=shut*0.8, openP=open*0.8;
  pokes.sort(function(p1,p2){ return p1-p2 });
+ if(act==='poke' && pokes.length>1){
+  // Bops come quicker than a leisurely blink, so the flinch fits the
+  // RHYTHM: its reopen shortens until one blink sits between bops —
+  // every poke blinks, and only a gap too tight even for a flinch
+  // loses its second. (It was a fixed threshold, and a two-bop poke
+  // at the default tempo missed keeping both by six tenths of a
+  // millisecond.)
+  var minGap=1e9;
+  for(var g2=1;g2<pokes.length;g2++) minGap=Math.min(minGap, pokes[g2]-pokes[g2-1]);
+  openP=Math.min(openP, Math.max(60, minGap-closeP-shutP-20));
+ }
+ var clearK=(act==='poke') ? (closeP+shutP+openP) : clear;
  // never two within a blink of each other: the later one goes
- var kept=[]; pokes.forEach(function(tp){ if(!kept.length || tp-kept[kept.length-1]>clear) kept.push(tp) });
+ var kept=[]; pokes.forEach(function(tp){ if(!kept.length || tp-kept[kept.length-1]>clearK) kept.push(tp) });
  out=out.filter(function(bk){ return !kept.some(function(tp){ return Math.abs(tp-bk.t)<clear }) });
- kept.forEach(function(tp){ if(tp-close>0 && tp+shut+open<total) out.push({ t:tp, close:close*0.6, shut:shut*0.8, open:open*0.8 }) });
+ kept.forEach(function(tp){ if(tp-closeP>0 && tp+shutP+openP<total) out.push({ t:tp, close:closeP, shut:shutP, open:openP }) });
  out.sort(function(p1,p2){ return p1.t-p2.t });
  return out;
 }
@@ -5454,6 +5467,22 @@ function armPose(k, u, vis){
   // its edge — downward from a top-arm poke, upward from an under one
   var pen=(y-S.grip[1])*(A.V<0?1:-1);
   if(u>0.30 && u<0.68 && pen>0) carry=[0, -A.V*pen*0.85];
+  /**
+   * THE SHAKE-OFF. The hand lifts off the last bop and hovers clear
+   * (0.67) before leaving for home — and the letter shakes it off:
+   * a quick side-to-side, ACROSS the poke (the bop dips along the
+   * frame's vertical, the shake runs along its horizontal), with a
+   * touch of roll for the lids, dying to nothing so the letter is
+   * simply back in its loop by the time the hand has gone. Local
+   * coords, like the dip — the frame carries it round turned layouts.
+   */
+  if(u>0.665 && u<0.86){
+   var wS=(u-0.665)/(0.86-0.665), dcy=Math.pow(1-wS,1.35);
+   var sqS=Math.max(0,Math.min(1,P.armSquash===undefined?0.7:P.armSquash));
+   var mag=0.35+0.65*sqS, osc=Math.sin(wS*Math.PI*5.2)*dcy;
+   carry=[carry[0]+A.LH*0.05*mag*osc, carry[1]];
+   spin+=7*mag*Math.sin(wS*Math.PI*5.2+0.8)*dcy;
+  }
  }
 
  /**
