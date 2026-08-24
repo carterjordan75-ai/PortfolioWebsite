@@ -2931,7 +2931,8 @@ function pokeBlinks(i, total, out){
     var Sv=armScript(Av);
     pokes.push((t0+VP.f*(Sv.tL+0.01))*total);
     if(act==='swap' || act==='lift' || (act==='tug' && Sv.tugWin)) pokes.push((t0+VP.f*(Sv.uDone-0.005))*total);
-    if(act==='tug' && Sv.tugWin) pokes.push((t0+VP.f*0.812)*total);   // the pat
+    // the whirl's settle: the blink that hides the eye righting itself
+    if(act==='spin') pokes.push((t0+VP.f*(0.523+0.42))*total);
    });
   });
  }
@@ -5152,10 +5153,12 @@ function tugOf(A){
  var amt=Math.max(0,Math.min(2,P.armTugAmt===undefined?1:P.armTugAmt));
  var lh=(A.b?A.b.h:A.LH)/2;
  var room=axisRoom(A,0,1);
- return { uT0:0.40, uW:0.575, uH0:0.615, uA1:0.69, uL:0.75, uSet:0.765, uP0:0.785, uP1:0.845,
+ return { uT0:0.40, uW:0.575, uH0:0.615, uA1:0.70, uL:0.775, uSet:0.79,
           winV:(rnd(Math.round(P.eyeSeed||0)*3.9+17)<0.5)?-1:1,
           amp:Math.min(lh*(0.16+0.28*sq)*amt*(A.rowLike?1:0.62), room*0.42),
-          hoist:Math.min(lh*0.62*Math.max(0.5,amt), room*0.5),
+          // TWICE the height it used to take: the loser lets go of a
+          // live pull, and all that tension has to go somewhere
+          hoist:Math.min(lh*1.24*Math.max(0.5,amt), room*0.6),
           trem:amt,
           stMax:Math.min(0.34*sq*amt, Math.max(0, room*0.35/Math.max(1,lh))) };
 }
@@ -5181,7 +5184,7 @@ function tugHeave(w){
  return { side:side, env:env, pull:pull, hold:hold, strain:hold };
 }
 function tugCarryY(u, tw){
- if(u<=tw.uT0 || u>=tw.uP1+0.02) return 0;
+ if(u<=tw.uT0 || u>=tw.uSet+0.01) return 0;
  var A2=tw.amp, wv=tw.winV;
  if(u<tw.uW){
   var w=(u-tw.uT0)/(tw.uW-tw.uT0);
@@ -5216,15 +5219,6 @@ function tugCarryY(u, tw){
   var w5=(u-tw.uL)/(tw.uSet-tw.uL);
   return -wv*A2*0.07*Math.sin(w5*Math.PI);
  }
- if(u>=tw.uP0 && u<tw.uP1){
-  // the pat, gently: nothing while the hand rises and descends, a
-  // slow give as it rests on the head, a soft lift away
-  var w6=(u-tw.uP0)/(tw.uP1-tw.uP0), dip=0;
-  if(w6>=0.33 && w6<0.52){ var t6=(w6-0.33)/0.19; dip=t6*t6*(3-2*t6); }
-  else if(w6>=0.52 && w6<0.78) dip=1;
-  else if(w6>=0.78){ var t7=(w6-0.78)/0.22; dip=1-t7*t7*(3-2*t7); }
-  return -wv*A2*0.14*dip;
- }
  return 0;
 }
 /**
@@ -5236,7 +5230,7 @@ function tugCarryY(u, tw){
  * end lets go.
  */
 function tugStretchY(u, tw){
- if(u<=tw.uT0 || u>=tw.uP1+0.02) return 0;
+ if(u<=tw.uT0 || u>=tw.uSet+0.01) return 0;
  var st=tw.stMax||0;
  if(u<tw.uW){
   var w=(u-tw.uT0)/(tw.uW-tw.uT0);
@@ -5248,16 +5242,6 @@ function tugStretchY(u, tw){
   // torn free: the stretched letter RECOILS — past rest, bounced out
   var w2=(u-tw.uW)/(tw.uH0-tw.uW);
   return st*Math.cos(w2*Math.PI*2.2)*Math.exp(-2.8*w2);
- }
- if(u>=tw.uP0 && u<tw.uP1){
-  // the pat's squash, with a soft jiggle while the hand rests — the
-  // letter gives under it like a patted dog leans in
-  var w6=(u-tw.uP0)/(tw.uP1-tw.uP0), dip=0;
-  if(w6>=0.33 && w6<0.52){ var t6=(w6-0.33)/0.19; dip=t6*t6*(3-2*t6); }
-  else if(w6>=0.52 && w6<0.78) dip=1;
-  else if(w6>=0.78){ var t7=(w6-0.78)/0.22; dip=1-t7*t7*(3-2*t7); }
-  var jig=(w6>=0.45&&w6<0.85)?Math.sin((w6-0.45)*Math.PI*5)*Math.exp(-(w6-0.45)*4.5)*0.45:0;
-  return (-0.17*dip+0.09*jig)*st;
  }
  return 0;
 }
@@ -5604,14 +5588,12 @@ function armScript(A){
    // these knots — then opens, PATS the letter once on the head, and
    // only then leaves
    add(twS.uSet, gx, gy, base);                            // letter home
-   add(0.775, gx, gy, base);                               // fingers open
-   add(twS.uP0, gx, gy+V*A.hr*0.7, base-LN*dirX*6);        // rises softly
-   add(0.805, gx, gy+V*A.hr*0.06, base);                   // eases onto the head
-   add(0.818, gx+dirX*A.hr*0.10, gy+V*A.hr*0.04, base);    // the caring stroke
-   add(0.831, gx, gy+V*A.hr*0.08, base);                   // resting still
-   add(twS.uP1, gx, gy+V*A.hr*0.8, base-LN*dirX*8);        // lifts away slowly
-   add(0.853, hovX, hovY, base);
-   uR=0.853; uDone=twS.uSet; uOpen=0.775;
+   add(0.80, gx, gy, base);                                // fingers open
+   add(0.815, gx, gy+V*A.hr*0.9, base-LN*dirX*10);         // lifts away
+   add(0.83, gx, gy+V*A.hr*1.5, base-LN*dirX*12);
+   add(0.845, hovX, hovY, base);
+   add(0.845+wait*0.02, hovX, hovY, base);
+   uR=0.845+wait*0.02; uDone=twS.uSet; uOpen=0.80;
   } else {
    // the loser: grip TORN off on the winner's yank, flung out to its
    // own side, and home early — beaten
@@ -5914,7 +5896,7 @@ function armPose(k, u, vis){
   var cyT=tugCarryY(u, tw2);
   var stT=tugStretchY(u, tw2);
   carry=[0, cyT];
-  var glueEnd=(tw2.winV===A.V)? 0.775 : tw2.uW;
+  var glueEnd=(tw2.winV===A.V)? 0.80 : tw2.uW;
   // the hand rides its grip point ON THE STRETCHED EDGE: the edge it
   // holds moves out by the strain, and the fingers move with it
   if(u>tw2.uT0 && u<glueEnd) y+=cyT+A.V*((A.b?A.b.h:A.LH)/2)*stT;
@@ -6742,14 +6724,17 @@ function spinRecoilCSS(i, total){
    var Av=armGeom(k,vi); if(!Av||Av.li!==i) return;
    var Sv=armScript(Av), sd2=Sv.spinDir||1;
    var at2=function(u){ return (t0+u*V2.f)*100 };
-   // slow enough to READ as a swing: rushed, the glint seemed to
-   // blink off tumbled and back on righted with nothing in between
-   var tR=at2(0.523+0.42), d=Math.max(6, Math.min(11, (99-tR)/1.6));
+   /**
+    * The reset hides INSIDE A BLINK. A blink lands shut exactly at
+    * the whirl's settle (pokeBlinks pushes it), and the eye rights
+    * itself while the lids are down — by the time they lift, the
+    * glint is simply back in its place. The swing itself no longer
+    * has to be watchable, so it is quick.
+    */
+   var tR=at2(0.523+0.42), d=Math.max(1.2, Math.min(3, 14000/total));
    if(tR>=97) return;
    got=true;
-   stops.push({p:tR-0.5, v:0, e:EZ_SETTLE});
-   stops.push({p:tR+d*0.45, v:-sd2*201, e:EZ_SETTLE});
-   stops.push({p:tR+d*0.72, v:-sd2*171, e:EZ_SETTLE});
+   stops.push({p:tR-0.3, v:0, e:EZ_SETTLE});
    stops.push({p:tR+d, v:-sd2*180, e:EZ_SETTLE});
    stops.push({p:99.9, v:-sd2*180});
   });
