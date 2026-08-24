@@ -1869,6 +1869,28 @@ function armBoilFilters(){
  }
  return out;
 }
+/**
+ * The prints STEP. Each texture instance holds three drawings and
+ * swaps between them on the same clock as the boil — the ink's
+ * imperfections are redrawn with the line, which is what makes the
+ * whole thing read as stop motion rather than a static overlay.
+ */
+function inkTexCSS(){
+ if(!(P.grain>0)) return '';
+ var hz=Math.max(.5, P.boilHz===undefined?8:P.boilHz), T=Math.round(3/hz*1000), out='';
+ var mk=function(cls, base){
+  var kf='';
+  for(var i=0;i<3;i++){
+   var a=i/3*100, b=(i+1)/3*100-(i===2?0:0.01);
+   kf+=a.toFixed(2)+'%,'+b.toFixed(2)+'%{filter:url(#'+base+'_'+i+')}';
+  }
+  out+='@keyframes '+cls+'{'+kf+'}.'+cls+'{animation:'+cls+' '+T+'ms linear infinite}';
+ };
+ for(var li=0; li<LETTERS.length; li++) mk('itxL'+li, 'inktexL'+li);
+ mk('itxA0','inktexA0'); mk('itxA1','inktexA1');
+ mk('itxD','inktexD');
+ return out;
+}
 function boilCSS(){
  if(!(P.boil>0)) return '';
  var T=Math.round(BOIL_N/Math.max(.5,P.boilHz)*1000), kf='', ka='';
@@ -6269,6 +6291,7 @@ function armsSVG(layer){
    // two opacities, two elements: a second opacity animation on the
    // same element does not multiply with the first, it replaces it
    out+='<g class="armHandGate'+k+'"><g class="armHandG'+k+'">'
+    +(P.grain>0?'<g class="itxA'+k+'" filter="url(#inktexA'+k+'_0)">':'')
     +'<path class="armHandF'+k+'" fill="var(--bg)" stroke="none"/>'
     // the outline, open: the arm's lines continuing round the hand
     +'<path class="armHandO'+k+'" fill="none" stroke="currentColor"'
@@ -6276,6 +6299,7 @@ function armsSVG(layer){
     // the hook inside a closed hand — fingers wrapped round the rim
     +'<path class="armHandI'+k+'" fill="none" stroke="currentColor"'
     +' stroke-width="'+(w*0.85).toFixed(2)+'" stroke-linecap="round"/>'
+    +(P.grain>0?'</g>':'')
     +'</g></g>';
   });
   return out;
@@ -6372,8 +6396,10 @@ function armsSVG(layer){
    +'<g class="armWrap'+k+'" fill="none" stroke="currentColor"'
    +' stroke-linecap="round" stroke-linejoin="round" stroke-width="'+w.toFixed(2)+'"'
    +' mask="url(#armFade'+k+')">'
+   +(P.grain>0?'<g class="itxA'+k+'" filter="url(#inktexA'+k+'_0)">':'')
    +'<path class="armHose'+k+'" pathLength="1000"/>'
    +armPasses('armHose'+k, w)
+   +(P.grain>0?'</g>':'')
    +'</g>';
  });
  return out;
@@ -7286,7 +7312,7 @@ function css(){
  if((P.spinY||P.spinX)&&!holdProjected())
   out+='.xl{transform:perspective('+P.spinP+'px) rotateY('+P.spinY
    +'deg) rotateX('+P.spinX+'deg)}';
- return poster(out)+jitCSS()+boilCSS()+sleepCSS()+viewCSS();
+ return poster(out)+jitCSS()+boilCSS()+inkTexCSS()+sleepCSS()+viewCSS();
 }
 
 // A strand is the same path, nudged sideways. Offsets alternate either
@@ -7394,27 +7420,43 @@ function svgRaw(){
     var slope=1+c*(hard?26:11)+(hard?6:0);
     var t=T[4]+(T[5]-T[4])*a;
     var inter=0.5-slope*t;
-    return '<filter id="inktex" x="-12%" y="-12%" width="124%" height="124%" '
-    +'color-interpolation-filters="sRGB">'
-    +'<feTurbulence type="'+T[0]+'" baseFrequency="'+T[1].toFixed(4)+' '+T[2].toFixed(4)
-    +'" numOctaves="'+T[3]+'" seed="'+(P.seed*3)+'" result="n"/>'
     /**
-     * ONE channel of the noise becomes the mask's alpha; its colour is
-     * thrown away, so nothing here can tint the mark.
-     *
-     * One, not the average of three: feTurbulence's R, G and B are
-     * independent noise fields, and averaging them divides the spread
-     * by root three. Every pixel then sat close to the middle, so the
-     * threshold crossed almost all of them at once — the slider did
-     * nothing at all until it did everything, which is no slider.
+     * MANY PRINTS, NOT ONE. A single field across the mark read as
+     * exactly that — one big overlay the letters happened to share.
+     * Every letter now gets its own field, the arms and the
+     * decoration theirs, each seeded apart; and each instance carries
+     * THREE differently-seeded drawings for the stop-motion swap, the
+     * same trick as the boil. (Per-letter holes are safe now: the
+     * hull mask means nothing lives behind the mark to show through.)
      */
-    +'<feColorMatrix in="n" type="matrix" result="nl" values="'
-    +'0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0"/>'
-    +'<feComponentTransfer in="nl" result="nk">'
-    +'<feFuncA type="linear" slope="'+slope.toFixed(2)+'" intercept="'+inter.toFixed(3)+'"/>'
-    +'</feComponentTransfer>'
-    // and the mark keeps only what the mask does not claim
-    +'<feComposite in="SourceGraphic" in2="nk" operator="out"/></filter>'})():'')
+    var body=function(seed){
+     return '<feTurbulence type="'+T[0]+'" baseFrequency="'+T[1].toFixed(4)+' '+T[2].toFixed(4)
+      +'" numOctaves="'+T[3]+'" seed="'+seed+'" result="n"/>'
+      /**
+       * ONE channel of the noise becomes the mask's alpha; its colour
+       * is thrown away, so nothing here can tint the mark. One, not
+       * the average of three: feTurbulence's channels are independent
+       * fields, and averaging them divides the spread by root three —
+       * every pixel sat close to the middle and the threshold crossed
+       * almost all of them at once.
+       */
+      +'<feColorMatrix in="n" type="matrix" result="nl" values="'
+      +'0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0"/>'
+      +'<feComponentTransfer in="nl" result="nk">'
+      +'<feFuncA type="linear" slope="'+slope.toFixed(2)+'" intercept="'+inter.toFixed(3)+'"/>'
+      +'</feComponentTransfer>'
+      // and the mark keeps only what the mask does not claim
+      +'<feComposite in="SourceGraphic" in2="nk" operator="out"/>';
+    };
+    var out2='', mk=function(id, so){
+     for(var st=0; st<3; st++)
+      out2+='<filter id="'+id+'_'+st+'" x="-14%" y="-14%" width="128%" height="128%" '
+       +'color-interpolation-filters="sRGB">'+body(Math.round(P.seed*3+so+st*31))+'</filter>';
+    };
+    for(var li2=0; li2<LETTERS.length; li2++) mk('inktexL'+li2, li2*97);
+    mk('inktexA0', 501); mk('inktexA1', 598);
+    mk('inktexD', 907);
+    return out2})():'')
  if(P.tex>0)
   // feTurbulence displacement roughens the stroke edge — the closest
   // thing SVG gives to a brush without hand-drawing every mark.
@@ -7573,24 +7615,18 @@ function svgRaw(){
    * cut per letter, the gaps would have shown the arms passing behind
    * them, which is the one thing the arms must never do.
    */
-  /**
-   * inktex, NOT grain: the Amount slider's input already owns the id
-   * "grain", and url() resolves against the whole DOCUMENT, first id
-   * wins — so in the live tool the filter reference pointed at a
-   * range input and Chrome dropped the filter. Exports resolved it
-   * correctly in their own document, which is why every export-based
-   * test passed while the stage showed nothing at any setting.
-   */
-  +(P.grain>0?'<g filter="url(#inktex)">':'');
+  ;
  var defs='';
 
  // back halves of every arc, behind the letters
+ if(P.grain>0) s+='<g class="itxD" filter="url(#inktexD_0)">';
  for(var n=0;n<P.arcs;n++){
   var rx=470*P.orbSize*(1+(rnd(n)-.5)*2*P.orbvary), ry=150*P.orbSize*(1+(rnd(n+9)-.5)*2*P.orbvary);
   s+='<g class="ow'+n+'"><g class="arc o'+n+'" clip-path="url(#cUp)"'+fil+'>'
    +arcBody(rx,ry,n+1)+'</g></g>';
  }
 
+ if(P.grain>0) s+='</g>';
  var open='',close='',body='';
  if(P.target==='whole'){open='<g class="sqA">';close='</g>'}
  // The arms sit inside the same wrapper as the rest of the mark, so a
@@ -7631,8 +7667,12 @@ function svgRaw(){
    +(wantJ?'<g class="jg'+li+'">':'')+ex
    +(wantT?'<g class="tl'+li+'">':'')
    +(wantS?'<g class="ls'+li+'">':'')
-   +(P.target==='letter'?'<g class="sqL'+li+'">':'');
-  var lc=(P.target==='letter'?'</g>':'')+(wantS?'</g>':'')+(wantT?'</g>':'')
+   +(P.target==='letter'?'<g class="sqL'+li+'">':'')
+   // innermost, so the letter's own print rides with it through every
+   // trade, spin and squash rather than the letter sliding under a
+   // fixed field
+   +(P.grain>0?'<g class="itxL'+li+'" filter="url(#inktexL'+li+'_0)">':'');
+  var lc=(P.grain>0?'</g>':'')+(P.target==='letter'?'</g>':'')+(wantS?'</g>':'')+(wantT?'</g>':'')
    +(wantJ?'</g>':'')+(slpSpin?'</g>':'')+(wantGrab?'</g>':'')+(lmoves?'</g>':'');
   body+=lo;
   L.forEach(function(i){
@@ -7746,6 +7786,7 @@ function svgRaw(){
   // the hands again, IN FRONT of the letters — see handClosedAt
   +ARM_FRONT+close;
 
+ if(P.grain>0) s+='<g class="itxD" filter="url(#inktexD_0)">';
  for(var n3=0;n3<P.arcs;n3++){
   var rx2=470*P.orbSize*(1+(rnd(n3)-.5)*2*P.orbvary), ry2=150*P.orbSize*(1+(rnd(n3+9)-.5)*2*P.orbvary);
   var body=arcBody(rx2,ry2,n3+1);
@@ -7767,7 +7808,8 @@ function svgRaw(){
  // not woven into it.
  var sp=scorePath();
  if(sp) s+='<path class="sc" pathLength="1000" d="'+sp+'"/>';
- return s+(P.grain>0?'</g>':'')+(P.boil>0?'</g>':'')+(P.jitter>0?'</g>':'')+'</svg>';
+ if(P.grain>0) s+='</g>';
+ return s+(P.boil>0?'</g>':'')+(P.jitter>0?'</g>':'')+'</svg>';
 }
 
 
@@ -8832,7 +8874,7 @@ var GATES=[
  ['damp',     function(){ return P.target==='shape' }],
  ['armBoil',  function(){ return P.armWobble>0 }],
  ['slpRedrawStag', function(){ return P.slpRedraw>0 }],
- ['boilHz',   function(){ return P.boil>0 }],
+ ['boilHz',   function(){ return P.boil>0 || P.grain>0 }],
  ['grainS',   function(){ return P.grain>0 }],
  ['grainC',   function(){ return P.grain>0 }],
  ['bumpS',    function(){ return P.bump>0 }],
