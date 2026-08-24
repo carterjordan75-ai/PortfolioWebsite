@@ -352,6 +352,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row" id="armsidepicker"></div>
   <div class="row"><label>Top hand takes <b id="varmTarget"></b></label><input id="armTarget" type="range" min="-1" max="3" step="1"></div>
   <div class="row"><label>Under hand takes <b id="varmTarget2"></b></label><input id="armTarget2" type="range" min="-1" max="3" step="1"></div>
+  <div class="row"><label>Tug of war <b id="varmTugAmt"></b></label><input id="armTugAmt" type="range" min="0.2" max="2" step=".05"></div>
   <div class="row"><label>Comes out from behind</label></div>
   <div class="row" id="armfrompicker"></div>
   <div class="row"><label>Putting back: hands</label></div>
@@ -811,7 +812,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  eyeShut:.03,blinkSync:1,eyeSpeed:1,eyeGlint:.3,glintIn:0,
  eyeClose:140,eyeHold:60,eyeOpen:250,eyeSettle:260,eyeEase:.7,
  eyeOver:1.22,eyeHome:460,eyeStretch:.5,eyeSwell:.08,eyeSeed:0,eyeAxis:0,eyeVia:.5,eyeWander:.35,eyeAsym:.35,eyePop:.5,
- eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armTarget2:-1,armFrom:'end',armBackHands:'same',armBackFrom:'same',armBackSide:'same',armStagger:.35,armGrip:.7,armSquash:.7,armSpeed:.8,armWait:.3,armDur:.62,armDelay:.5,armSize:1.15,armFill:1,armCount:1,armCase:1,armPasses:1,armVary:1,armTaper:1.15,armDraw:0,armWobble:0,armBoil:0,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
+ eyeEdge:.41,lids:1,eyeOwnLoop:0,arms:0,armAction:'lift',armSide:'auto',armTarget:-1,armTarget2:-1,armFrom:'end',armBackHands:'same',armBackFrom:'same',armBackSide:'same',armStagger:.35,armGrip:.7,armSquash:.7,armSpeed:.8,armWait:.3,armDur:.62,armDelay:.5,armSize:1.15,armFill:1,armCount:1,armCase:1,armPasses:1,armVary:1,armTaper:1.15,armDraw:0,armWobble:0,armBoil:0,armTugAmt:1,armW:1,armBow:1,armLift:1,armTilt:1,armEyes:.8,brows:0,browShape:'bar',browLen:.9,browW:1,browLift:.5,browTilt:0,browSwing:8,browFollow:.5,blinkShape:'',eyeLidR:1.9,eyeLidRest:0,eyeAnt:.07,eyeBounce:.06,eyeLower:.42,eyeLag:.22,
  glintShape:'dot',
  over:1.045,curve:1.34,smooth:0,dur:660,stag:62,spin:1,
  lgw:0,lgdraw:0,lgbris:0,lgsp:8,lgbw:.45,
@@ -2898,6 +2899,7 @@ function pokeBlinks(i, total, out){
     var Sv=armScript(Av);
     pokes.push((t0+VP.f*(Sv.tL+0.01))*total);
     if(act==='swap' || act==='lift' || (act==='tug' && Sv.tugWin)) pokes.push((t0+VP.f*(Sv.uDone-0.005))*total);
+    if(act==='tug' && Sv.tugWin) pokes.push((t0+VP.f*0.81)*total);   // the pat
    });
   });
  }
@@ -3450,7 +3452,7 @@ function eyeSpan(total){
 function armVisitMs(){
  var act=armAct();
  // a spin's deed includes the reeling afterwards, so it is the longest
- var floorMs=(act==='poke'||act==='wave') ? 1800 : (act==='swap'||act==='tug') ? 3100 : (act==='spin') ? 3800 : 2300;
+ var floorMs=(act==='poke'||act==='wave') ? 1800 : (act==='swap') ? 3100 : (act==='tug') ? 3900 : (act==='spin') ? 3800 : 2300;
  // tempo: 1 is the deed at its written length, 0.5 half speed — down
  // to a fifth, because "too fast" was the note every time
  var speed=Math.max(0.15,Math.min(2,P.armSpeed===undefined?0.8:P.armSpeed));
@@ -5115,23 +5117,73 @@ function axisRoom(A, mx, my){
 }
 function tugOf(A){
  var sq=Math.max(0,Math.min(1,P.armSquash===undefined?0.7:P.armSquash));
+ var amt=Math.max(0,Math.min(2,P.armTugAmt===undefined?1:P.armTugAmt));
  var lh=(A.b?A.b.h:A.LH)/2;
- return { uT0:0.42, uW:0.615, uSet:0.72,
+ var room=axisRoom(A,0,1);
+ return { uT0:0.40, uW:0.585, uH0:0.635, uA1:0.695, uL:0.755, uSet:0.765, uP0:0.79, uP1:0.825,
           winV:(rnd(Math.round(P.eyeSeed||0)*3.9+17)<0.5)?-1:1,
-          amp:Math.min(lh*(0.14+0.24*sq)*(A.rowLike?1:0.62), axisRoom(A,0,1)*0.42),
-          stMax:Math.min(0.30*sq, Math.max(0, axisRoom(A,0,1)*0.35/Math.max(1,lh))) };
+          amp:Math.min(lh*(0.16+0.28*sq)*amt*(A.rowLike?1:0.62), room*0.42),
+          hoist:Math.min(lh*0.62*Math.max(0.5,amt), room*0.5),
+          trem:amt,
+          stMax:Math.min(0.34*sq*amt, Math.max(0, room*0.35/Math.max(1,lh))) };
+}
+/**
+ * The rope's whole story. THREE HEAVES with strain-holds — a heave is
+ * a fast pull, then a held quiver, the tension the fight was missing —
+ * the last toward the LOSER, so the winner rips it back; the tear
+ * swings the letter to the winner and on UP into the hoist; a beat
+ * aloft, the trophy; a gentle lowering home with a soft settle; then
+ * the pat presses it once on the head.
+ */
+function tugHeave(w){
+ var i=Math.min(2, Math.floor(w*3)), lo=w*3-i;
+ var side=(i%2===0)?-1:1;                    // -winV-ward first and last
+ var pull=Math.min(1, lo/0.34); pull=pull*pull*(3-2*pull);
+ // a heave SLIPS BACK to centre before the counter-pull — held to its
+ // end it snapped to the other side in one frame. The LAST heave holds:
+ // the tear rips the letter out of a live pull, not a slack one.
+ var give=0;
+ if(i<2 && lo>0.72){ var tg=(lo-0.72)/0.28; give=tg*tg*(3-2*tg); }
+ var hold=pull*(1-give);
+ var env=0.55+0.45*(i+Math.min(1,lo*1.2))/3;
+ return { side:side, env:env, pull:pull, hold:hold, strain:hold };
 }
 function tugCarryY(u, tw){
- if(u<=tw.uT0 || u>=tw.uSet) return 0;
+ if(u<=tw.uT0 || u>=tw.uP1+0.02) return 0;
+ var A2=tw.amp, wv=tw.winV;
  if(u<tw.uW){
   var w=(u-tw.uT0)/(tw.uW-tw.uT0);
-  // four half-pulls, growing; sin ends at zero, so the loser's torn
-  // grip and the winner's yank both pick up from a centred letter
-  return -Math.sin(w*Math.PI*4)*tw.amp*(0.55+0.45*w);
+  var h=tugHeave(w);
+  var trem=Math.sin(w*Math.PI*13)*A2*0.06*tw.trem*h.strain;
+  return wv*h.side*A2*h.env*h.hold+trem;
  }
- // the decisive yank: sharply toward the winner, eased back to rest
- var w2=(u-tw.uW)/(tw.uSet-tw.uW);
- return tw.winV*tw.amp*1.5*Math.sin(Math.pow(w2,0.72)*Math.PI);
+ if(u<tw.uH0){
+  // torn free: from the loser's last heave, one swing through to the
+  // winner and on up into the hoist
+  var w2=(u-tw.uW)/(tw.uH0-tw.uW), e2=w2*w2*(3-2*w2);
+  return (-wv*A2)*(1-e2)+wv*tw.hoist*e2*1.06;
+ }
+ if(u<tw.uA1){
+  // aloft — the trophy, with the smallest bob
+  var w3=(u-tw.uH0)/(tw.uA1-tw.uH0);
+  return wv*tw.hoist*(1.06-0.06*Math.min(1,w3*2.5))+wv*tw.hoist*0.025*Math.sin(w3*Math.PI*2);
+ }
+ if(u<tw.uL){
+  // lowered gently home
+  var w4=(u-tw.uA1)/(tw.uL-tw.uA1), e4=w4*w4*(3-2*w4);
+  return wv*tw.hoist*(1-e4);
+ }
+ if(u<tw.uSet){
+  // the softest settle past rest and back
+  var w5=(u-tw.uL)/(tw.uSet-tw.uL);
+  return -wv*A2*0.07*Math.sin(w5*Math.PI);
+ }
+ if(u>=tw.uP0 && u<tw.uP1){
+  // the pat: pressed once on the head
+  var w6=(u-tw.uP0)/(tw.uP1-tw.uP0);
+  return -wv*A2*0.20*Math.sin(w6*Math.PI);
+ }
+ return 0;
 }
 /**
  * The letter STRETCHES in the fight — two hands pulling opposite
@@ -5142,16 +5194,25 @@ function tugCarryY(u, tw){
  * end lets go.
  */
 function tugStretchY(u, tw){
- if(u<=tw.uT0 || u>=tw.uSet+0.06) return 0;
+ if(u<=tw.uT0 || u>=tw.uP1+0.02) return 0;
  var st=tw.stMax||0;
  if(u<tw.uW){
   var w=(u-tw.uT0)/(tw.uW-tw.uT0);
-  return st*(0.30+0.70*w)*(0.55+0.45*Math.abs(Math.sin(w*Math.PI*4)));
+  var h=tugHeave(w);
+  var quiver=Math.sin(w*Math.PI*13)*st*0.10*tw.trem*h.strain;
+  return st*(0.30+0.70*h.env)*(0.35+0.65*h.hold)+quiver;
  }
- // torn free: stretched -> squashed past rest -> a small bounce -> flat
- var w2=(u-tw.uW)/(tw.uSet+0.06-tw.uW);
- var dec=Math.exp(-3.2*w2);
- return st*Math.cos(w2*Math.PI*2.6)*dec*0.9;
+ if(u<tw.uH0){
+  // torn free: the stretched letter RECOILS — past rest, bounced out
+  var w2=(u-tw.uW)/(tw.uH0-tw.uW);
+  return st*Math.cos(w2*Math.PI*2.2)*Math.exp(-2.8*w2);
+ }
+ if(u>=tw.uP0 && u<tw.uP1){
+  // the pat's little give
+  var w6=(u-tw.uP0)/(tw.uP1-tw.uP0);
+  return -st*0.18*Math.sin(w6*Math.PI);
+ }
+ return 0;
 }
 
 /**
@@ -5232,7 +5293,7 @@ function armScript(A){
   * letter's slot is always empty before anything lands in it.
   */
  // a swap sequences the second hand itself, so it takes no stagger
- var lag=(A.k===1 && act!=='swap')?Math.max(0,Math.min(1,P.armStagger===undefined?0.35:P.armStagger)):0;
+ var lag=(A.k===1 && act!=='swap' && act!=='tug')?Math.max(0,Math.min(1,P.armStagger===undefined?0.35:P.armStagger)):0;
  var wait=Math.max(0,Math.min(1,P.armWait===undefined?0.3:P.armWait));
  var K=[], uR, uDone=ARM_PH.done, uOpen=0.645, tugWinS;
  var add=function(u,x,y,a){ K.push({u:(u>land?u+lag*0.03:u),x:x,y:y,a:(a===undefined?base:a)}) };
@@ -5491,15 +5552,18 @@ function armScript(A){
   add(0.375, gx, gy, base);                                // fingers close
   add(0.40, gx, gy, base-LN*dirX*8);                       // shoulders set: heave
   if(tugWinS){
-   // the winner rides every pull glued to its grip — armPose lays the
-   // tug over these knots — takes the yank, and sets the letter home
-   add(twS.uSet, gx, gy, base);                            // letter back in its slot
-   add(twS.uSet+0.04, gx, gy, base);                       // still holding
-   add(twS.uSet+0.075, gx, gy, base);                      // fingers open
-   add(twS.uSet+0.09, gx, gy+V*A.hr*0.9, base-LN*dirX*14); // flick away
-   add(twS.uSet+0.125, hovX, hovY, base);
-   add(twS.uSet+0.125+wait*0.06, hovX, hovY, base);
-   uR=twS.uSet+0.125+wait*0.06; uDone=twS.uSet; uOpen=twS.uSet+0.075;
+   // the winner rides every pull, the yank, the HOIST and the gentle
+   // set-down glued to its grip — armPose lays the whole ride over
+   // these knots — then opens, PATS the letter once on the head, and
+   // only then leaves
+   add(twS.uSet, gx, gy, base);                            // letter home
+   add(0.78, gx, gy, base);                                // fingers open
+   add(twS.uP0, gx, gy+V*A.hr*0.85, base-LN*dirX*8);       // hand up for the pat
+   add(0.807, gx, gy+V*A.hr*0.10, base);                   // the PAT
+   add(twS.uP1, gx, gy+V*A.hr*0.9, base-LN*dirX*10);       // and off it
+   add(0.838, gx, gy+V*A.hr*1.4, base-LN*dirX*12);
+   add(0.853, hovX, hovY, base);
+   uR=0.853; uDone=twS.uSet; uOpen=0.78;
   } else {
    // the loser: grip TORN off on the winner's yank, flung out to its
    // own side, and home early — beaten
@@ -5689,10 +5753,12 @@ function armPose(k, u, vis){
  if(act==='spin'){
   // every finger shortens into the fist (thumb in with them), then ONE
   // whips out for the strike — the point channel, as the poke has it
-  KEYS=[[0.00,0.12,0.35,0],[0.24,0.45,0.25,0],[0.30,0.55,0.2,0],
-        [0.36,0.97,0.03,0],[0.44,1,0.02,0],[0.505,1,0.02,0],
-        [0.518,0.96,0.03,1],[0.55,0.9,0.05,1],[0.62,0.35,0.3,0.4],
-        [0.70,0.15,0.4,0],[S.uR+0.03,0.15,0.4,0],[S.backEnd,0.9,0.2,0],[1,0.9,0.2,0]];
+  // the whole fist SHRINKS as it folds — fingers drawn right in —
+  // and pops back to size the instant the finger whips out
+  KEYS=[[0.00,0.12,0.35,0,1],[0.24,0.45,0.25,0,1],[0.30,0.55,0.2,0,0.98],
+        [0.36,0.97,0.03,0,0.84],[0.44,1,0.02,0,0.74],[0.505,1,0.02,0,0.74],
+        [0.518,0.96,0.03,1,1.05],[0.55,0.9,0.05,1,1],[0.62,0.35,0.3,0.4,1],
+        [0.70,0.15,0.4,0,1],[S.uR+0.03,0.15,0.4,0,1],[S.backEnd,0.9,0.2,0,1],[1,0.9,0.2,0,1]];
  } else if(act==='wave'){
   KEYS=[[0.00,0.55,0.10],[0.20,0.55,0.10],[0.30,0.10,0.95],[0.70,0.10,0.95],[0.82,0.45,0.20],[S.uR+0.03,0.45,0.20],[S.backEnd,0.9,0.2],[1,0.9,0.2]];
  } else if(act==='poke'){
@@ -5708,14 +5774,16 @@ function armPose(k, u, vis){
         [tClose,1,0.12],[tAct,1,0.12],[S.uOpen,1,0.12],[S.uOpen+0.035,0.35,0.25],
         [S.uOpen+0.12,0.60,0.20],[S.uR+0.03,0.60,0.20],[S.backEnd,0.9,0.2],[1,0.9,0.2]];
  }
- var curl=KEYS[0][1], fan=KEYS[0][2], point=KEYS[0][3]||0;
+ var curl=KEYS[0][1], fan=KEYS[0][2], point=KEYS[0][3]||0, hscale=(KEYS[0][4]===undefined?1:KEYS[0][4]);
  for(var kk=0;kk<KEYS.length-1;kk++){
   var ka=KEYS[kk], kb=KEYS[kk+1];
+  var ha=(ka[4]===undefined?1:ka[4]), hb=(kb[4]===undefined?1:kb[4]);
   if(u>=ka[0] && u<=kb[0]){
    var tt=(kb[0]>ka[0])? ease((u-ka[0])/(kb[0]-ka[0])) : 1;
-   curl=ka[1]+(kb[1]-ka[1])*tt; fan=ka[2]+(kb[2]-ka[2])*tt; point=(ka[3]||0)+((kb[3]||0)-(ka[3]||0))*tt; break;
+   curl=ka[1]+(kb[1]-ka[1])*tt; fan=ka[2]+(kb[2]-ka[2])*tt; point=(ka[3]||0)+((kb[3]||0)-(ka[3]||0))*tt;
+   hscale=ha+(hb-ha)*tt; break;
   }
-  if(u>kb[0]){ curl=kb[1]; fan=kb[2]; point=kb[3]||0; }
+  if(u>kb[0]){ curl=kb[1]; fan=kb[2]; point=kb[3]||0; hscale=hb; }
  }
 
  /**
@@ -5798,7 +5866,7 @@ function armPose(k, u, vis){
   var cyT=tugCarryY(u, tw2);
   var stT=tugStretchY(u, tw2);
   carry=[0, cyT];
-  var glueEnd=(tw2.winV===A.V)? tw2.uSet : tw2.uW;
+  var glueEnd=(tw2.winV===A.V)? 0.78 : tw2.uW;
   // the hand rides its grip point ON THE STRETCHED EDGE: the edge it
   // holds moves out by the strain, and the fingers move with it
   if(u>tw2.uT0 && u<glueEnd) y+=cyT+A.V*((A.b?A.b.h:A.LH)/2)*stT;
@@ -5895,7 +5963,7 @@ function armPose(k, u, vis){
           lx:x, ly:y, lang:ang, lcarry:carry,
           // the thumb is on the side the body comes from — as a row's
           // top hand, arriving from the right end, has always had it
-          curl:curl, fan:fan, point:point, mirror:A.gridSwap?(A.loop||1):((A.V<0)?1:-1),
+          curl:curl, fan:fan, point:point, hscale:hscale, mirror:A.gridSwap?(A.loop||1):((A.V<0)?1:-1),
           squash:[sx,sy], pin:wp,
           phase:phase, s:s, route:R };
 }
@@ -6101,7 +6169,7 @@ function armHose(k, u, vis){
  var wh=A.F.toW([q.lx,q.ly]), hrr=A.hr*1.25;
  armExtAdd(wh[0]-hrr, wh[1]-hrr); armExtAdd(wh[0]+hrr, wh[1]+hrr);
  var d='M'+F(near[0])+chain(near);
- d+=handOutlineAt(A.hr, q.curl, q.fan, q.mirror, q.lx, q.ly, q.lang, q.point);
+ d+=handOutlineAt(A.hr*(q.hscale||1), q.curl, q.fan, q.mirror, q.lx, q.ly, q.lang, q.point);
  var farR=far.slice().reverse();
  d+='L'+F(farR[0])+chain(farR);
  // rounded off at the tuck
@@ -6416,8 +6484,8 @@ function armCSSBody(total){
   VIS.forEach(function(VV){ us.forEach(function(u){
    var q=armPose(k, u, VV.vis); if(!q) return;
    handV.push({p:at(u,VV.vis), v:'opacity:'+visAt(q,u).toFixed(3)});
-   handF.push({p:at(u,VV.vis), v:'d:path("'+handClosedAt(A.hr, q.curl, q.fan, q.mirror, q.x, q.y, q.ang, q.point)+'")'});
-   handO.push({p:at(u,VV.vis), v:'d:path("'+handOpenAt(A.hr, q.curl, q.fan, q.mirror, q.x, q.y, q.ang, q.point)+'")'});
+   handF.push({p:at(u,VV.vis), v:'d:path("'+handClosedAt(A.hr*(q.hscale||1), q.curl, q.fan, q.mirror, q.x, q.y, q.ang, q.point)+'")'});
+   handO.push({p:at(u,VV.vis), v:'d:path("'+handOpenAt(A.hr*(q.hscale||1), q.curl, q.fan, q.mirror, q.x, q.y, q.ang, q.point)+'")'});
    // (the hook inside the hand is gone — its track is one static stop)
   }) });
   var q0=armPose(k, 0);
@@ -6588,6 +6656,44 @@ function pupilSqueezeCSS(i, total){
   +'.eyQ'+i+'{'+org+'animation:eyQ'+i+' '+Math.round(total)+'ms linear both}';
 }
 
+/**
+ * The spun eye RIGHTS ITSELF. The whirl carries the whole eye round
+ * with the letter — lids, pupil, glint — and once the letter settles
+ * on its half-turn, the eye swings back upright with a spring: past
+ * true, back on. The counter is a further -180, so the eye's NET turn
+ * is a full 360 — the glint physically rides the recoil arc and ends
+ * exactly where it began, which is also what makes the loop seam
+ * invisible.
+ */
+function spinRecoilCSS(i, total){
+ var g=eyeGeom(i); if(!g||!B[i].hp) return '';
+ if(!(P.arms&&P.sleep) || armAct()!=='spin') return '';
+ var V2=armVisit(total); if(!V2) return '';
+ var org='transform-box:view-box;transform-origin:'+g.cx.toFixed(1)+'px '+g.cy.toFixed(1)+'px;';
+ var stops=[{p:0,v:0,e:EZ_MOVE}], got=false;
+ V2.starts.forEach(function(t0,vi){
+  armSides().forEach(function(sd,k){
+   var Av=armGeom(k,vi); if(!Av||Av.li!==i) return;
+   var Sv=armScript(Av), sd2=Sv.spinDir||1;
+   var at2=function(u){ return (t0+u*V2.f)*100 };
+   var tR=at2(0.523+0.42), d=Math.max(2.5, Math.min(6, (99-tR)/2));
+   if(tR>=98) return;
+   got=true;
+   stops.push({p:tR-0.5, v:0, e:EZ_SETTLE});
+   stops.push({p:tR+d*0.5, v:-sd2*197, e:EZ_SETTLE});
+   stops.push({p:tR+d*0.78, v:-sd2*173, e:EZ_SETTLE});
+   stops.push({p:tR+d, v:-sd2*180, e:EZ_SETTLE});
+   stops.push({p:99.9, v:-sd2*180});
+  });
+ });
+ if(!got) return '';
+ stops.sort(function(a4,b4){ return a4.p-b4.p });
+ var kf='';
+ stops.forEach(function(st){ kf+=Math.max(0,Math.min(100,st.p)).toFixed(2)+'%{transform:rotate('+st.v.toFixed(1)+'deg)'+(st.e?';animation-timing-function:'+st.e:'')+'}' });
+ return '@keyframes eyV'+i+'{'+kf+'}'
+  +'.eyV'+i+'{'+org+'animation:eyV'+i+' '+Math.round(total)+'ms linear both}';
+}
+
 function eyesCSS(total, step){
  if(!EYES()) return '';
  var out='';
@@ -6604,7 +6710,7 @@ function eyesCSS(total, step){
  var span=eyeSpan(total);
  B.forEach(function(b,i){ if(b.hp){ out+=eyeLookCSS(i,span)+eyeDomeCSS(i,span)
   +eyeBlinkCSS(i,span)+lidCSS(i,span)+eyeGlintCSS(i,span)
-  +browCSS(i,span)+eyeUprightCSS(i,total,step)+pupilSqueezeCSS(i,span) } });
+  +browCSS(i,span)+eyeUprightCSS(i,total,step)+pupilSqueezeCSS(i,span)+spinRecoilCSS(i,span) } });
  // On its own clock the round is no longer the run, so it has to be told
  // to come round again — otherwise the eye finishes early and holds, and
  // a loader that holds its last frame while the page loads holds a face
@@ -7441,7 +7547,7 @@ function svgRaw(){
     defs+='<mask id="ey'+i+'" maskUnits="userSpaceOnUse" x="-600" y="-800" '
      +'width="2200" height="2000">'
      +'<rect x="-600" y="-800" width="2200" height="2000" fill="#fff"/>'
-     +'<g class="eyR'+i+'"><g class="eyS'+i+'"><g class="eyM'+i+'">'
+     +'<g class="eyV'+i+'"><g class="eyR'+i+'"><g class="eyS'+i+'"><g class="eyM'+i+'">'
      +'<g class="eyL'+i+'"><g class="eyD'+i+'"><g class="eyB'+i+'">'
      // black is cut away: the pupil, at full size and staying that way —
      // inside a group that squeezes it while a hand has hold of the letter
@@ -7455,7 +7561,7 @@ function svgRaw(){
      // and an eye looking left keeps the same lid. White is ink, so each
      // disc covers whatever it overlaps.
      +lidDiscs(i)
-     +'</g></g></g></g></mask>';
+     +'</g></g></g></g></g></mask>';
     batt+=' mask="url(#ey'+i+')"';
    }
    if(lp(i,'lgw')>0) for(var q=0;q<P.lgbris;q++){
@@ -8573,7 +8679,7 @@ function preset(n){P=migrate(JSON.parse(JSON.stringify(PRESETS[n])));
 var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eyeCycle','slpWake','slpRotX','slpRotO','rotX','rotO','lgap','lrot','lscat','lspread','lshuffle','lsettle','lscore','lturn',
  'eyeDart','eyeGlance','eyeBlink','eyeSize','eyeOval','eyeDome',
  'eyeShut','blinkSync','eyeSpeed','eyeGlint','glintIn',
- 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeWander','eyeAsym','eyePop','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armDelay','armStagger','armGrip','armSquash','armSpeed','armWait','armSize','armFill','armCount','armCase','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armBow','armLift','armTilt','armEyes','armTarget','armTarget2',
+ 'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeWander','eyeAsym','eyePop','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armDelay','armStagger','armGrip','armSquash','armSpeed','armWait','armSize','armFill','armCount','armCase','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armTugAmt','armBow','armLift','armTilt','armEyes','armTarget','armTarget2',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
  'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','boil','boilHz','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
@@ -8600,7 +8706,7 @@ function armTargetName(v){
 }
 function labels(){
  var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeWander:2,eyeAsym:2,eyePop:2,eyeEdge:2,eyeLidR:2,eyeLidRest:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
-  lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
+  lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,armTugAmt:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
   var b=document.getElementById('v'+e.id); if(b) b.textContent=P[e.dataset.p]+'ms';
@@ -9376,6 +9482,7 @@ armTaper:'How much wider the arm is at the shoulder than at the wrist.',
 armDraw:'Draws the arm and hand on as they arrive, the way a letter outline draws on. 0 is already there.',
 armWobble:'How far the arm wanders off a perfect arc, and around the letters rather than across them.',
 armBoil:'How often the wander is redrawn across a visit. 0 holds one drawing.',
+armTugAmt:'How hard the tug of war is fought \u2014 the stretch, the quiver and the pull on the letter both hands want.',
 armBow:'How much the arm bows on its way in. Negative bows the other way.',
 armLift:'How far the letter is lifted off its place.',
 armTilt:'How much the letter leans as it is carried.',
