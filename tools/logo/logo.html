@@ -1564,7 +1564,7 @@ function fitViewBox(str, bb, framed){
  if(P.sleep) grow*=1+Math.max(0,P.slpAmt)*0.03;
  hx=hx*grow*1.02; hy=hy*grow*1.02;
  // The boil displaces pixels; the furthest line needs that much more room.
- if(P.boil>0){ var bpad=mb[3]*P.boil*0.03+1; hx+=bpad; hy+=bpad }
+ if(P.boil>0){ var bpad=mb[3]*P.boil*0.075+1; hx+=bpad; hy+=bpad }
  // The arms throw a carried letter well above the mark — up to 1.3
  // letter-heights plus the letter itself — and that flight is a CSS
  // transform too, invisible to the measurement. Without this the O
@@ -1839,14 +1839,35 @@ function boilFilters(){
  }
  return out;
 }
+// The arms lead the boil. A thin line carries far less ink than a
+// letterform, so the same field that gives the letters a lively edge
+// leaves a hose looking barely touched — the arms take a second,
+// stronger and slightly finer field of their own, nested inside the
+// global one and swapped on the same clock. The letters keep the
+// gentler field; pupils and letterforms would shred under this one.
+function armBoilFilters(){
+ if(!(P.boil>0)) return '';
+ var mb=markBox(), mh=Math.max(60, mb[3]);
+ var fx=9/mh, fy=fx*1.3, sc=P.boil*mh*0.085, out='';
+ for(var i=0;i<BOIL_N;i++){
+  out+='<filter id="armBoil'+i+'" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">'
+   +'<feTurbulence type="fractalNoise" baseFrequency="'+fx.toFixed(4)+' '+fy.toFixed(4)
+   +'" numOctaves="2" seed="'+Math.round(P.seed*7+i*37+211)+'" result="abn"/>'
+   +'<feDisplacementMap in="SourceGraphic" in2="abn" scale="'+sc.toFixed(2)
+   +'" xChannelSelector="R" yChannelSelector="G"/></filter>';
+ }
+ return out;
+}
 function boilCSS(){
  if(!(P.boil>0)) return '';
- var T=Math.round(BOIL_N/Math.max(.5,P.boilHz)*1000), kf='';
+ var T=Math.round(BOIL_N/Math.max(.5,P.boilHz)*1000), kf='', ka='';
  for(var i=0;i<BOIL_N;i++){
   var a=i/BOIL_N*100, b=(i+1)/BOIL_N*100-(i===BOIL_N-1?0:0.01);
   kf+=a.toFixed(2)+'%,'+b.toFixed(2)+'%{filter:url(#boil'+i+')}';
+  ka+=a.toFixed(2)+'%,'+b.toFixed(2)+'%{filter:url(#armBoil'+i+')}';
  }
- return '@keyframes boil{'+kf+'}.boilg{animation:boil '+T+'ms linear infinite}';
+ return '@keyframes boil{'+kf+'}.boilg{animation:boil '+T+'ms linear infinite}'
+  +'@keyframes armBoil{'+ka+'}.armBoilg{animation:armBoil '+T+'ms linear infinite}';
 }
 
 /**
@@ -6944,7 +6965,7 @@ function svgRaw(){
   +LETTERS.map(function(L,li){var sf=lp(L[0],'lgSoft');
      return sf>0?'<filter id="soft'+li+'" x="-40%" y="-40%" width="180%" height="180%">'
       +'<feGaussianBlur stdDeviation="'+(sf*30).toFixed(1)+'"/></filter>':''}).join('')
-  +boilFilters()+'</defs>'+(P.jitter>0?'<g class="jit">':'')+(P.boil>0?'<g class="boilg">':'');
+  +boilFilters()+armBoilFilters()+'</defs>'+(P.jitter>0?'<g class="jit">':'')+(P.boil>0?'<g class="boilg">':'');
  var defs='';
 
  // back halves of every arc, behind the letters
@@ -7097,6 +7118,10 @@ function svgRaw(){
   });
   body+=lc;
  });
+ if(P.boil>0){
+  if(ARM_BACK) ARM_BACK='<g class="armBoilg">'+ARM_BACK+'</g>';
+  if(ARM_FRONT) ARM_FRONT='<g class="armBoilg">'+ARM_FRONT+'</g>';
+ }
  s+=(defs?'<defs>'+defs+'</defs>':'')
   +open+ARM_BACK
   +(function(){
@@ -9043,7 +9068,7 @@ spinP:'Perspective for that rotation.',
 // --- stage ---
 fps:'Frames per second the export is baked at.',
 jitter:'Shakes the whole mark.',
-boil:'Every line redrawn a few times a second — hand-drawn line boil over arms and letters alike.',
+boil:'Every line redrawn a few times a second — hand-drawn line boil. The arms take it hardest; the letterforms keep a gentler edge.',
 boilHz:'Fresh drawings a second the boil holds between.',
 scrub:'Scrub the timeline. Pause first to hold a frame.'
 };
