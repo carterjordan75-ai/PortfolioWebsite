@@ -1824,7 +1824,12 @@ var BOIL_N=5;
 function boilFilters(){
  if(!(P.boil>0)) return '';
  var mb=markBox(), mh=Math.max(60, mb[3]);
- var fx=2.4/mh, fy=fx*1.4, sc=P.boil*mh*0.05, out='';
+ // The wavelength is the whole trick: at ~half the letter height a thin
+ // line just drifts sideways in one piece — the letters boiled and the
+ // arms read as untouched. A few line-widths (~mh/7, with the second
+ // octave at half that) and every line in the scene undulates ALONG
+ // itself, arm hose and letter edge alike.
+ var fx=7/mh, fy=fx*1.3, sc=P.boil*mh*0.05, out='';
  for(var i=0;i<BOIL_N;i++){
   out+='<filter id="boil'+i+'" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">'
    +'<feTurbulence type="fractalNoise" baseFrequency="'+fx.toFixed(4)+' '+fy.toFixed(4)
