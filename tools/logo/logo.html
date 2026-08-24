@@ -4427,7 +4427,40 @@ function armGeom(k, vis){
           box:box, rowLike:rowLike, F:F, vis:(vis|0), toLeft:toLeft,
           gridSwap:gridSwap, sx:sx, rootB:aB, rootLi:aLi, rootEye:!!(aB&&aB.hp), partnerH:(visit.pair&&B[partner])?B[partner].h/2:undefined, mid:mid, midY:midY, role:role,
           rootCW:F.toW(aC), rootR:Math.max(aB?aB.w:LH, aB?aB.h:LH)/2,
-          others:LCEN.map(function(cc,ii){ return { li:ii, p:LPc[ii], h:LHs[ii][1], w:LHs[ii][0] } }).filter(function(o3){ return o3.li!==li && !(visit.pair && o3.li===partner) }),
+          others:(function(){
+           var os2=LCEN.map(function(cc,ii){ return { li:ii, p:LPc[ii], h:LHs[ii][1], w:LHs[ii][0] } })
+             .filter(function(o3){ return o3.li!==li && !(visit.pair && o3.li===partner) });
+           /**
+            * THE GAPS ARE PLUGGED. A tube that threads between two
+            * letters is clear of both and straight across the face of
+            * the mark — the one place an arm must never be seen. A
+            * phantom disc sits in every gap between neighbouring
+            * letters, sized to fill it, so every solve treats the mark
+            * as one solid shape and routes around it. The gaps at this
+            * arm's own letter and its partner stay open — the grip and
+            * the set-down live there — and so does the masked corridor
+            * where its root exits.
+            */
+           for(var gi=0;gi<LCEN.length;gi++) for(var gj=gi+1;gj<LCEN.length;gj++){
+            if(gi===li||gj===li) continue;
+            if(visit.pair && (gi===partner||gj===partner)) continue;
+            var pg1=LPc[gi], pg2=LPc[gj];
+            var D2=Math.hypot(pg2[0]-pg1[0], pg2[1]-pg1[1]);
+            if(D2>LH*4.2) continue;
+            // a wide gap takes a CHAIN of discs — a spread row's spaces
+            // are still the face of the mark
+            var nP=Math.max(1, Math.ceil((D2-LHs[gi][1]-LHs[gj][1])/(LH*0.7)));
+            for(var pi2=1;pi2<=nP;pi2++){
+             var tp2=pi2/(nP+1);
+             var mxg=pg1[0]+(pg2[0]-pg1[0])*tp2, myg=pg1[1]+(pg2[1]-pg1[1])*tp2;
+             if(Math.hypot(mxg-wex[0], myg-wex[1])<LH*1.05) continue;
+             if(Math.hypot(mxg-aC[0], myg-aC[1])<LH*0.9) continue;
+             var hP=(nP===1)?Math.max(6, (D2-LHs[gi][1]-LHs[gj][1])/2+4):LH*0.42;
+             os2.push({ li:-1, p:[mxg,myg], h:hP, w:hP });
+            }
+           }
+           return os2;
+          })(),
           lift:(P.armLift===undefined?1:P.armLift)*LH*0.55 };
 }
 
@@ -5118,6 +5151,7 @@ function armScript(A){
   */
  var gBias=0, nearL=1e9, nearR=1e9;
  (A.others||[]).forEach(function(o3){
+  if(o3.li<0) return;   // gap phantoms steer routes, never the grip
   if(Math.abs(o3.p[1]-A.c[1])>A.LH*0.6) return;
   var dxo=o3.p[0]-A.c[0];
   if(dxo<0) nearL=Math.min(nearL,-dxo); else nearR=Math.min(nearR,dxo);
@@ -5444,69 +5478,44 @@ function armScript(A){
   }
  } else if(act==='spin'){
   /**
-   * Grip the top, wind up, FLICK it sideways and let go — the letter
-   * whirls a half-turn on the spot like a spun coin. Both X and O are
-   * symmetric under 180 degrees, so the spin leaves the mark looking
-   * untouched and the round still loops clean.
+   * The FLICK. No grab at all: the hand stations itself beside the
+   * rim, wound back against the strike; every finger shortens into
+   * the fist — the thumb folds in with them — and one finger SNAPS
+   * out, catching the rim a glancing hit. The letter whirls from the
+   * strike, and the hand lifts away along the tangent to watch.
    */
+  var sD=-V*dirX;
   /**
-   * Grab, HOLD, then a snap. The hand takes the letter and sits on it
-   * for a beat — the hold is what sells the flick — winds back, and
-   * whips across: the letter goes three full turns, fast out of the
-   * flick and slowing to a stop, and the hand lifts off to watch.
+   * The strike lands ON THE RIM'S HIGH POINT — an X dips at its
+   * notch, so a strike aimed at the centre straddled the lobes with
+   * the finger in the gap. The contact point sits at ~38 degrees
+   * round the rim on the strike side; the hand rides a hand-radius
+   * outside it so only the whipped finger reaches in.
    */
+  var tipR=lh+A.hr*0.12, tipA2=0.66;
+  var tipX=A.c[0]+sD*tipR*Math.sin(tipA2), tipY=A.c[1]+V*tipR*Math.cos(tipA2);
+  var latW=Math.min(A.hr*1.15, A.LH*0.46);
+  var sx1=tipX-sD*latW, sy1=tipY+V*A.hr*1.0;
+  // wherever the sliders put hand and letter sizes, the stationed
+  // fist sits clear of its own letter
+  // mid-fold the fingers still reach well past the fist's radius
+  var needS=lh+A.hr*1.55, dxS=sx1-A.c[0];
+  if(Math.hypot(dxS, sy1-A.c[1])<needS)
+   sy1=A.c[1]+V*Math.sqrt(Math.max(1, needS*needS-dxS*dxS));
   add(0.275, hovX, hovY+V*A.hr*0.5, base);
-  add(0.30, gx, gy-V*A.hr*0.16, base);                     // drop on, squash
-  add(0.315, gx, gy, base);                                // grip
-  add(0.375, gx, gy, base);                                // fingers closed
-  add(0.47, gx, gy, base);                                 // and HOLD
-  /**
-   * The flick is a ROLL. The hand draws back round the letter's rim,
-   * then rolls forward over the top of it and off the far side,
-   * opening as it goes and lifting away along the tangent — the way a
-   * hand spins a ball. Every point of the roll is kept a hand's
-   * radius clear of the letter's neighbours: where a neighbour is in
-   * the way the hand rises off the rim rather than into it.
-   */
-  var rr=lh+A.hr*gripD;
-  // a fist reaches a little past its own radius; the open hand, fingers
-  // first, a good deal further — and an X reaches past its own half-
-  // height at the corners
-  var clearOf=function(px,py,open){
-   var bad=0, op=open||0;
-   (A.others||[]).forEach(function(o3){ var d=Math.hypot(o3.p[0]-px,o3.p[1]-py), need=A.hr*(1.35+0.25*op)+o3.h*(1.15+0.15*op); if(d<need) bad=Math.max(bad, need-d) });
-   return bad;
-  };
-  var rimAt=function(deg, r){ var th=deg*Math.PI/180; return [A.c[0]+dirX*r*Math.sin(th), A.c[1]+V*r*Math.cos(th)] };
-  /**
-   * In a row the letter's neighbours are close on both sides, and a
-   * hand rolling far round the rim would run into them — so the roll
-   * covers as much of the rim as is clear for a fist: the same roll,
-   * over a smaller arc of the top. (Lifted straight up instead, the
-   * roll had turned into a bounce: up a letter-height and back down
-   * onto the rim between the hold and the flick.)
-   */
-  var amax=58;
-  for(var aTry=58; aTry>14; aTry-=4){ var pA=rimAt(aTry, rr), pB=rimAt(-aTry*0.52, rr); if(clearOf(pA[0],pA[1],0)<=0 && clearOf(pB[0],pB[1],0)<=0){ amax=aTry; break } }
-  var aSc=amax/58;
-  var onRim=function(deg, rise, open){
-   var pt=rimAt(deg*aSc, rr*(1+rise)), guard=0;
-   // and where even that would touch a neighbour — the hand opening
-   // as it rolls off — it rises off the rim, away from the mark
-   while(clearOf(pt[0],pt[1],open)>0 && guard++<40){ pt[1]+=V*A.hr*0.08 }
-   return pt;
-  };
-  var roll=function(u2, deg, rise, lean2, open){ var pt=onRim(deg, rise, open); add(u2, pt[0], pt[1], base+LN*dirX*lean2*aSc) };
-  roll(0.505, -30, 0.04, -12, 0);                           // draw back round the rim
-  roll(0.52, -12, 0.0, -4, 0);
-  roll(0.535, 12, 0.02, 8, 0.1);                            // over the top
-  roll(0.55, 34, 0.22, 18, 0.5);                            // rolling off, lifting as it opens
-  roll(0.565, 50, 0.48, 22, 0.8);                           // and away along the tangent
-  roll(0.60, 58, 0.9, 14, 1);
+  add(0.32, sx1, sy1, base-LN*dirX*6);                     // to the station
+  add(0.335, sx1, sy1, base-LN*dirX*6);
+  add(0.42, sx1, sy1, base-LN*dirX*10);                    // the fist folds, finger cocked
+  add(0.50, sx1, sy1, base-LN*dirX*12);                    // held — the cock sells it
+  add(0.515, tipX-sD*A.hr*0.5, tipY+V*A.hr*0.92, base);    // SNAP through
+  add(0.522, tipX, tipY+V*A.hr*0.82, base+LN*dirX*6);      // the strike: the tip grazes the lobe
+  add(0.54, tipX+sD*A.hr*0.7, tipY+V*A.hr*1.15, base+LN*dirX*14); // follow-through, lifting
+  add(0.575, tipX+sD*A.hr*0.9, tipY+V*A.hr*1.6, base+LN*dirX*8);
   add(0.68, hovX, hovY, base);                             // watch it whirl
   add(0.73, hovX, hovY, base);
   add(0.76+wait*0.12, hovX, hovY, base);
   uR=0.76+wait*0.12;
+  tC=0.512; uOpen=0.532; uDone=0.53;
  } else if(act==='poke'){
   var bops=Math.max(1,Math.min(3,A.cycles||2));
   var u0=0.34, u1=0.62, span=(u1-u0)/bops;
@@ -5644,8 +5653,12 @@ function armPose(k, u, vis){
  var top=(A.V<0);
  var KEYS;
  if(act==='spin'){
-  KEYS=[[0.00,0.12,0.35],[0.24,0.55,0.25],[0.30,0.55,0.25],[0.375,1,0.15],
-        [0.525,1,0.15],[0.575,0.10,0.85],[0.66,0.10,0.85],[0.76,0.15,0.40],[S.uR+0.03,0.15,0.40],[S.backEnd,0.9,0.2],[1,0.9,0.2]];
+  // every finger shortens into the fist (thumb in with them), then ONE
+  // whips out for the strike — the point channel, as the poke has it
+  KEYS=[[0.00,0.12,0.35,0],[0.24,0.45,0.25,0],[0.30,0.5,0.22,0],
+        [0.36,0.92,0.06,0],[0.44,0.96,0.05,0],[0.505,0.96,0.05,0],
+        [0.518,0.9,0.06,1],[0.55,0.85,0.08,1],[0.62,0.3,0.3,0.4],
+        [0.70,0.15,0.4,0],[S.uR+0.03,0.15,0.4,0],[S.backEnd,0.9,0.2,0],[1,0.9,0.2,0]];
  } else if(act==='wave'){
   KEYS=[[0.00,0.55,0.10],[0.20,0.55,0.10],[0.30,0.10,0.95],[0.70,0.10,0.95],[0.82,0.45,0.20],[S.uR+0.03,0.45,0.20],[S.backEnd,0.9,0.2],[1,0.9,0.2]];
  } else if(act==='poke'){
@@ -5689,7 +5702,7 @@ function armPose(k, u, vis){
    * the last half is the slowing; and a few degrees of overspin at the
    * end that come back, so it lands rather than just stops.
    */
-  var ts=(u-0.53)/0.30;
+  var ts=(u-0.523)/0.30;
   if(ts>0){ ts=Math.max(0,Math.min(1,ts));
    var g=(1-Math.pow(1-ts,4))+0.245*Math.pow(ts,6)*(1-ts);
    spin=S.spinDir*ARM_SPIN*g }
@@ -6007,6 +6020,13 @@ function armHose(k, u, vis){
  var taperP=(P.armTaper===undefined?1.15:P.armTaper);
  if(!A.rowLike) taperP=Math.min(taperP, 1.4);
  var w1=A.hr*HAND_WRIST, w0=w1*taperP;
+ /**
+  * The base is never seen — which means the tube at the root can be
+  * no wider than the letter hiding it. Big hands over small letters
+  * grew a base whose flanks stood out past the root's own edges and
+  * past the fade disc meant to cover them.
+  */
+ if(A.rootB) w0=Math.min(w0, Math.max(A.rootB.w, A.rootB.h)*0.44);
  var edge=function(sgn){
   var out=[];
   for(var i3=0;i3<=N;i3++){
