@@ -48,17 +48,27 @@ and drone duck gently around the kick so the low end pockets. The tape
 surface is a whisper (hiss −60 dB, a few dust ticks) and the bus is
 nearly clean — parallel tanh at drive 1.7, blend 0.38, a soft ceiling
 eased to 1.18. And cut in from another room, six times across the
-loop: the distorted murmur of a home tape — no recording is sampled;
-unintelligible speech is synthesised (a jittering glottal pulse
-through three wandering formants at syllable cadence), narrowed,
-driven and given dropouts. The voices join AFTER the match EQ, which
-would otherwise remove them to honour a reference that has none.
+loop: the distorted sound of a home tape — no recording is sampled.
+Murmured talk at several pitches (a jittering glottal pulse through
+three wandering formants at syllable cadence) and, twice, a young
+girl's laugh — staccato voiced bursts falling in pitch and force, a
+breath between bouts — all narrowed, driven and given dropouts, with
+radio static finding the channel before most phrases (chopped squelch,
+a falling heterodyne whistle, the click of the switch). The tape joins
+the mix at the very end of the chain, after every corrective stage.
 
-The **match EQ** (smoothed ratio of the reference's Welch curve to the
-bus's, applied circularly) is deliberately confined to 260 Hz–2 kHz at
-±8 dB: below that the drone is a chosen departure, above it the ear
-chose clean over the reference's crackle. A push into a soft ceiling
-lands the reference's frame density (RMS −16.1 vs −16.1).
+Above the roll, a large string section: four add9 voices, a desk of
+detuned players per side with slow vibrato and bow-noise, swelling
+from nothing at half a minute to full at the crest, gone by the seam;
+and the roll itself reaches higher as it builds — octave leaps on the
+figure's tops and off-beat sparkle ghosts an octave up.
+
+The match EQ that once pinned the bus to the reference's curve is
+retired: the ear steered the piece away (strings, kicks, voices), and
+measurement showed the EQ quietly erasing every addition inside its
+band. The reference lives on in the sources — key, register, tempo,
+density, level, arc — and a push into a soft ceiling still lands its
+frame density (RMS −16.1 vs −16.1).
 
 Where it lands: low end deliberately FULLER than the reference (sub
 −39 vs −41), the top deliberately cleaner (pres −100 vs −68), mids
@@ -69,13 +79,11 @@ sample-to-sample move.
 
 ## Regenerate
 
-    afconvert -f WAVE -d LEI16@44100 <reference.mp3> /tmp/ref.wav
-    python3 tools/audio/compose.py /tmp/loop.wav /tmp/ref.wav
+    python3 tools/audio/compose.py /tmp/loop.wav
     afconvert -f m4af -d aac -b 160000 -q 127 /tmp/loop.wav public/assets/audio/home-loop.m4a
     python3 tools/audio/analyze.py /tmp/loop.wav   # aggregate comparison
     python3 tools/audio/deep.py /tmp/loop.wav      # event-level comparison
 
-Needs numpy + scipy only. Without the reference argument the match EQ
-stage is skipped. The AAC's 2112-sample priming is handled at runtime by
+Needs numpy + scipy only. The AAC's 2112-sample priming is handled at runtime by
 `src/lib/ambientAudio.ts`, which picks loop points from the decoded
 duration — see the comments there before changing the encode.
