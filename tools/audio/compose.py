@@ -182,11 +182,11 @@ for ci in range(16):
 b,a=sg.butter(2,560/(SR/2)); drL=cfilt(b,a,drL); drR=cfilt(b,a,drR)
 drL*= (0.7+0.3*RIDE)*(1-0.38*duck); drR*=(0.7+0.3*RIDE)*(1-0.38*duck)
 
-b,a=sg.butter(1,4300/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
+b,a=sg.butter(1,3800/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
 
 # ---------------- the surface: hiss + crackle ----------------
 hiss=rng.standard_normal(N)
-b,a=sg.butter(2,12000/(SR/2)); hiss=cfilt(b,a,hiss)
+b,a=sg.butter(2,8000/(SR/2)); hiss=cfilt(b,a,hiss)
 b,a=sg.butter(2,1200/(SR/2),'high'); hiss=cfilt(b,a,hiss)
 hiss*=10**(-60/20)*(1+0.25*np.sin(2*np.pi*60*t/T))
 ncr=int(7*T)
@@ -199,7 +199,7 @@ b,a=sg.butter(2,[1800/(SR/2),9000/(SR/2)],'band'); crk=cfilt(b,a,crk)
 crk*=10**(-47/20)/max(1e-9,np.sqrt((crk**2).mean()))
 
 # ---------------- the strings: a large section, swelling with the build ----------------
-STR=periodic([(0,.0),(28,.18),(55,.62),(80,1.0),(108,1.0),(126,.8),(140,.15)])
+STR=periodic([(0,.16),(14,.38),(38,.75),(68,1.0),(108,1.0),(126,.82),(140,.22)])
 SV=[['A2','E3','A3','C#4'],    # A — cello section
     ['E2','B2','E3','G#3'],    # E
     ['F#2','C#3','F#3','A3'],  # F#m
@@ -256,9 +256,9 @@ stL*=STR*(1-0.25*duck); stR*=STR*(1-0.25*duck)
 # Brief resonant glides that fade in, sweep past — pitch falling a
 # touch, pan crossing the field — and are gone: something driving by.
 sqL=np.zeros(N); sqR=np.zeros(N)
-SQK=[(11,2.6,2400,900,1),(26,2.0,700,1900,-1),(38,3.0,3000,1200,1),
-     (52,2.2,1600,600,-1),(66,2.8,900,2400,1),(88,2.4,2800,1000,-1),
-     (101,3.1,1200,2600,1),(121,2.0,2200,800,-1)]
+SQK=[(11,1.2,1700,700,1),(26,1.0,600,1400,-1),(38,1.5,2000,900,1),
+     (52,1.1,1200,500,-1),(66,1.4,700,1700,1),(88,1.2,1900,800,-1),
+     (101,1.6,1000,1900,1),(121,1.0,1500,600,-1)]
 for tS,dS,fa,fb,pd in SQK:
     nlen=int(dS*SR); tt=np.arange(nlen)/SR
     gl=(fa+(fb-fa)*(tt/dS))*(1-0.05*tt/dS)          # the pass drops the pitch
@@ -364,10 +364,17 @@ def wreck(x, seed):
     y/=np.sqrt((y**2).mean())+1e-9
     y=np.tanh(y*2.2)/2.0
     drop=np.clip(np.sin(2*np.pi*r.uniform(0.5,1.3)*tt+r.uniform(0,6))*2+0.78,0.3,1)
-    return y*drop
+    # the tape breathes out, never cuts: a slow exhale at the end
+    env=np.ones(nlen)
+    fi=min(int(0.15*SR),nlen//4); env[:fi]=np.linspace(0,1,fi)
+    fo=min(int(1.1*SR),nlen//2); env[-fo:]=0.5+0.5*np.cos(np.pi*np.arange(fo)/fo)
+    return y*drop*env
 voxL=np.zeros(N); voxR=np.zeros(N)
 #     bar   dur   f0  mode    amp  radio-cut first
-VOX=[(14,  4.6, 118,'talk', 0.8, True),
+VOX=[( 3,  4.0, 120,'talk', 0.85,True),
+     ( 7,  3.5, 300,'talk', 0.7, False),
+     (10,  4.0, 150,'talk', 0.9, True),
+     (14,  4.6, 118,'talk', 0.8, True),
      (18,  2.9, 325,'laugh',0.85,False),
      (22,  3.4, 176,'talk', 0.65,True),
      (34,  5.2, 124,'talk', 0.9, True),
@@ -407,8 +414,8 @@ def circ_reverb(x,sec,damp,seed):
 wetL=circ_reverb(plL+plR*0.3+drL*0.3+stL*1.6+voxL*1.6,2.2,3300,21)
 wetR=circ_reverb(plR+plL*0.3+drR*0.3+stR*1.6+voxR*1.6,2.25,3300,22)
 
-L=((plL*(1-0.15*duck)+stL*6.0+wetL*.36)*(1-0.32*vdk)+bass*1.35+kick*1.7+drL*1.3*(1-0.25*vdk)+sqL+hiss+crk)*RIDE
-R=((plR*(1-0.15*duck)+stR*6.0+wetR*.36)*(1-0.32*vdk)+bass*1.35+kick*1.7+drR*1.3*(1-0.25*vdk)+sqR+hiss+crk*0.92)*RIDE
+L=((plL*(1-0.15*duck)+stL*7.5+wetL*.36)*(1-0.32*vdk)+bass*1.35+kick*1.7+drL*1.3*(1-0.25*vdk)+sqL+hiss+crk)*RIDE
+R=((plR*(1-0.15*duck)+stR*7.5+wetR*.36)*(1-0.32*vdk)+bass*1.35+kick*1.7+drR*1.3*(1-0.25*vdk)+sqR+hiss+crk*0.92)*RIDE
 
 # ---------------- the tape: the notes are driven INTO the medium ----------------
 # The reference masters at 0dBFS with its mids full of low-order harmonics
@@ -419,6 +426,8 @@ L=blend*np.tanh(L*drive)/drive+(1-blend)*L
 R=blend*np.tanh(R*drive)/drive+(1-blend)*R
 # the macro arc again, gently, on the far side of the tape
 L*=RIDE**0.8; R*=RIDE**0.8
+# and the whole thing leans dark: one gentle pole across the master
+b,a=sg.butter(1,7200/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
 # (The match EQ that once pinned the bus to the reference's curve is
 # retired: the piece has been steered well away from the reference by
 # ear — strings, kicks, voices — and the EQ was quietly undoing every

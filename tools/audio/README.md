@@ -59,9 +59,13 @@ words unintelligible and voices unidentifiable). The music leans back
 the tape joins after every corrective stage. When the folder is empty
 the synthesis returns.
 
-Passing through the field, eight times: brief resonant glides that
-fade in slowly, sweep across the panorama with their pitch falling a
-touch, and are gone in a tenth of a second — something driving by.
+Passing through the field, eight times: quick resonant glides — a
+second or so each — that fade in, sweep across the panorama with their
+pitch falling a touch, and are gone in a tenth of a second. Eleven
+tape moments now, three of them inside the first thirty seconds, and
+every phrase ends on a slow 1.1s exhale rather than a cut. The whole
+master leans darker: pluck filter at 3.8k, one gentle pole at 7.2k
+across the bus.
 Murmured talk at several pitches (a jittering glottal pulse through
 three wandering formants at syllable cadence) and, twice, a young
 girl's laugh — staccato voiced bursts falling in pitch and force, a
@@ -74,8 +78,8 @@ Above the roll, a string section pitched DEEP by request — a cello
 choir: four low voices per chord (A2-C#4 territory) under a written
 tenor line, two long notes per chord (E4-C#4 / B3-E4 / C#4-A3 /
 G#3-B3), octave-doubled downward into the C-string growl, deeper
-vibrato, bow-breath for the sheen. It swells from nothing at half a minute to
-full at the crest and is gone by the seam. The roll itself also
+vibrato, bow-breath for the sheen. It is present from the first bar and full
+by seventy seconds, receding at the seam. The roll itself also
 reaches higher as it builds — octave leaps and off-beat sparkle
 ghosts. (The first attempt buried a chord pad in the same register as
 the wash and doubling its gain changed nothing measurable — the line
