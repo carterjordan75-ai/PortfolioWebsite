@@ -147,11 +147,14 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   cut built into the animation itself: the boil, the ink texture, the eyes and the arms play
   across the whole run untouched. The hero is a pill like any other now — a set without it
   loops without it, and when it is in, randomised order still keeps it as the first frame and
-  the last. Registration knocks each letter a touch off true on every cut, plates that never
-  land twice the same.</p>
+  the last. Registration knocks each letter a touch off true on every cut — position, a small tilt
+  and a breath of stretch, plates that never land twice the same. Cut spread tears the cut
+  itself: the letters change skin one after another across a few frames instead of all at
+  once, so two logos briefly share the line.</p>
   <div class="row" id="logopicker"></div>
   <div class="row"><label>Flick every <b id="vlogoFlick"></b></label><input id="logoFlick" type="range" min="0.08" max="1.5" step="0.01"></div>
   <div class="row"><label>Registration <b id="vlogoReg"></b></label><input id="logoReg" type="range" min="0" max="1" step="0.01"></div>
+  <div class="row"><label>Cut spread <b id="vlogoMix"></b></label><input id="logoMix" type="range" min="0" max="1" step="0.01"></div>
   <div class="row" id="logoorder"><label>Order</label>
    <button id="lsOrd" onclick="setLogoShuffle(0)">As picked</button>
    <button id="lsRnd" onclick="setLogoShuffle(1)">Randomised</button></div>
@@ -882,7 +885,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  spinY:0,spinX:0,spinP:1400,dither:1.1,
  bumpBlur:2,htBlur:2,hmBlur:0,texMap:'shared',
  extrude:0,exSlices:6,jiggle:0,jigSpeed:3,texType:'noise',grainC:.4,
- marks:['teardrop'], seed:1, formStyle:'solid', formScale:1, logoSeq:[], logoFlick:0.35, logoShuffle:0, logoReg:0.5, frameX:0, frameY:0, frameZ:1,
+ marks:['teardrop'], seed:1, formStyle:'solid', formScale:1, logoSeq:[], logoFlick:0.35, logoShuffle:0, logoReg:0.5, logoMix:0.35, frameX:0, frameY:0, frameZ:1,
  curves:{arc:[.4,.1,.3,1],acc:[.3,.85,.35,1],draw:[.45,.15,.4,1],
   logo:[.45,.15,.4,1],fill:[.32,.72,.36,1]},
  letters:[null,null,null,null]};
@@ -1220,10 +1223,19 @@ function logoSeqOrder(){
 function logoRegOff(si,i){
  var a=(P.logoReg===undefined?0.5:P.logoReg); if(!(a>0)) return '';
  if(((logoSeqOrder()||[]).length)<2) return '';
- var h=(B[i]&&B[i].h)||100;
+ var b=B[i], h=(b&&b.h)||100, cx=b?b.cx:0, cy=b?b.cy:0;
  var dx=(rnd(P.seed*17+si*29.3+i*7.7)-.5)*2*a*h*0.055;
  var dy=(rnd(P.seed*23+si*31.7+i*11.3)-.5)*2*a*h*0.055;
- return ' transform="translate('+dx.toFixed(2)+','+dy.toFixed(2)+')"';
+ // and the plate itself is never quite the same die: a small tilt and
+ // an anisotropic breath, about the letter's own centre, so no two
+ // skins fit perfectly on top of each other
+ var r=(rnd(P.seed*29+si*17.9+i*5.3)-.5)*2*a*2.2;
+ var sx=1+(rnd(P.seed*41+si*23.1+i*9.1)-.5)*2*a*0.04;
+ var sy=1+(rnd(P.seed*43+si*19.7+i*13.9)-.5)*2*a*0.04;
+ return ' transform="translate('+dx.toFixed(2)+','+dy.toFixed(2)+')'
+  +' rotate('+r.toFixed(2)+' '+cx.toFixed(1)+' '+cy.toFixed(1)+')'
+  +' translate('+cx.toFixed(1)+' '+cy.toFixed(1)+') scale('+sx.toFixed(4)+' '+sy.toFixed(4)
+  +') translate('+(-cx).toFixed(1)+' '+(-cy).toFixed(1)+')"';
 }
 function formPupil(i){
  var st=P.formStyle;
@@ -2350,6 +2362,24 @@ function lsqCSS(){
   kf+=a2.toFixed(2)+'%,'+(Math.min(99.99,b2-0.01)).toFixed(2)+'%{visibility:visible}';
   if(b2<99.9) kf+=b2.toFixed(2)+'%,100%{visibility:hidden}';
   out+='@keyframes lsq'+k2+'{'+kf+'}.lsq'+k2+'{animation:lsq'+k2+' '+T+'ms linear infinite}';
+ }
+ /**
+  * THE TORN CUT. At full spread the letters do not change skin
+  * together: each letter's flick clock runs a seeded touch behind,
+  * so a cut sweeps across the mark over a few frames — two logos
+  * briefly sharing the line, never sharing a letter (one clock per
+  * letter keeps its slots exclusive). Negative delays keep every
+  * animation already running, so no slot waits at load showing its
+  * un-animated state. The letter's pupil (#ey) rides the same delay.
+  */
+ var mix=(P.logoMix===undefined?0.35:P.logoMix);
+ if(mix>0 && ORD.length>1){
+  var win=per*1000*0.75*mix;
+  for(var i2=0;i2<B.length;i2++){
+   var d=Math.round(rnd(P.seed*31+i2*13.7)*win);
+   if(!d) continue;
+   out+='.b'+i2+' [class^=lsq],#ey'+i2+' [class^=lsq]{animation-delay:-'+d+'ms}';
+  }
  }
  return out;
 }
@@ -9306,7 +9336,7 @@ var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eye
  'eyeShut','blinkSync','eyeSpeed','eyeGlint','glintIn',
  'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeWander','eyeAsym','eyePop','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armDelay','armStagger','armGrip','armSquash','armSpeed','armWait','armSize','armCount','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armTugAmt','armBow','armLift','armTilt','armEyes','armTarget','armTarget2',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
- 'morph','msize','formScale','logoFlick','logoReg','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','boil','boilHz','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
+ 'morph','msize','formScale','logoFlick','logoReg','logoMix','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','boil','boilHz','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
 function sync(){syncSleep();drawGlints();drawBlinks();drawBrows();drawArms();drawSleepPickers();
@@ -9367,6 +9397,7 @@ var GATES=[
  ['formScale',function(){ return P.formStyle && P.formStyle!=='solid' }],
  ['logoFlick',function(){ return (P.logoSeq||[]).length>0 }],
  ['logoReg',  function(){ return (P.logoSeq||[]).length>0 }],
+ ['logoMix',  function(){ return (P.logoSeq||[]).length>0 }],
  ['brisSp',   function(){ return P.bris>0 }],
  ['brisW',    function(){ return P.bris>0 }],
  ['brisVar',  function(){ return P.bris>0 }],
@@ -9408,7 +9439,7 @@ function gates(){
 }
 function labels(){
  var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeWander:2,eyeAsym:2,eyePop:2,eyeEdge:2,eyeLidR:2,eyeLidRest:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
-  formScale:2,logoFlick:2,logoReg:2,lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,armTugAmt:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
+  formScale:2,logoFlick:2,logoReg:2,logoMix:2,lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,armTugAmt:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
   var b=document.getElementById('v'+e.id); if(b) b.textContent=P[e.dataset.p]+'ms';

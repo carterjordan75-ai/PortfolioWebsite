@@ -85,7 +85,7 @@ size, so the motion carries through a cut exactly as before.
 | 45-tenprint | 10 PRINT maze cells |
 | 46-stitch | cross-stitch cells |
 | 47-hollow | outlined pixel cells |
-| 00-matchcut | the flick itself: 15 skins incl. the hand-drawn family, randomised, 0.32s, registration 0.5 |
+| 00-matchcut | the flick itself: 15 skins incl. the hand-drawn family, randomised, 0.32s, registration 0.5, cut spread 0.35 |
 
 A note on dark ink: a near-black solid ink reads as MONO to the site
 importer and follows the viewer's OS theme, so it is not a stable style
