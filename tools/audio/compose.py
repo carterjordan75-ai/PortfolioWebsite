@@ -199,39 +199,57 @@ b,a=sg.butter(2,[1800/(SR/2),9000/(SR/2)],'band'); crk=cfilt(b,a,crk)
 crk*=10**(-47/20)/max(1e-9,np.sqrt((crk**2).mean()))
 
 # ---------------- the strings: a large section, swelling with the build ----------------
-STR=periodic([(0,.0),(30,.1),(55,.45),(80,.85),(105,1.0),(125,.72),(140,.12)])
+STR=periodic([(0,.0),(28,.18),(55,.62),(80,1.0),(108,1.0),(126,.8),(140,.15)])
 SV=[['A3','C#4','E4','B4'],    # A add9
     ['G#3','B3','E4','F#4'],   # E add9
     ['F#3','A3','C#4','G#4'],  # F#m add9
     ['G#3','C#4','E4','B4']]   # C#m 7
+# the section's voice: a written soprano line, two long notes per
+# chord, doubled an octave down — the singing top that reads as
+# strings from the first bar it enters
+LINE=[['E5','C#5'],['B4','E5'],['C#5','A4'],['G#4','B4']]
 stL=np.zeros(N); stR=np.zeros(N)
 fadeS2=int(3.5*SR)
+def ensemble(fv,seg,tt,depth=0.13,nmax=10,fmax=3800):
+    ens=np.zeros(seg)
+    for _ in range(2):
+        det=2**(rng.uniform(-13,13)/1200)
+        phv=rng.uniform(0,2*np.pi)
+        vib=depth*np.minimum(1,tt/2.5)*np.sin(2*np.pi*5.1*tt+phv)
+        k=1; wv=np.zeros(seg)
+        while fv*det*k<fmax and k<=nmax:
+            wv+=np.sin(2*np.pi*fv*det*k*tt+phv*k+vib*k)/k**1.05
+            k+=1
+        ens+=wv
+    return ens
 envS=np.ones(int(4*BAR*SR)+fadeS2)
 envS[:fadeS2]=.5-.5*np.cos(np.pi*np.arange(fadeS2)/fadeS2)
 envS[-fadeS2:]=np.minimum(envS[-fadeS2:], .5+.5*np.cos(np.pi*np.arange(fadeS2)/fadeS2))
+envH=np.ones(int(2*BAR*SR)+fadeS2)
+envH[:fadeS2]=.5-.5*np.cos(np.pi*np.arange(fadeS2)/fadeS2)
+envH[-fadeS2:]=np.minimum(envH[-fadeS2:], .5+.5*np.cos(np.pi*np.arange(fadeS2)/fadeS2))
 for ci in range(16):
     a0=int(ci*4*BAR*SR)-fadeS2//2
     seg=len(envS); tt=np.arange(seg)/SR
     absn=np.arange(a0,a0+seg)
-    for vn in SV[ci%4]:
+    for vn in SV[ci%4]:                       # the pad beneath
         fv=n2f(vn)
         for buf in (stL,stR):
-            ens=np.zeros(seg)
-            for _ in range(2):                       # a desk of players per side
-                det=2**(rng.uniform(-13,13)/1200)
-                phv=rng.uniform(0,2*np.pi)
-                vib=0.13*np.minimum(1,tt/2.5)*np.sin(2*np.pi*5.1*tt+phv)
-                k=1; wv=np.zeros(seg)
-                while fv*det*k<3800 and k<=10:
-                    wv+=np.sin(2*np.pi*fv*det*k*tt+phv*k+vib*k)/k**1.05
-                    k+=1
-                ens+=wv
-            np.add.at(buf, absn%N, ens*envS*0.055)
-    for buf in (stL,stR):                            # the bow's breath
+            np.add.at(buf, absn%N, ensemble(fv,seg,tt)*envS*0.035)
+    for h,vn in enumerate(LINE[ci%4]):        # the line above, octave-doubled
+        fv=n2f(vn)
+        aH=int((ci*4+h*2)*BAR*SR)-fadeS2//2
+        segH=len(envH); ttH=np.arange(segH)/SR
+        absH=np.arange(aH,aH+segH)
+        for buf in (stL,stR):
+            w=(ensemble(fv,segH,ttH,depth=0.2,nmax=8,fmax=6200)
+              +0.55*ensemble(fv/2,segH,ttH,depth=0.16,nmax=8,fmax=4200))
+            np.add.at(buf, absH%N, w*envH*0.15)
+    for buf in (stL,stR):                     # the bow's breath
         nz=rng.standard_normal(seg)
-        b,a=sg.butter(2,[900/(SR/2),3200/(SR/2)],'band')
-        np.add.at(buf, absn%N, sg.lfilter(b,a,nz)*envS*0.012)
-b,a=sg.butter(1,4200/(SR/2)); stL=cfilt(b,a,stL); stR=cfilt(b,a,stR)
+        b,a=sg.butter(2,[900/(SR/2),3600/(SR/2)],'band')
+        np.add.at(buf, absn%N, sg.lfilter(b,a,nz)*envS*0.016)
+b,a=sg.butter(1,6500/(SR/2)); stL=cfilt(b,a,stL); stR=cfilt(b,a,stR)
 stL*=STR*(1-0.25*duck); stR*=STR*(1-0.25*duck)
 
 # ---------------- the voices: a home tape playing in the next room ----------------
@@ -304,6 +322,30 @@ def radiocut(seed):
     out[-int(0.05*SR):]*=np.linspace(1,0,int(0.05*SR))
     return out
 
+# Real tape, when there is any: WAV clips dropped into tools/audio/tape/
+# are wrecked through the same chain and take over the talk slots, in
+# order. The laughs stay synthetic unless a clip is named *laugh*.
+# Only material the owner has rights to belongs in that folder.
+import os as _os
+from scipy.io import wavfile as _wf
+TAPE=[]
+_td=_os.path.join(_os.path.dirname(_os.path.abspath(__file__)),'tape')
+if _os.path.isdir(_td):
+    for _fn in sorted(_os.listdir(_td)):
+        if _fn.lower().endswith('.wav'):
+            _sr2,_x2=_wf.read(_os.path.join(_td,_fn))
+            _x2=_x2.astype(np.float64)/32768.0
+            if _x2.ndim>1: _x2=_x2.mean(1)
+            if _sr2!=SR: _x2=sg.resample(_x2,int(len(_x2)*SR/_sr2))
+            TAPE.append((_fn,_x2))
+def wreck(x, seed):
+    r=np.random.default_rng(seed)
+    nlen=len(x); tt=np.arange(nlen)/SR
+    b,a=sg.butter(2,[280/(SR/2),2700/(SR/2)],'band'); y=sg.lfilter(b,a,x)
+    y/=np.sqrt((y**2).mean())+1e-9
+    y=np.tanh(y*2.6)/2.0
+    drop=np.clip(np.sin(2*np.pi*r.uniform(0.5,1.3)*tt+r.uniform(0,6))*3+0.6,0,1)
+    return y*drop
 voxL=np.zeros(N); voxR=np.zeros(N)
 #     bar   dur   f0  mode    amp  radio-cut first
 VOX=[(14,  4.6, 118,'talk', 0.8, True),
@@ -314,8 +356,12 @@ VOX=[(14,  4.6, 118,'talk', 0.8, True),
      (47,  3.8, 182,'talk', 0.7, True),
      (51,  2.6, 345,'laugh',0.9, False),
      (55,  5.8, 112,'talk', 1.0, True)]
+ti=0
 for barAt,vdur,vf0,vmode,vamp,vradio in VOX:
-    ph0=murmur(vdur,vf0,int(barAt*7+vf0),vmode)
+    if vmode=='talk' and TAPE:
+        ph0=wreck(TAPE[ti%len(TAPE)][1], int(barAt*7+vf0)); ti+=1
+    else:
+        ph0=murmur(vdur,vf0,int(barAt*7+vf0),vmode)
     a0=int(barAt*BAR*SR); idx=np.arange(a0,a0+len(ph0))%N
     pv=rng.uniform(-3,3)
     np.add.at(voxL,idx,ph0*0.23*vamp*10**(+pv/40))
@@ -334,11 +380,11 @@ def circ_reverb(x,sec,damp,seed):
     b,a=sg.butter(1,damp/(SR/2)); ir=sg.lfilter(b,a,ir)
     ir/=np.sqrt((ir**2).sum())
     return np.fft.irfft(np.fft.rfft(x)*np.fft.rfft(ir,N),N)
-wetL=circ_reverb(plL+plR*0.3+drL*0.3+stL*0.45+voxL*1.6,2.2,3300,21)
-wetR=circ_reverb(plR+plL*0.3+drR*0.3+stR*0.45+voxR*1.6,2.25,3300,22)
+wetL=circ_reverb(plL+plR*0.3+drL*0.3+stL*1.6+voxL*1.6,2.2,3300,21)
+wetR=circ_reverb(plR+plL*0.3+drR*0.3+stR*1.6+voxR*1.6,2.25,3300,22)
 
-L=(plL*(1-0.15*duck)+bass*1.35+kick*1.7+drL*1.3+stL*0.55+wetL*.36+hiss+crk)*RIDE
-R=(plR*(1-0.15*duck)+bass*1.35+kick*1.7+drR*1.3+stR*0.55+wetR*.36+hiss+crk*0.92)*RIDE
+L=(plL*(1-0.15*duck)+bass*1.35+kick*1.7+drL*1.3+stL*4.6+wetL*.36+hiss+crk)*RIDE
+R=(plR*(1-0.15*duck)+bass*1.35+kick*1.7+drR*1.3+stR*4.6+wetR*.36+hiss+crk*0.92)*RIDE
 
 # ---------------- the tape: the notes are driven INTO the medium ----------------
 # The reference masters at 0dBFS with its mids full of low-order harmonics

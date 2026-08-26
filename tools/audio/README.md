@@ -48,7 +48,13 @@ and drone duck gently around the kick so the low end pockets. The tape
 surface is a whisper (hiss −60 dB, a few dust ticks) and the bus is
 nearly clean — parallel tanh at drive 1.7, blend 0.38, a soft ceiling
 eased to 1.18. And cut in from another room, six times across the
-loop: the distorted sound of a home tape — no recording is sampled.
+loop: the distorted sound of a home tape. The talk slots now play REAL
+audio: any WAV dropped into `tools/audio/tape/` is wrecked through the
+tape chain and cut in, in order (currently four voice moments sampled
+from the maker's own footage, Bike_WithAudio_001). Only material the
+owner holds rights to belongs in that folder — a request to sample a
+stranger's family videos from YouTube was declined on those grounds.
+When the folder is empty the synthesis returns.
 Murmured talk at several pitches (a jittering glottal pulse through
 three wandering formants at syllable cadence) and, twice, a young
 girl's laugh — staccato voiced bursts falling in pitch and force, a
@@ -57,11 +63,16 @@ radio static finding the channel before most phrases (chopped squelch,
 a falling heterodyne whistle, the click of the switch). The tape joins
 the mix at the very end of the chain, after every corrective stage.
 
-Above the roll, a large string section: four add9 voices, a desk of
-detuned players per side with slow vibrato and bow-noise, swelling
-from nothing at half a minute to full at the crest, gone by the seam;
-and the roll itself reaches higher as it builds — octave leaps on the
-figure's tops and off-beat sparkle ghosts an octave up.
+Above the roll, a large string section — and what makes it read is not
+level but IDENTITY: under a four-voice add9 pad sits a written soprano
+line, two long notes per chord (E5-C#5 / B4-E5 / C#5-A4 / G#4-B4),
+octave-doubled, deeper vibrato, living in 700 Hz-3 kHz where nothing
+else in the mix sustains. It swells from nothing at half a minute to
+full at the crest and is gone by the seam. The roll itself also
+reaches higher as it builds — octave leaps and off-beat sparkle
+ghosts. (The first attempt buried a chord pad in the same register as
+the wash and doubling its gain changed nothing measurable — the line
+is what fixed it.)
 
 The match EQ that once pinned the bus to the reference's curve is
 retired: the ear steered the piece away (strings, kicks, voices), and
