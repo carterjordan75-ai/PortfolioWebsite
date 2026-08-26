@@ -50,3 +50,4 @@ next-env.d.ts
 # these two lines if you would rather the media were versioned; that is
 # a deliberate trade, not an oversight.
 assets-backup/
+tools/logo/.serve/out/
