@@ -50,11 +50,18 @@ nearly clean — parallel tanh at drive 1.7, blend 0.38, a soft ceiling
 eased to 1.18. And cut in from another room, six times across the
 loop: the distorted sound of a home tape. The talk slots now play REAL
 audio: any WAV dropped into `tools/audio/tape/` is wrecked through the
-tape chain and cut in, in order (currently four voice moments sampled
-from the maker's own footage, Bike_WithAudio_001). Only material the
-owner holds rights to belongs in that folder — a request to sample a
-stranger's family videos from YouTube was declined on those grounds.
-When the folder is empty the synthesis returns.
+tape chain and cut in, in order (currently eight moments from a 1990s
+family tape the owner supplied and directed be used, after the
+concern about sampling it was raised and they reaffirmed — clips are
+verified voiced speech, 240-330 Hz register, and the wreck chain keeps
+words unintelligible and voices unidentifiable). The music leans back
+32% while the tape speaks, radio static finds the channel first, and
+the tape joins after every corrective stage. When the folder is empty
+the synthesis returns.
+
+Passing through the field, eight times: brief resonant glides that
+fade in slowly, sweep across the panorama with their pitch falling a
+touch, and are gone in a tenth of a second — something driving by.
 Murmured talk at several pitches (a jittering glottal pulse through
 three wandering formants at syllable cadence) and, twice, a young
 girl's laugh — staccato voiced bursts falling in pitch and force, a
@@ -63,11 +70,11 @@ radio static finding the channel before most phrases (chopped squelch,
 a falling heterodyne whistle, the click of the switch). The tape joins
 the mix at the very end of the chain, after every corrective stage.
 
-Above the roll, a large string section — and what makes it read is not
-level but IDENTITY: under a four-voice add9 pad sits a written soprano
-line, two long notes per chord (E5-C#5 / B4-E5 / C#5-A4 / G#4-B4),
-octave-doubled, deeper vibrato, living in 700 Hz-3 kHz where nothing
-else in the mix sustains. It swells from nothing at half a minute to
+Above the roll, a string section pitched DEEP by request — a cello
+choir: four low voices per chord (A2-C#4 territory) under a written
+tenor line, two long notes per chord (E4-C#4 / B3-E4 / C#4-A3 /
+G#3-B3), octave-doubled downward into the C-string growl, deeper
+vibrato, bow-breath for the sheen. It swells from nothing at half a minute to
 full at the crest and is gone by the seam. The roll itself also
 reaches higher as it builds — octave leaps and off-beat sparkle
 ghosts. (The first attempt buried a chord pad in the same register as
