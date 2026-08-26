@@ -111,10 +111,16 @@ sample-to-sample move.
 ## Regenerate
 
     python3 tools/audio/compose.py /tmp/loop.wav
-    afconvert -f m4af -d aac -b 160000 -q 127 /tmp/loop.wav public/assets/audio/home-loop.m4a
+    afconvert -f m4af -d aac -b 160000 -q 127 /tmp/loop.wav /tmp/loop.m4a
+    python3 tools/audio/install.py /tmp/loop.m4a
     python3 tools/audio/analyze.py /tmp/loop.wav   # aggregate comparison
     python3 tools/audio/deep.py /tmp/loop.wav      # event-level comparison
 
-Needs numpy + scipy only. The AAC's 2112-sample priming is handled at runtime by
+Needs numpy + scipy only. install.py names the file by its content
+hash and rewrites AUDIO_SRC in src/lib/ambientAudio.ts — NEVER install
+by overwriting a fixed filename: /assets is served with a one-year
+immutable Cache-Control (next.config.mjs), so a browser that ever
+fetched a name keeps that version forever. Returning visitors were
+stranded on old audio exactly this way once. The AAC's 2112-sample priming is handled at runtime by
 `src/lib/ambientAudio.ts`, which picks loop points from the decoded
 duration — see the comments there before changing the encode.
