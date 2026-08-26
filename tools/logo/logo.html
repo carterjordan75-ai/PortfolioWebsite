@@ -141,6 +141,19 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
     onchange="importSaved(this)"></div>
   </details>
 
+  <details class="grp"><summary>Logos</summary>
+  <p class="note">Every construction as a pickable logo — the hero is the mark exactly as
+  dialled everywhere else. Pick a set and the mark FLICKS through them in sequence, a match
+  cut built into the animation itself: the boil, the ink texture, the eyes and the arms play
+  across the whole run untouched. Randomised order keeps the hero as the first frame and the
+  last.</p>
+  <div class="row" id="logopicker"></div>
+  <div class="row"><label>Flick every <b id="vlogoFlick"></b></label><input id="logoFlick" type="range" min="0.08" max="1.5" step="0.01"></div>
+  <div class="row" id="logoorder"><label>Order</label>
+   <button id="lsOrd" onclick="setLogoShuffle(0)">As picked</button>
+   <button id="lsRnd" onclick="setLogoShuffle(1)">Randomised</button></div>
+   </details>
+
   <details id="slpsection"><summary>Sleep</summary>
   <details><summary>Arriving</summary>
   <div class="row"><label>Arrival length <b id="vsdur"></b></label><input id="sdur" data-p="dur" type="range" min="200" max="12000" step="50"></div>
@@ -261,7 +274,10 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
    <button id="fmY" onclick="setForm('spray')">Spray</button>
    <button id="fmM" onclick="setForm('misprint')">Misprint</button>
    <button id="fmZ" onclick="setForm('haze')">Haze</button>
-   <button id="fmW" onclick="setForm('glow')">Glow</button></div>
+   <button id="fmW" onclick="setForm('glow')">Glow</button>
+   <button id="fmT" onclick="setForm('tenprint')">Tenprint</button>
+   <button id="fmX" onclick="setForm('stitch')">Stitch</button>
+   <button id="fmV" onclick="setForm('hollow')">Hollow</button></div>
   <p class="note">The same letters, built another way: a pixel grid, fused rounded bits, a
   halftone mosaic, a scanline raster, or one confident hand redraw. Same place, same size —
   the eyes, the boil and the ink texture carry on regardless.</p>
@@ -863,7 +879,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  spinY:0,spinX:0,spinP:1400,dither:1.1,
  bumpBlur:2,htBlur:2,hmBlur:0,texMap:'shared',
  extrude:0,exSlices:6,jiggle:0,jigSpeed:3,texType:'noise',grainC:.4,
- marks:['teardrop'], seed:1, formStyle:'solid', formScale:1, frameX:0, frameY:0, frameZ:1,
+ marks:['teardrop'], seed:1, formStyle:'solid', formScale:1, logoSeq:[], logoFlick:0.35, logoShuffle:0, frameX:0, frameY:0, frameZ:1,
  curves:{arc:[.4,.1,.3,1],acc:[.3,.85,.35,1],draw:[.45,.15,.4,1],
   logo:[.45,.15,.4,1],fill:[.32,.72,.36,1]},
  letters:[null,null,null,null]};
@@ -935,11 +951,105 @@ function pip(p, x, y){
  }
  return inn;
 }
+/**
+ * Any polygon, rendered on the LETTER'S OWN LATTICE in any colour —
+ * the one function behind every grid construction, shared between the
+ * letter body and its PUPIL, which is what keeps the eye on exactly
+ * the same grid as the letter it lives in.
+ */
+function formCells(poly, b, i, col){
+ var st=P.formStyle;
+ var fs=Math.max(0.3, Math.min(4, P.formScale===undefined?1:P.formScale));
+ var x0=b.cx-b.w/2, y0=b.cy-b.h/2, F2=function(v){ return v.toFixed(1) };
+ var cells='';
+ if(st==='scan'){
+  var colW=b.h/11*fs, step=colW*1.75, yStep=b.h/90, ci=0;
+  for(var x=x0+colW*0.6; x<x0+b.w; x+=step, ci++){
+   var wBar=colW*((ci%3===0)?1:0.62), runY=null, y;
+   for(y=y0; y<=y0+b.h+yStep; y+=yStep){
+    var inside=(y<=y0+b.h) && pip(poly, x, y);
+    if(inside && runY===null) runY=y;
+    if(!inside && runY!==null){
+     if(y-runY>yStep*2)
+      cells+='<rect x="'+F2(x-wBar/2)+'" y="'+F2(runY)+'" width="'+F2(wBar)
+       +'" height="'+F2(y-runY)+'" fill="'+col+'"/>';
+     runY=null;
+    }
+   }
+  }
+  return cells;
+ }
+ if(st==='slices'||st==='glitch'){
+  var rH=b.h/(st==='glitch'?10:13)*fs, rStep=(st==='glitch'?rH:rH*1.6);
+  var xStep=b.w/90;
+  for(var ry=y0+rH*0.5, row=0; ry<y0+b.h; ry+=rStep, row++){
+   var off=(st==='glitch')?(rnd(i*57+row*11.3+P.seed*7)-0.5)*b.h*0.16*fs:0;
+   var runX=null, xx2;
+   for(xx2=x0; xx2<=x0+b.w+xStep; xx2+=xStep){
+    var ins=(xx2<=x0+b.w) && pip(poly, xx2, ry);
+    if(ins && runX===null) runX=xx2;
+    if(!ins && runX!==null){
+     if(xx2-runX>xStep*2)
+      cells+='<rect x="'+F2(runX+off)+'" y="'+F2(ry-rH*(st==='glitch'?0.5:0.31))
+       +'" width="'+F2(xx2-runX)+'" height="'+F2(rH*(st==='glitch'?1.01:0.62))
+       +'" fill="'+col+'"/>';
+     runX=null;
+    }
+   }
+  }
+  return cells;
+ }
+ var cell=(st==='bits'? b.h/7.2 : st==='dither'? b.h/10 : st==='dots'? b.h/11
+   : st==='tenprint'? b.h/8 : st==='stitch'? b.h/9 : st==='hollow'? b.h/7.5 : b.h/9)*fs;
+ var nx2=Math.max(2, Math.round(b.w/cell)), ny2=Math.max(2, Math.round(b.h/cell));
+ var cw=b.w/nx2, ch=b.h/ny2;
+ for(var gy=0; gy<ny2; gy++) for(var gx2=0; gx2<nx2; gx2++){
+  var cx2=x0+(gx2+0.5)*cw, cy2=y0+(gy+0.5)*ch, cov=0;
+  [[-0.28,-0.28],[0.28,-0.28],[-0.28,0.28],[0.28,0.28]].forEach(function(o){
+   if(pip(poly, cx2+o[0]*cw, cy2+o[1]*ch)) cov++;
+  });
+  if(st==='dots'){
+   var dcv=cov+(pip(poly,cx2,cy2)?1:0);
+   if(dcv) cells+='<circle cx="'+F2(cx2)+'" cy="'+F2(cy2)+'" r="'
+    +F2(Math.min(cw,ch)*0.56*Math.pow(dcv/5,0.62))+'" fill="'+col+'"/>';
+   continue;
+  }
+  if(!cov) continue;
+  if(st==='tenprint'){
+   var dgo=(rnd(i*7+gx2*13.7+gy*31.9+P.seed)<0.5);
+   cells+='<path style="fill:none;stroke:'+col+';stroke-width:'+F2(cell*0.24)
+    +'px;stroke-linecap:round" d="M'+F2(cx2-cw*0.42)+','+F2(dgo?cy2-ch*0.42:cy2+ch*0.42)
+    +' L'+F2(cx2+cw*0.42)+','+F2(dgo?cy2+ch*0.42:cy2-ch*0.42)+'"/>';
+  } else if(st==='stitch'){
+   cells+='<path style="fill:none;stroke:'+col+';stroke-width:'+F2(cell*0.18)
+    +'px;stroke-linecap:round" d="M'+F2(cx2-cw*0.32)+','+F2(cy2-ch*0.32)
+    +' L'+F2(cx2+cw*0.32)+','+F2(cy2+ch*0.32)
+    +' M'+F2(cx2+cw*0.32)+','+F2(cy2-ch*0.32)
+    +' L'+F2(cx2-cw*0.32)+','+F2(cy2+ch*0.32)+'"/>';
+  } else if(st==='hollow'){
+   cells+='<rect style="fill:none;stroke:'+col+';stroke-width:'+F2(cell*0.14)
+    +'px" x="'+F2(cx2-cw*0.36)+'" y="'+F2(cy2-ch*0.36)
+    +'" width="'+F2(cw*0.72)+'" height="'+F2(ch*0.72)+'"/>';
+  } else if(st==='dither' && cov<4){
+   var r=Math.min(cw,ch)*0.17;
+   var spots=[[-0.22,-0.22],[0.22,0.22],[0.22,-0.22],[-0.22,0.22]].slice(0,cov);
+   spots.forEach(function(o,si){
+    cells+='<circle cx="'+F2(cx2+o[0]*cw)+'" cy="'+F2(cy2+o[1]*ch)+'" r="'
+     +F2(r*(0.8+0.2*((si+gx2+gy)%2)))+'" fill="'+col+'"/>';
+   });
+  } else if(cov>= (st==='dither'?4:1)){
+   var over=(st==='bits')?1.03:0.985, rx=(st==='bits')?cw*0.48:0;
+   cells+='<rect x="'+F2(cx2-cw*over/2)+'" y="'+F2(cy2-ch*over/2)
+    +'" width="'+F2(cw*over)+'" height="'+F2(ch*over)
+    +(rx?'" rx="'+F2(rx):'')+'" fill="'+col+'"/>';
+  }
+ }
+ return cells;
+}
 function formBody(i, cp){
  var b=B[i], poly=b.p, st=P.formStyle;
  var fs=Math.max(0.3, Math.min(4, P.formScale===undefined?1:P.formScale));
  var x0=b.cx-b.w/2, y0=b.cy-b.h/2, F2=function(v){ return v.toFixed(1) };
- var cells='';
  if(st==='hand'){
   // resample the outline evenly, push each point along its normal by
   // smooth value-noise — a NAIVE redraw, wobbly the way a quick hand
@@ -968,11 +1078,12 @@ function formBody(i, cp){
   // not a construction but a FOCUS: the letter as fog, or as a glow
   // with its core still burning through
   var sd=b.h*(st==='haze'?0.06:0.045)*fs;
-  var fdef='<filter id="fmblur'+i+'" x="-40%" y="-40%" width="180%" height="180%">'
+  var bid='fmblur'+i+(st==='haze'?'h':'g');
+  var fdef='<filter id="'+bid+'" x="-40%" y="-40%" width="180%" height="180%">'
    +'<feGaussianBlur stdDeviation="'+F2(sd)+'"/></filter>';
   var core=(st==='glow')?'<path class="p'+i+' lf" d="'+toD(poly)+'"/>':'';
   return { defs:fdef,
-   fill:'<g class="lfg'+i+'"'+cp+'><g filter="url(#fmblur'+i+')" opacity="'
+   fill:'<g class="lfg'+i+'"'+cp+'><g filter="url(#'+bid+')" opacity="'
     +(st==='haze'?'1':'0.85')+'"><path class="p'+i+' lf" d="'+toD(poly)+'"/></g>'+core+'</g>',
    line:'' };
  }
@@ -1006,85 +1117,115 @@ function formBody(i, cp){
   }
   return { fill:'<g class="lfg'+i+'"'+cp+'>'+sp2+'</g>', line:'' };
  }
- if(st==='dots'){
-  // the classic halftone build: a dot grid, sized by coverage
-  var dc=b.h/11*fs, nxd=Math.max(2,Math.round(b.w/dc)), nyd=Math.max(2,Math.round(b.h/dc));
-  var dw=b.w/nxd, dh2=b.h/nyd, dg='';
-  for(var dy=0; dy<nyd; dy++) for(var dx2=0; dx2<nxd; dx2++){
-   var dcx=x0+(dx2+0.5)*dw, dcy=y0+(dy+0.5)*dh2, dcv=0;
-   [[-0.3,-0.3],[0.3,-0.3],[-0.3,0.3],[0.3,0.3],[0,0]].forEach(function(o){
-    if(pip(poly, dcx+o[0]*dw, dcy+o[1]*dh2)) dcv++; });
-   if(!dcv) continue;
-   dg+='<circle cx="'+F2(dcx)+'" cy="'+F2(dcy)+'" r="'
-    +F2(Math.min(dw,dh2)*0.56*Math.pow(dcv/5,0.62))+'" fill="currentColor"/>';
-  }
-  return { fill:'<g class="lfg'+i+'"'+cp+'>'+dg+'</g>', line:'' };
- }
- if(st==='slices'||st==='glitch'){
-  // horizontal bands — evenly shredded, or shredded and SHOVED
-  var rH=b.h/(st==='glitch'?10:13)*fs, rStep=(st==='glitch'?rH:rH*1.6);
-  var xStep=b.w/90, sl='';
-  for(var ry=y0+rH*0.5, row=0; ry<y0+b.h; ry+=rStep, row++){
-   var off=(st==='glitch')?(rnd(i*57+row*11.3+P.seed*7)-0.5)*b.h*0.16*fs:0;
-   var runX=null, xx2;
-   for(xx2=x0; xx2<=x0+b.w+xStep; xx2+=xStep){
-    var ins=(xx2<=x0+b.w) && pip(poly, xx2, ry);
-    if(ins && runX===null) runX=xx2;
-    if(!ins && runX!==null){
-     if(xx2-runX>xStep*2)
-      sl+='<rect x="'+F2(runX+off)+'" y="'+F2(ry-rH*(st==='glitch'?0.5:0.31))
-       +'" width="'+F2(xx2-runX)+'" height="'+F2(rH*(st==='glitch'?1.01:0.62))
-       +'" fill="currentColor"/>';
-     runX=null;
-    }
-   }
-  }
-  return { fill:'<g class="lfg'+i+'"'+cp+'>'+sl+'</g>', line:'' };
- }
- if(st==='scan'){
-  // vertical bars, thick and thin by turn — type built of lines
-  var colW=b.h/11*fs, step=colW*1.75, yStep=b.h/90;
-  var ci=0;
-  for(var x=x0+colW*0.6; x<x0+b.w; x+=step, ci++){
-   var wBar=colW*((ci%3===0)?1:0.62), runY=null, y;
-   for(y=y0; y<=y0+b.h+yStep; y+=yStep){
-    var inside=(y<=y0+b.h) && pip(poly, x, y);
-    if(inside && runY===null) runY=y;
-    if(!inside && runY!==null){
-     if(y-runY>yStep*2)
-      cells+='<rect x="'+F2(x-wBar/2)+'" y="'+F2(runY)+'" width="'+F2(wBar)
-       +'" height="'+F2(y-runY)+'" fill="currentColor"/>';
-     runY=null;
-    }
-   }
-  }
- } else {
-  var cell=(st==='bits'? b.h/7.2 : st==='dither'? b.h/10 : b.h/9)*fs;
-  var nx2=Math.max(2, Math.round(b.w/cell)), ny2=Math.max(2, Math.round(b.h/cell));
-  var cw=b.w/nx2, ch=b.h/ny2;
-  for(var gy=0; gy<ny2; gy++) for(var gx2=0; gx2<nx2; gx2++){
-   var cx2=x0+(gx2+0.5)*cw, cy2=y0+(gy+0.5)*ch, cov=0;
-   [[-0.28,-0.28],[0.28,-0.28],[-0.28,0.28],[0.28,0.28]].forEach(function(o){
-    if(pip(poly, cx2+o[0]*cw, cy2+o[1]*ch)) cov++;
-   });
-   if(!cov) continue;
-   if(st==='dither' && cov<4){
-    // the halftone edge: part-covered cells become dot clusters
-    var r=Math.min(cw,ch)*0.17;
-    var spots=[[-0.22,-0.22],[0.22,0.22],[0.22,-0.22],[-0.22,0.22]].slice(0,cov);
-    spots.forEach(function(o,si){
-     cells+='<circle cx="'+F2(cx2+o[0]*cw)+'" cy="'+F2(cy2+o[1]*ch)+'" r="'
-      +F2(r*(0.8+0.2*((si+gx2+gy)%2)))+'" fill="currentColor"/>';
-    });
-   } else if(cov>= (st==='dither'?4:1)){
-    var over=(st==='bits')?1.03:0.985, rx=(st==='bits')?cw*0.48:0;
-    cells+='<rect x="'+F2(cx2-cw*over/2)+'" y="'+F2(cy2-ch*over/2)
-     +'" width="'+F2(cw*over)+'" height="'+F2(ch*over)
-     +(rx?'" rx="'+F2(rx):'')+'" fill="currentColor"/>';
-   }
-  }
- }
+ // every lattice construction shares one renderer with the pupil
+ var cells=formCells(poly, b, i, 'currentColor');
  return { fill:'<g class="lfg'+i+'"'+cp+'>'+cells+'</g>', line:'' };
+}
+
+
+
+/**
+ * THE EYE FITS THE CONSTRUCTION. A pixel letter gets a pixel pupil on
+ * the SAME lattice (formCells with the letter's own grid); a scanline
+ * letter a bar-built pupil at the same pitch; a glitched letter's
+ * pupil shreds on the same row offsets; a hand-drawn letter a wobbled
+ * pupil; rings, spray and misprint echo their letters. Haze and glow
+ * blur the whole eye at the mask instead. Solid keeps the smooth eye.
+ */
+/**
+ * THE LOGOS. Every construction as a pickable skin; a picked set
+ * flicks through in sequence — the match cut built into the mark
+ * itself. The hero (the mark exactly as dialled) leads, and when the
+ * order is randomised it closes the loop too, first frame and last.
+ * One body per skin is emitted and visibility steps between them, so
+ * every animation setting — boil, texture, eyes, arms — plays across
+ * the whole sequence untouched.
+ */
+var LOGO_STYLES=[
+ ['hero',null],
+ ['pixel',{formStyle:'pixel',formScale:1}],
+ ['bits',{formStyle:'bits',formScale:1.05}],
+ ['mosaic',{formStyle:'dither',formScale:1}],
+ ['scanline',{formStyle:'scan',formScale:1}],
+ ['hand',{formStyle:'hand',formScale:1}],
+ ['dots',{formStyle:'dots',formScale:1}],
+ ['slices',{formStyle:'slices',formScale:1}],
+ ['glitch',{formStyle:'glitch',formScale:1}],
+ ['rings',{formStyle:'rings',formScale:1}],
+ ['spray',{formStyle:'spray',formScale:1}],
+ ['misprint',{formStyle:'misprint',formScale:1}],
+ ['haze',{formStyle:'haze',formScale:1.4}],
+ ['glow',{formStyle:'glow',formScale:1}],
+ ['tenprint',{formStyle:'tenprint',formScale:1}],
+ ['stitch',{formStyle:'stitch',formScale:1}],
+ ['hollow',{formStyle:'hollow',formScale:1}],
+];
+function logoSeqOrder(){
+ var sel=(P.logoSeq||[]).filter(function(k){
+  return k!=='hero' && LOGO_STYLES.some(function(e){ return e[0]===k }) });
+ if(!sel.length) return null;
+ if(P.logoShuffle){
+  var arr=sel.slice();
+  for(var k2=arr.length-1;k2>0;k2--){
+   var j2=Math.floor(rnd(P.seed*7+Math.round(P.eyeSeed||0)*13+k2*3.7)*(k2+1));
+   var t2=arr[k2]; arr[k2]=arr[j2]; arr[j2]=t2;
+  }
+  return ['hero'].concat(arr,['hero']);
+ }
+ return ['hero'].concat(sel);
+}
+function formPupil(i){
+ var st=P.formStyle;
+ if(!st||st==='solid'||st==='haze'||st==='glow') return null;
+ var b=B[i], hp=b.hp; if(!hp) return null;
+ var fs=Math.max(0.3, Math.min(4, P.formScale===undefined?1:P.formScale));
+ var F2=function(v){ return v.toFixed(1) };
+ var pcx=0, pcy=0; hp.forEach(function(pt){ pcx+=pt[0]; pcy+=pt[1] });
+ pcx/=hp.length; pcy/=hp.length;
+ if(st==='hand'){
+  var N=28, per=[], L=0, k;
+  for(k=0;k<hp.length;k++){ var q=hp[(k+1)%hp.length];
+   L+=Math.hypot(q[0]-hp[k][0], q[1]-hp[k][1]); per.push(L); }
+  var pts=[], amp=b.h*0.022*fs;
+  for(k=0;k<N;k++){
+   var d=k/N*L, j2=0; while(j2<per.length-1 && per[j2]<d) j2++;
+   var d0=j2?per[j2-1]:0, t=(d-d0)/Math.max(1e-6,per[j2]-d0);
+   var a1=hp[j2], a2c=hp[(j2+1)%hp.length];
+   var px=a1[0]+(a2c[0]-a1[0])*t, py=a1[1]+(a2c[1]-a1[1])*t;
+   var nx=(a2c[1]-a1[1]), ny=-(a2c[0]-a1[0]), nm=Math.hypot(nx,ny)||1;
+   var w1=(rnd(i*67+Math.floor(k*0.7)*9+P.seed*17)-0.5);
+   pts.push([px+nx/nm*w1*amp, py+ny/nm*w1*amp]);
+  }
+  return '<path d="'+toD(pts)+'" fill="#000"/>';
+ }
+ if(st==='rings'){
+  var rg='';
+  [1,0.55].forEach(function(f3){
+   var rp=hp.map(function(pt){ return [pcx+(pt[0]-pcx)*f3, pcy+(pt[1]-pcy)*f3] });
+   rg+='<path style="fill:none;stroke:#000;stroke-width:'+F2(b.h*0.02*fs)+'px" d="'+toD(rp)+'"/>';
+  });
+  return rg;
+ }
+ if(st==='spray'){
+  var sp2='', bx=Math.min.apply(null,hp.map(function(p2){return p2[0]})),
+      by=Math.min.apply(null,hp.map(function(p2){return p2[1]})),
+      bw=Math.max.apply(null,hp.map(function(p2){return p2[0]}))-bx,
+      bh=Math.max.apply(null,hp.map(function(p2){return p2[1]}))-by;
+  for(var t2=0;t2<240;t2++){
+   var sx2=bx+rnd(i*331+t2*5.7+P.seed)*bw, sy2=by+rnd(i*331+t2*5.7+19+P.seed)*bh;
+   if(!pip(hp,sx2,sy2)) continue;
+   sp2+='<circle cx="'+F2(sx2)+'" cy="'+F2(sy2)+'" r="'
+    +F2(b.h*0.011*fs*(0.55+rnd(i*3+t2*1.7)*0.9))+'" fill="#000"/>';
+  }
+  return sp2;
+ }
+ if(st==='misprint'){
+  var dm=b.h*0.055*fs, dp=toD(hp);
+  return '<path style="opacity:0.38" transform="translate('+F2(-dm)+','+F2(-dm*0.45)+')" d="'+dp+'" fill="#000"/>'
+   +'<path style="opacity:0.38" transform="translate('+F2(dm)+','+F2(dm*0.6)+')" d="'+dp+'" fill="#000"/>'
+   +'<path d="'+dp+'" fill="#000"/>';
+ }
+ return formCells(hp, b, i, '#000');
 }
 
 function toD(p){var d=ring(p);
@@ -2077,6 +2218,20 @@ function inkTexCSS(){
  for(var li=0; li<LETTERS.length; li++) mk('itxL'+li, 'inktexL'+li);
  mk('itxA0','inktexA0'); mk('itxA1','inktexA1');
  mk('itxD','inktexD');
+ return out;
+}
+/** The flick: each skin's slot holds, then the next takes over. */
+function lsqCSS(){
+ var ORD=logoSeqOrder(); if(!ORD) return '';
+ var per=Math.max(0.08, P.logoFlick===undefined?0.35:P.logoFlick);
+ var T=Math.round(ORD.length*per*1000), out='';
+ for(var k2=0;k2<ORD.length;k2++){
+  var a2=k2/ORD.length*100, b2=(k2+1)/ORD.length*100, kf='';
+  if(a2>0.02) kf+='0.00%,'+(a2-0.01).toFixed(2)+'%{visibility:hidden}';
+  kf+=a2.toFixed(2)+'%,'+(Math.min(99.99,b2-0.01)).toFixed(2)+'%{visibility:visible}';
+  if(b2<99.9) kf+=b2.toFixed(2)+'%,100%{visibility:hidden}';
+  out+='@keyframes lsq'+k2+'{'+kf+'}.lsq'+k2+'{animation:lsq'+k2+' '+T+'ms linear infinite}';
+ }
  return out;
 }
 function boilCSS(){
@@ -7485,7 +7640,7 @@ function css(){
  if((P.spinY||P.spinX)&&!holdProjected())
   out+='.xl{transform:perspective('+P.spinP+'px) rotateY('+P.spinY
    +'deg) rotateX('+P.spinX+'deg)}';
- return poster(out)+jitCSS()+boilCSS()+inkTexCSS()+sleepCSS()+viewCSS();
+ return poster(out)+jitCSS()+boilCSS()+inkTexCSS()+lsqCSS()+sleepCSS()+viewCSS();
 }
 
 // A strand is the same path, nudged sideways. Offsets alternate either
@@ -7867,11 +8022,35 @@ function svgRaw(){
     defs+='<mask id="ey'+i+'" maskUnits="userSpaceOnUse" x="-600" y="-800" '
      +'width="2200" height="2000">'
      +'<rect x="-600" y="-800" width="2200" height="2000" fill="#fff"/>'
+     +((P.formStyle==='haze'||P.formStyle==='glow')?'<g filter="url(#fmblur'+i+(P.formStyle==='haze'?'h':'g')+')">':'')
      +'<g class="eyV'+i+'"><g class="eyR'+i+'"><g class="eyS'+i+'"><g class="eyM'+i+'">'
      +'<g class="eyL'+i+'"><g class="eyD'+i+'"><g class="eyB'+i+'">'
      // black is cut away: the pupil, at full size and staying that way —
      // inside a group that squeezes it while a hand has hold of the letter
-     +'<g class="eyZ'+i+'"><g class="eyQ'+i+'"><path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000"/></g></g>'
+     +'<g class="eyZ'+i+'"><g class="eyQ'+i+'">'
+     +(function(){
+        var ORD2=logoSeqOrder();
+        if(!ORD2){
+         var fpu=formPupil(i);
+         // the classed smooth pupil stays for its animations to land
+         // on, hidden; the constructed one is what shows
+         return fpu!==null
+          ? '<path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000" style="visibility:hidden"/>'+fpu
+          : '<path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000"/>';
+        }
+        var out2='<path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000" style="visibility:hidden"/>';
+        var keepFS=P.formStyle, keepSc=P.formScale;
+        ORD2.forEach(function(sk, si){
+         var ent=null; LOGO_STYLES.forEach(function(e2){ if(e2[0]===sk) ent=e2 });
+         if(ent&&ent[1]){ P.formStyle=ent[1].formStyle; P.formScale=ent[1].formScale; }
+         else { P.formStyle=keepFS; P.formScale=keepSc; }
+         var fpu2=formPupil(i);
+         out2+='<g class="lsq'+si+'">'
+          +(fpu2!==null?fpu2:'<path d="'+ring(b2.hp)+'" fill="#000"/>')+'</g>';
+        });
+        P.formStyle=keepFS; P.formScale=keepSc;
+        return out2; })()
+     +'</g></g>'
      // white is kept: a piece of ink left standing inside the pupil,
      // which reads as a catchlight
      +(P.eyeGlint>0 ? '<g class="eyG'+i+'"><g class="eyGi'+i+'">'+glintLayers(i)+'</g></g>' : '')
@@ -7881,7 +8060,9 @@ function svgRaw(){
      // and an eye looking left keeps the same lid. White is ink, so each
      // disc covers whatever it overlaps.
      +lidDiscs(i)
-     +'</g></g></g></g></g></mask>';
+     +'</g></g></g></g></g>'
+     +((P.formStyle==='haze'||P.formStyle==='glow')?'</g>':'')
+     +'</mask>';
     batt+=' mask="url(#ey'+i+')"';
    }
    if(lp(i,'lgw')>0) for(var q=0;q<P.lgbris;q++){
@@ -7937,6 +8118,7 @@ function svgRaw(){
      +(P.texCol?'<path class="p'+i+' lx"'+cp+' d="'+dl2+'"/>':'')+'</g>';
    }
    var outline='<path class="p'+i+' lp" pathLength="1000" d="'+dl2+'"/>'+lgs;
+   var fillEl0=fillEl, outline0=outline;
    if(P.formStyle && P.formStyle!=='solid'){
     // the same letter, built another way — everything around it
     // (mask, reveal, boil, texture) is none the wiser
@@ -7944,10 +8126,29 @@ function svgRaw(){
     fillEl=fb.fill; outline=fb.line;
     if(fb.defs) defs+=fb.defs;
    }
+   var bodyInner=(P.lgfOver?outline+fillEl:fillEl+outline);
+   var ORD=logoSeqOrder();
+   if(ORD){
+    // one body per skin, visibility stepping between them
+    bodyInner='';
+    var keepFS=P.formStyle, keepSc=P.formScale;
+    ORD.forEach(function(sk, si){
+     var ent=null; LOGO_STYLES.forEach(function(e2){ if(e2[0]===sk) ent=e2 });
+     if(ent&&ent[1]){ P.formStyle=ent[1].formStyle; P.formScale=ent[1].formScale; }
+     else { P.formStyle=keepFS; P.formScale=keepSc; }
+     var fe, ol;
+     if(P.formStyle && P.formStyle!=='solid'){
+      var fb2=formBody(i, cp); fe=fb2.fill; ol=fb2.line;
+      if(fb2.defs) defs+=fb2.defs;
+     } else { fe=fillEl0; ol=outline0; }
+     bodyInner+='<g class="lsq'+si+'">'+(P.lgfOver?ol+fe:fe+ol)+'</g>';
+    });
+    P.formStyle=keepFS; P.formScale=keepSc;
+   }
    var sh=(P.d3d>0&&P.texMap==='shape');
    body+=so+(sh?'<g filter="url(#shade3d)">':'')
     +'<g class="bl b'+i+'"'+batt+'>'
-    +(P.lgfOver?outline+fillEl:fillEl+outline)+'</g>'+(sh?'</g>':'')
+    +bodyInner+'</g>'+(sh?'</g>':'')
     // Outside the mask and after the letter: a brow is ink ON the face,
     // not a hole cut in it, and it belongs in front.
     +(EYES()&&b2.hp?browMarkup(i):'')+sc2;
@@ -8240,9 +8441,9 @@ function build(){
  ['gtN','gtP','gtM','gtH','gtB','gtL'].forEach(function(id,n){
   var e=document.getElementById(id); if(e) e.classList.toggle('on',
    P.texType===['noise','paper','mottle','halftone','brush','lino'][n])});
- ['fmS','fmP','fmB','fmD','fmL','fmH','fmO','fmC','fmG','fmR','fmY','fmM','fmZ','fmW'].forEach(function(id,n){
+ ['fmS','fmP','fmB','fmD','fmL','fmH','fmO','fmC','fmG','fmR','fmY','fmM','fmZ','fmW','fmT','fmX','fmV'].forEach(function(id,n){
   var e=document.getElementById(id); if(e) e.classList.toggle('on',
-   (P.formStyle||'solid')===['solid','pixel','bits','dither','scan','hand','dots','slices','glitch','rings','spray','misprint','haze','glow'][n])});
+   (P.formStyle||'solid')===['solid','pixel','bits','dither','scan','hand','dots','slices','glitch','rings','spray','misprint','haze','glow','tenprint','stitch','hollow'][n])});
  ['tmS','tmP'].forEach(function(id,n){
   document.getElementById(id).classList.toggle('on',P.texMap===['shared','shape'][n])});
  ['ikS','ikL','ikR'].forEach(function(id,n){
@@ -8476,6 +8677,26 @@ function setInk(m){P.inkMode=m;build()}
 function setTexMap(m){P.texMap=m;build()}
 function setTexType(m){P.texType=m;build()}
 function setForm(m){P.formStyle=m;labels();drawTex();build()}
+function drawLogos(){
+ var el=document.getElementById('logopicker'); if(!el) return;
+ var h='';
+ LOGO_STYLES.forEach(function(e){
+  var k=e[0], on=(k==='hero')||((P.logoSeq||[]).indexOf(k)>=0);
+  h+='<button class="'+(on?'on':'')+'" onclick="toggleLogo(\''+k+'\')">'+k+'</button>';
+ });
+ el.innerHTML=h;
+ var o1=document.getElementById('lsOrd'), o2=document.getElementById('lsRnd');
+ if(o1) o1.classList.toggle('on', !P.logoShuffle);
+ if(o2) o2.classList.toggle('on', !!P.logoShuffle);
+}
+function toggleLogo(k){
+ if(k==='hero') return;
+ P.logoSeq=P.logoSeq||[];
+ var ix=P.logoSeq.indexOf(k);
+ if(ix>=0) P.logoSeq.splice(ix,1); else P.logoSeq.push(k);
+ drawLogos(); labels(); build();
+}
+function setLogoShuffle(v){ P.logoShuffle=v; drawLogos(); build(); }
 
 var GLINTS=['dot','oval','pill','square','star','pair','crescent'];
 var AMBIENTS=['still','float','breathe','sway','bob','pulse'];
@@ -9014,7 +9235,7 @@ var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eye
  'eyeShut','blinkSync','eyeSpeed','eyeGlint','glintIn',
  'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeWander','eyeAsym','eyePop','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armDelay','armStagger','armGrip','armSquash','armSpeed','armWait','armSize','armCount','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armTugAmt','armBow','armLift','armTilt','armEyes','armTarget','armTarget2',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
- 'morph','msize','formScale','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','boil','boilHz','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
+ 'morph','msize','formScale','logoFlick','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','boil','boilHz','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
 function sync(){syncSleep();drawGlints();drawBlinks();drawBrows();drawArms();drawSleepPickers();
@@ -9023,7 +9244,7 @@ function sync(){syncSleep();drawGlints();drawBlinks();drawBrows();drawArms();dra
   e.value=P[e.dataset.p];
   var b=document.getElementById('v'+e.id); if(b) b.textContent=P[e.dataset.p]+'ms';
  });
- labels();drawPicker();drawLetters();drawSaved();drawTex()}
+ labels();drawPicker();drawLetters();drawSaved();drawTex();drawLogos()}
 /**
  * The takes sliders point at letters, and "3" is not a letter: the
  * readout names them as the wordmark spells them — x1 o1 x2 o2 —
@@ -9073,6 +9294,7 @@ var GATES=[
  ['jigSpeed', function(){ return P.jiggle>0 }],
  ['msize',    function(){ return P.morph>0 }],
  ['formScale',function(){ return P.formStyle && P.formStyle!=='solid' }],
+ ['logoFlick',function(){ return (P.logoSeq||[]).length>0 }],
  ['brisSp',   function(){ return P.bris>0 }],
  ['brisW',    function(){ return P.bris>0 }],
  ['brisVar',  function(){ return P.bris>0 }],
@@ -9104,6 +9326,8 @@ function gates(){
  var bp=document.getElementById('browpicker');
  if(bp){ on=P.brows>0?'':'none'; bp.style.display=on;
   var pl=bp.previousElementSibling; if(pl&&pl.className==='row') pl.style.display=on; }
+ var lor=document.getElementById('logoorder');
+ if(lor) lor.style.display=(P.logoSeq||[]).length>0?'':'none';
  var tk=document.getElementById('texkindrow');
  if(tk) tk.style.display=P.grain>0?'':'none';
  var gp=document.getElementById('glintpicker');
@@ -9112,7 +9336,7 @@ function gates(){
 }
 function labels(){
  var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeWander:2,eyeAsym:2,eyePop:2,eyeEdge:2,eyeLidR:2,eyeLidRest:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
-  formScale:2,lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,armTugAmt:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
+  formScale:2,logoFlick:2,lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,armTugAmt:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
   var b=document.getElementById('v'+e.id); if(b) b.textContent=P[e.dataset.p]+'ms';

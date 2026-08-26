@@ -1,4 +1,4 @@
-# XOXO — 36 styles, one motion
+# XOXO — 39 styles, one motion, and the match cut itself
 
 Twenty standalone exports of the same mark for match-cut edits: identical
 viewBox (`-133.0 -226.3 1266.2 695.8`), identical clocks and seeds
@@ -7,6 +7,15 @@ no arms. Cut between any two files at the same timestamp and the boil,
 the texture step, the eyes and the blinks carry straight through — only
 the skin changes. Verified: one distinct viewBox and one distinct
 eye-track signature across all files.
+
+`00-matchcut.html` IS the match cut: the hero flicking through twelve
+constructions on a randomised loop, hero first and last — one file, ready
+to record. Build your own in the tool under the new **Logos** section:
+pick any set of constructions, set the flick rate, choose picked or
+randomised order; every animation setting plays across the whole
+sequence. Since this pass the EYES match the construction — a pixel
+logo has a pixel pupil on the same grid, a glitched one shreds its
+pupil on the same rows, haze and glow blur the whole eye.
 
 Open `index.html` for the live contact sheet. (Eight near-duplicate
 overlay styles were retired when the construction families arrived.) Each file loops forever;
@@ -65,6 +74,10 @@ size, so the motion carries through a cut exactly as before.
 | 42-glow | glow / 1 — soft halo, burning core |
 | 43-glitch-dusk | glitch / 1 + dusk gradient |
 | 44-dots-dusk | dots / 1 + dusk gradient |
+| 45-tenprint | 10 PRINT maze cells |
+| 46-stitch | cross-stitch cells |
+| 47-hollow | outlined pixel cells |
+| 00-matchcut | the flick itself: 12 skins, randomised, 0.32s |
 
 A note on dark ink: a near-black solid ink reads as MONO to the site
 importer and follows the viewer's OS theme, so it is not a stable style
