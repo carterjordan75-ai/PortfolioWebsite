@@ -253,11 +253,19 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
    <button id="fmB" onclick="setForm('bits')">Bits</button>
    <button id="fmD" onclick="setForm('dither')">Mosaic</button>
    <button id="fmL" onclick="setForm('scan')">Scanline</button>
-   <button id="fmH" onclick="setForm('hand')">Hand</button></div>
+   <button id="fmH" onclick="setForm('hand')">Hand</button>
+   <button id="fmO" onclick="setForm('dots')">Dots</button>
+   <button id="fmC" onclick="setForm('slices')">Slices</button>
+   <button id="fmG" onclick="setForm('glitch')">Glitch</button>
+   <button id="fmR" onclick="setForm('rings')">Rings</button>
+   <button id="fmY" onclick="setForm('spray')">Spray</button>
+   <button id="fmM" onclick="setForm('misprint')">Misprint</button>
+   <button id="fmZ" onclick="setForm('haze')">Haze</button>
+   <button id="fmW" onclick="setForm('glow')">Glow</button></div>
   <p class="note">The same letters, built another way: a pixel grid, fused rounded bits, a
   halftone mosaic, a scanline raster, or one confident hand redraw. Same place, same size —
   the eyes, the boil and the ink texture carry on regardless.</p>
-  <div class="row"><label>Detail <b id="vformScale"></b></label><input id="formScale" type="range" min="0.4" max="2.4" step=".05"></div>
+  <div class="row"><label>Detail <b id="vformScale"></b></label><input id="formScale" type="range" min="0.4" max="4" step=".05"></div>
    <details><summary>Squash & stretch</summary>
   <div class="row"><label>Target</label>
    <button id="tW" onclick="setTarget('whole')">Whole</button>
@@ -929,7 +937,7 @@ function pip(p, x, y){
 }
 function formBody(i, cp){
  var b=B[i], poly=b.p, st=P.formStyle;
- var fs=Math.max(0.3, Math.min(3, P.formScale===undefined?1:P.formScale));
+ var fs=Math.max(0.3, Math.min(4, P.formScale===undefined?1:P.formScale));
  var x0=b.cx-b.w/2, y0=b.cy-b.h/2, F2=function(v){ return v.toFixed(1) };
  var cells='';
  if(st==='hand'){
@@ -955,6 +963,83 @@ function formBody(i, cp){
    fill:(P.lgfill>0)?'<g class="lfg'+i+'"><path class="p'+i+' lf"'+cp+' d="'+dh+'"/></g>':'',
    line:(lp(i,'lgw')>0)?'<path class="p'+i+' lp" pathLength="1000" d="'+dh+'"/>':''
   };
+ }
+ if(st==='haze'||st==='glow'){
+  // not a construction but a FOCUS: the letter as fog, or as a glow
+  // with its core still burning through
+  var sd=b.h*(st==='haze'?0.06:0.045)*fs;
+  var fdef='<filter id="fmblur'+i+'" x="-40%" y="-40%" width="180%" height="180%">'
+   +'<feGaussianBlur stdDeviation="'+F2(sd)+'"/></filter>';
+  var core=(st==='glow')?'<path class="p'+i+' lf" d="'+toD(poly)+'"/>':'';
+  return { defs:fdef,
+   fill:'<g class="lfg'+i+'"'+cp+'><g filter="url(#fmblur'+i+')" opacity="'
+    +(st==='haze'?'1':'0.85')+'"><path class="p'+i+' lf" d="'+toD(poly)+'"/></g>'+core+'</g>',
+   line:'' };
+ }
+ if(st==='misprint'){
+  // the press hit three times and never quite lined up
+  var dm=b.h*0.055*fs;
+  var lay=function(dx,dy,op){ return '<path class="p'+i+' lf" style="opacity:'+op
+   +'" transform="translate('+F2(dx)+','+F2(dy)+')" d="'+toD(poly)+'"/>' };
+  return { fill:'<g class="lfg'+i+'"'+cp+'>'
+   +lay(-dm,-dm*0.45,0.38)+lay(dm,dm*0.6,0.38)+lay(0,0,1)+'</g>', line:'' };
+ }
+ if(st==='rings'){
+  // contour lines: the letter as its own topography
+  var rg='';
+  for(var ri=0; ri<5; ri++){
+   var f3=1-ri*0.19, rp=poly.map(function(pt){
+    return [b.cx+(pt[0]-b.cx)*f3, b.cy+(pt[1]-b.cy)*f3] });
+   rg+='<path style="fill:none;stroke:currentColor;stroke-width:'+F2(b.h*0.028*fs)
+    +'px" d="'+toD(rp)+'"/>';
+  }
+  return { fill:'<g class="lfg'+i+'"'+cp+'>'+rg+'</g>', line:'' };
+ }
+ if(st==='spray'){
+  // stippled: hundreds of flecks where the letter is
+  var sp2='', tries=Math.round(760*Math.min(2,1/fs));
+  for(var t2=0; t2<tries; t2++){
+   var sx2=x0+rnd(i*977+t2*7.3+P.seed)*b.w, sy2=y0+rnd(i*977+t2*7.3+41+P.seed)*b.h;
+   if(!pip(poly,sx2,sy2)) continue;
+   sp2+='<circle cx="'+F2(sx2)+'" cy="'+F2(sy2)+'" r="'
+    +F2(b.h*0.013*fs*(0.55+rnd(i*13+t2*3.1)*0.9))+'" fill="currentColor"/>';
+  }
+  return { fill:'<g class="lfg'+i+'"'+cp+'>'+sp2+'</g>', line:'' };
+ }
+ if(st==='dots'){
+  // the classic halftone build: a dot grid, sized by coverage
+  var dc=b.h/11*fs, nxd=Math.max(2,Math.round(b.w/dc)), nyd=Math.max(2,Math.round(b.h/dc));
+  var dw=b.w/nxd, dh2=b.h/nyd, dg='';
+  for(var dy=0; dy<nyd; dy++) for(var dx2=0; dx2<nxd; dx2++){
+   var dcx=x0+(dx2+0.5)*dw, dcy=y0+(dy+0.5)*dh2, dcv=0;
+   [[-0.3,-0.3],[0.3,-0.3],[-0.3,0.3],[0.3,0.3],[0,0]].forEach(function(o){
+    if(pip(poly, dcx+o[0]*dw, dcy+o[1]*dh2)) dcv++; });
+   if(!dcv) continue;
+   dg+='<circle cx="'+F2(dcx)+'" cy="'+F2(dcy)+'" r="'
+    +F2(Math.min(dw,dh2)*0.56*Math.pow(dcv/5,0.62))+'" fill="currentColor"/>';
+  }
+  return { fill:'<g class="lfg'+i+'"'+cp+'>'+dg+'</g>', line:'' };
+ }
+ if(st==='slices'||st==='glitch'){
+  // horizontal bands — evenly shredded, or shredded and SHOVED
+  var rH=b.h/(st==='glitch'?10:13)*fs, rStep=(st==='glitch'?rH:rH*1.6);
+  var xStep=b.w/90, sl='';
+  for(var ry=y0+rH*0.5, row=0; ry<y0+b.h; ry+=rStep, row++){
+   var off=(st==='glitch')?(rnd(i*57+row*11.3+P.seed*7)-0.5)*b.h*0.16*fs:0;
+   var runX=null, xx2;
+   for(xx2=x0; xx2<=x0+b.w+xStep; xx2+=xStep){
+    var ins=(xx2<=x0+b.w) && pip(poly, xx2, ry);
+    if(ins && runX===null) runX=xx2;
+    if(!ins && runX!==null){
+     if(xx2-runX>xStep*2)
+      sl+='<rect x="'+F2(runX+off)+'" y="'+F2(ry-rH*(st==='glitch'?0.5:0.31))
+       +'" width="'+F2(xx2-runX)+'" height="'+F2(rH*(st==='glitch'?1.01:0.62))
+       +'" fill="currentColor"/>';
+     runX=null;
+    }
+   }
+  }
+  return { fill:'<g class="lfg'+i+'"'+cp+'>'+sl+'</g>', line:'' };
  }
  if(st==='scan'){
   // vertical bars, thick and thin by turn — type built of lines
@@ -7857,6 +7942,7 @@ function svgRaw(){
     // (mask, reveal, boil, texture) is none the wiser
     var fb=formBody(i, cp);
     fillEl=fb.fill; outline=fb.line;
+    if(fb.defs) defs+=fb.defs;
    }
    var sh=(P.d3d>0&&P.texMap==='shape');
    body+=so+(sh?'<g filter="url(#shade3d)">':'')
@@ -8154,9 +8240,9 @@ function build(){
  ['gtN','gtP','gtM','gtH','gtB','gtL'].forEach(function(id,n){
   var e=document.getElementById(id); if(e) e.classList.toggle('on',
    P.texType===['noise','paper','mottle','halftone','brush','lino'][n])});
- ['fmS','fmP','fmB','fmD','fmL','fmH'].forEach(function(id,n){
+ ['fmS','fmP','fmB','fmD','fmL','fmH','fmO','fmC','fmG','fmR','fmY','fmM','fmZ','fmW'].forEach(function(id,n){
   var e=document.getElementById(id); if(e) e.classList.toggle('on',
-   (P.formStyle||'solid')===['solid','pixel','bits','dither','scan','hand'][n])});
+   (P.formStyle||'solid')===['solid','pixel','bits','dither','scan','hand','dots','slices','glitch','rings','spray','misprint','haze','glow'][n])});
  ['tmS','tmP'].forEach(function(id,n){
   document.getElementById(id).classList.toggle('on',P.texMap===['shared','shape'][n])});
  ['ikS','ikL','ikR'].forEach(function(id,n){
