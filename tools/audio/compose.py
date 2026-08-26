@@ -252,6 +252,32 @@ for ci in range(16):
 b,a=sg.butter(1,4200/(SR/2)); stL=cfilt(b,a,stL); stR=cfilt(b,a,stR)
 stL*=STR*(1-0.25*duck); stR*=STR*(1-0.25*duck)
 
+# ---------------- low brass: deep swells at the turns ----------------
+# A bass-trombone-and-tuba shape: the root an octave down, harmonics
+# that BLOOM through the swell (brightness arriving with force, the
+# brass crescendo), a slow growl on the upper partials, gone again
+# over three seconds. Six swells, riding the build.
+brL=np.zeros(N); brR=np.zeros(N); bduck=np.zeros(N)
+BRS=[(16,.5),(24,.7),(32,.85),(40,1.0),(48,.9),(56,.6)]
+for barB,bamp in BRS:
+    _,poolB,_=CHORDS[(barB//4)%16]
+    fB=n2f(poolB[0])/2
+    dB=8.0; nlen=int(dB*SR); tt=np.arange(nlen)/SR
+    att=3.5; relB=3.0
+    env=np.minimum(tt/att,1)**1.5*np.clip((dB-tt)/relB,0,1)**1.2
+    a0d=int(barB*BAR*SR)
+    np.maximum.at(bduck,(np.arange(a0d,a0d+nlen))%N,env*bamp)
+    for buf,detc in ((brL,-3),(brR,3)):
+        det=2**(detc/1200)
+        w=np.zeros(nlen)
+        for k in range(1,10):
+            bloom=np.clip(np.minimum(tt/att,1)*1.35-k*0.09,0,1)
+            growl=1+0.08*np.sin(2*np.pi*5.2*tt+k)* (k/9)
+            w+=np.sin(2*np.pi*fB*det*k*tt+0.6*k)/k**0.8*bloom*growl*(1.7 if 2<=k<=6 else 1.0)
+        a0=int(barB*BAR*SR); idx=np.arange(a0,a0+nlen)%N
+        np.add.at(buf,idx,w*env*1.1*bamp)
+b,a=sg.butter(2,1400/(SR/2)); brL=cfilt(b,a,brL); brR=cfilt(b,a,brR)
+
 # ---------------- squeaks passing through ----------------
 # Brief resonant glides that fade in, sweep past — pitch falling a
 # touch, pan crossing the field — and are gone: something driving by.
@@ -268,8 +294,8 @@ for tS,dS,fa,fb,pd in SQK:
     env*=np.clip((dS-tt)/(dS*0.14),0,1)             # quick out
     pan=np.linspace(-pd,pd,nlen)*0.9
     a0=int(tS*SR); idx=np.arange(a0,a0+nlen)%N
-    np.add.at(sqL,idx,w*env*0.14*np.sqrt((1-pan)/2))
-    np.add.at(sqR,idx,w*env*0.14*np.sqrt((1+pan)/2))
+    np.add.at(sqL,idx,w*env*0.06*np.sqrt((1-pan)/2))
+    np.add.at(sqR,idx,w*env*0.06*np.sqrt((1+pan)/2))
 
 # ---------------- the voices: a home tape playing in the next room ----------------
 # No real recording is sampled: unintelligible speech is synthesised —
@@ -370,7 +396,7 @@ def wreck(x, seed, clar=0.5):
     # the tape breathes out, never cuts: a slow exhale at the end
     env=np.ones(nlen)
     fi=min(int(0.15*SR),nlen//4); env[:fi]=np.linspace(0,1,fi)
-    fo=min(int(1.1*SR),nlen//2); env[-fo:]=0.5+0.5*np.cos(np.pi*np.arange(fo)/fo)
+    fo=min(int(2.4*SR),int(nlen*0.5)); env[-fo:]=(0.5+0.5*np.cos(np.pi*np.arange(fo)/fo))**1.3
     return y*drop*env
 voxL=np.zeros(N); voxR=np.zeros(N)
 #     bar   dur   f0  mode    amp  radio-cut first
@@ -378,7 +404,6 @@ voxL=np.zeros(N); voxR=np.zeros(N)
 VOX=[( 3,  4.0, 120,'talk', 0.85,True,  0.30),
      ( 7,  3.5, 300,'talk', 0.7, False, 0.85),
      (10,  4.0, 150,'talk', 0.9, True,  0.50),
-     (14,  4.6, 118,'talk', 0.8, True,  0.15),
      (18,  2.9, 325,'laugh',0.85,False, 0.90),
      (22,  3.4, 176,'talk', 0.65,True,  0.40),
      (34,  5.2, 124,'talk', 0.9, True,  0.70),
@@ -394,7 +419,7 @@ for barAt,vdur,vf0,vmode,vamp,vradio,vclar in VOX:
     else:
         ph0=murmur(vdur,vf0,int(barAt*7+vf0),vmode)
     # the music leans back while the tape speaks
-    a0v=int(barAt*BAR*SR); att=int(0.18*SR); rel=int(0.5*SR); nv=len(ph0)
+    a0v=int(barAt*BAR*SR); att=int(0.18*SR); rel=int(1.3*SR); nv=len(ph0)
     tz=np.ones(nv+rel); tz[:att]=np.linspace(0,1,att); tz[nv:]=np.linspace(1,0,rel)
     np.maximum.at(vdk,(np.arange(a0v,a0v+nv+rel))%N,tz)
     a0=int(barAt*BAR*SR); idx=np.arange(a0,a0+len(ph0))%N
@@ -415,11 +440,11 @@ def circ_reverb(x,sec,damp,seed):
     b,a=sg.butter(1,damp/(SR/2)); ir=sg.lfilter(b,a,ir)
     ir/=np.sqrt((ir**2).sum())
     return np.fft.irfft(np.fft.rfft(x)*np.fft.rfft(ir,N),N)
-wetL=circ_reverb(plL+plR*0.3+drL*0.3+stL*1.6+voxL*1.6,2.2,3300,21)
-wetR=circ_reverb(plR+plL*0.3+drR*0.3+stR*1.6+voxR*1.6,2.25,3300,22)
+wetL=circ_reverb(plL+plR*0.3+drL*0.3+stL*1.6+sqL*2.2+voxL*1.6,2.2,3300,21)
+wetR=circ_reverb(plR+plL*0.3+drR*0.3+stR*1.6+sqR*2.2+voxR*1.6,2.25,3300,22)
 
-L=((plL*(1-0.15*duck)+stL*7.5+wetL*.36)*(1-0.32*vdk)+bass*1.35+kick*1.7+drL*1.3*(1-0.25*vdk)+sqL+hiss+crk)*RIDE
-R=((plR*(1-0.15*duck)+stR*7.5+wetR*.36)*(1-0.32*vdk)+bass*1.35+kick*1.7+drR*1.3*(1-0.25*vdk)+sqR+hiss+crk*0.92)*RIDE
+L=((plL*(1-0.15*duck)+stL*7.5+wetL*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drL*1.3*(1-0.25*vdk)*(1-0.2*bduck)+brL*(1-0.25*vdk)+sqL+hiss+crk)*RIDE
+R=((plR*(1-0.15*duck)+stR*7.5+wetR*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drR*1.3*(1-0.25*vdk)*(1-0.2*bduck)+brR*(1-0.25*vdk)+sqR+hiss+crk*0.92)*RIDE
 
 # ---------------- the tape: the notes are driven INTO the medium ----------------
 # The reference masters at 0dBFS with its mids full of low-order harmonics
@@ -440,7 +465,7 @@ b,a=sg.butter(1,5600/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
 # The voices are a CUT-IN, not part of the tonal bed: they join after
 # the match EQ (which, given a reference with no voices in it, would
 # dutifully remove them) and ride only the final trims.
-L+=voxL*5.2; R+=voxR*5.2
+L+=voxL*4.2; R+=voxR*4.2
 mix=np.stack([L,R],1)
 # ---------------- master to the reference's density: hot into a soft ceiling ----------------
 def frame_rms_db(m):

@@ -60,10 +60,15 @@ the tape joins after every corrective stage. When the folder is empty
 the synthesis returns.
 
 Passing through the field, eight times: quick resonant glides — a
-second or so each — that fade in, sweep across the panorama with their
-pitch falling a touch, and are gone in a tenth of a second. Twelve
+second or so each — far in the background now, more room than source,
+sweeping the panorama and gone in a tenth of a second. At six chord
+turns a LOW BRASS swell blooms — the root an octave down, harmonics
+arriving with force the way a section leans into a crescendo, a slow
+growl on top — while the bass and drone lean back a quarter to make
+its pocket (at the swells the whole mix rises about 2 dB). Twelve
 tape moments across eleven slots, three inside the first thirty
-seconds, every phrase ending on a slow 1.1s exhale — and each slot
+seconds, every phrase ending on a long soft exhale (2.4 s or half the clip,
+whichever is shorter, with the music returning over 1.3 s) — and each slot
 carries its own CLARITY (0..1): the wreck's bandwidth, drive, dropout
 depth and level all follow it, so some moments sit almost readable and
 others are chewed nearly away. The bed leans darker still: pluck
