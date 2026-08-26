@@ -37,9 +37,15 @@ gentled wow, a steadier stereo image. Under the roll sits what the
 reference does not have and the ear asked for: a dark drone bed — root
 an octave below the arp, octave/twelfth/fifth on top, low-passed at
 560 Hz, breathing on whole-cycle LFOs, crossfading at the chord turns.
-A sub pluck doubles the root at each bar line. The tape surface is a
-whisper now (hiss −60 dB, a few dust ticks); the warmth comes from the
-bus instead — parallel tanh at drive 4.4, blend 0.85.
+Under those, the rhythm section the ear asked for: a deep muffled kick
+(a 95→38 Hz fall, low-passed at 210 — boom, not punch) on beats one and
+three with an occasional ghost, fading in after the intro and receding
+into the seam; and a proper bassline an octave below the arp — the root
+held low, restruck mid-bar, walking a fifth at each chord turn. Bass
+and drone duck gently around the kick so the low end pockets. The tape
+surface is a whisper (hiss −60 dB, a few dust ticks) and the bus is
+nearly clean — parallel tanh at drive 1.7, blend 0.38, a soft ceiling
+eased to 1.18.
 
 The **match EQ** (smoothed ratio of the reference's Welch curve to the
 bus's, applied circularly) is deliberately confined to 260 Hz–2 kHz at
@@ -47,10 +53,12 @@ bus's, applied circularly) is deliberately confined to 260 Hz–2 kHz at
 chose clean over the reference's crackle. A push into a soft ceiling
 lands the reference's frame density (RMS −16.1 vs −16.1).
 
-Where it lands: 60 Hz–2 kHz within ~1 dB of the reference, the top end
-deliberately cleaner, the same build-crest-release arc, the 40–300 Hz
-bed holding within 8 dB of its peaks between notes, and a seam step
-smaller than an ordinary sample-to-sample move.
+Where it lands: low end deliberately FULLER than the reference (sub
+−39 vs −41), the top deliberately cleaner (pres −100 vs −68), mids
+tracking it within a couple of dB, the same build-crest-release arc, a
+bar-pulse autocorrelation of 0.76 with kick density breathing 12→54→23
+per 30 s across the arc, and a seam step smaller than an ordinary
+sample-to-sample move.
 
 ## Regenerate
 

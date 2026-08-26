@@ -21,9 +21,9 @@ def n2f(name):
 
 # the tape: slow wow + flutter + a long drift, all whole cycles over the loop
 def wow_at(ts):
-    return (3*np.sin(2*np.pi*60*ts/T+0.7)
-           +0.4*np.sin(2*np.pi*945*ts/T+2.1)
-           +2.5*np.sin(2*np.pi*3*ts/T+4.0))/1200.0  # cents -> log2 units
+    return (1.8*np.sin(2*np.pi*60*ts/T+0.7)
+           +0.25*np.sin(2*np.pi*945*ts/T+2.1)
+           +1.5*np.sin(2*np.pi*3*ts/T+4.0))/1200.0  # cents -> log2 units
 
 # ---------------- harmony: A  E  F#  C#m, four bars each, four times round ----------------
 CYCLE=[('A',['A2','C#3','E3','A3'],['G#3','B3','C#4','D#4']),
@@ -37,7 +37,7 @@ DENS =periodic([(0,.25),(25,.45),(55,.7),(85,.9),(108,1.0),(128,.7),(142,.35)])
 RIDE =periodic([(0,.74),(30,.84),(60,.92),(100,1.0),(126,.9),(142,.76)])
 
 # ---------------- the pluck ----------------
-PART=[1.0,0.18,0.26,0.09,0.09,0.07,0.055,0.045,0.035,0.028]  # measured profile + the long tail
+PART=[1.0,0.18,0.26,0.09,0.08,0.055,0.03,0.02]  # measured profile, tail kept short and clean
 def pluck(f0,dur,vel,tstart):
     nlen=int(dur*SR); tt=np.arange(nlen)/SR
     w0=wow_at(tstart); w1=wow_at(tstart+dur*0.6)
@@ -59,7 +59,7 @@ def pluck(f0,dur,vel,tstart):
     return out*vel
 
 # ---------------- the roll: eighths with sixteenth fills, seeded per bar ----------------
-plL=np.zeros(N); plR=np.zeros(N); sub=np.zeros(N)
+plL=np.zeros(N); plR=np.zeros(N)
 events=0
 for bar in range(64):
     ch=CHORDS[bar//4]; root,pool,ext=ch
@@ -94,16 +94,57 @@ for bar in range(64):
             np.add.at(plL,idx2,n2*10**(-pan/40))
             np.add.at(plR,idx2,n2*10**(+pan/40))
             events+=1
-    # the sub doubles the root at the bar line (and mid-bar when thick)
-    for ts,amp in ([(tb,1.0)]+([(tb+2*BEAT,0.7)] if d>0.5 else [])):
-        f0=n2f(pool[0])/2
-        nlen=int(2.8*SR); tt=np.arange(nlen)/SR
-        s=np.sin(2*np.pi*f0*2**wow_at(ts)*tt)*np.exp(-tt/2.3)
-        s[:int(.02*SR)]*=np.linspace(0,1,int(.02*SR))
-        a0=int(ts*SR); idx=np.arange(a0,a0+nlen)%N
-        both=s*0.5*amp*(0.6+0.4*d)
-        np.add.at(sub,idx,both)
 print("note events:",events, f"({events/T:.2f}/s)")
+
+# ---------------- the beats: a deep muffled kick, half-time and dark ----------------
+BEATS=periodic([(0,.1),(18,.45),(40,.8),(70,1.0),(105,1.0),(128,.7),(142,.2)])
+klen=int(0.55*SR); ktt=np.arange(klen)/SR
+kfrq=38+57*np.exp(-ktt/0.032)               # a 95->38Hz fall: boom, not punch
+kph=2*np.pi*np.cumsum(kfrq)/SR
+KICK=np.sin(kph)*np.exp(-ktt/0.16)
+KICK[:int(0.004*SR)]*=np.linspace(0,1,int(0.004*SR))
+b,a=sg.butter(2,210/(SR/2)); KICK=sg.lfilter(b,a,KICK)
+KICK/=np.abs(KICK).max()
+kick=np.zeros(N); duck=np.zeros(N)
+dlen=int(0.30*SR)
+DUCK=np.exp(-np.arange(dlen)/SR/0.11)
+for bar in range(64):
+    tb=bar*BAR; g=BEATS[int(tb*SR)%N]
+    if g<0.12: continue
+    hits=[(0.0,1.0),(2.0,0.74)]
+    if rng.random()<0.28: hits.append((3.5,0.4))
+    for off,vel in hits:
+        a0=int((tb+off*BEAT)*SR)
+        idx=np.arange(a0,a0+klen)%N
+        np.add.at(kick,idx,KICK*vel*g)
+        di=np.arange(a0,a0+dlen)%N
+        np.maximum.at(duck,di,DUCK*min(1,vel*g))
+
+# ---------------- the bassline: the root held low, restruck, led round ----------------
+bass=np.zeros(N)
+def bnote(f0,ts,dur,vel):
+    nlen=int(dur*SR); tt=np.arange(nlen)/SR
+    w=(np.sin(2*np.pi*f0*2**wow_at(ts)*tt)
+      +0.26*np.sin(2*np.pi*f0*2**wow_at(ts)*2*tt)
+      +0.07*np.sin(2*np.pi*f0*2**wow_at(ts)*3*tt))
+    env=np.ones(nlen)*np.exp(-tt/3.2)
+    aN=int(.015*SR); env[:aN]*=np.linspace(0,1,aN)
+    rN=int(.09*SR); env[-rN:]*=np.linspace(1,0,rN)
+    a0=int(ts*SR); idx=np.arange(a0,a0+nlen)%N
+    np.add.at(bass,idx,w*env*vel)
+for bar in range(64):
+    tb=bar*BAR
+    _,pool,_=CHORDS[bar//4]
+    fB=n2f(pool[0])/2                        # A1 / E1 / F#1 / C#1
+    g=0.55+0.45*BEATS[int(tb*SR)%N]
+    bnote(fB,tb,2.4*BEAT,0.9*g)
+    if bar%4==3:                             # the turn: walk a fifth toward the next root
+        bnote(fB*2**(7/12),tb+2.5*BEAT,1.4*BEAT,0.62*g)
+    else:
+        bnote(fB,tb+2.5*BEAT,1.4*BEAT,0.66*g)
+b,a=sg.butter(2,300/(SR/2)); bass=cfilt(b,a,bass)
+# the pocket: bass and drone breathe around the kick
+bass*=(1-0.45*duck)
 
 # ---------------- the drone: a dark ambient bed under the roll ----------------
 drL=np.zeros(N); drR=np.zeros(N)
@@ -127,10 +168,9 @@ for ci in range(16):
               +0.14*np.sin(2*np.pi*fD*mult*det*3*tt+ph*3))*amp
             np.add.at(buf, absn%N, w*envD*breathe*0.12)
 b,a=sg.butter(2,560/(SR/2)); drL=cfilt(b,a,drL); drR=cfilt(b,a,drR)
-drL*= (0.7+0.3*RIDE); drR*=(0.7+0.3*RIDE)
+drL*= (0.7+0.3*RIDE)*(1-0.32*duck); drR*=(0.7+0.3*RIDE)*(1-0.32*duck)
 
 b,a=sg.butter(1,5200/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
-b,a=sg.butter(2,150/(SR/2)); sub=cfilt(b,a,sub)
 
 # ---------------- the surface: hiss + crackle ----------------
 hiss=rng.standard_normal(N)
@@ -156,14 +196,14 @@ def circ_reverb(x,sec,damp,seed):
 wetL=circ_reverb(plL+plR*0.3+drL*0.3,2.2,3300,21)
 wetR=circ_reverb(plR+plL*0.3+drR*0.3,2.25,3300,22)
 
-L=(plL+sub*1.45+drL*1.55+wetL*.36+hiss+crk)*RIDE
-R=(plR+sub*1.45+drR*1.55+wetR*.36+hiss+crk*0.92)*RIDE
+L=(plL*(1-0.12*duck)+bass*1.2+kick*1.05+drL*1.3+wetL*.36+hiss+crk)*RIDE
+R=(plR*(1-0.12*duck)+bass*1.2+kick*1.05+drR*1.3+wetR*.36+hiss+crk*0.92)*RIDE
 
 # ---------------- the tape: the notes are driven INTO the medium ----------------
 # The reference masters at 0dBFS with its mids full of low-order harmonics
 # of the plucks — saturation is where that ladder comes from, so the whole
 # bus (notes, room, surface) goes through it, per channel.
-drive=4.4; blend=0.85
+drive=1.7; blend=0.38
 L=blend*np.tanh(L*drive)/drive+(1-blend)*L
 R=blend*np.tanh(R*drive)/drive+(1-blend)*R
 # the macro arc again, gently, on the far side of the tape
@@ -188,13 +228,13 @@ if REF:
     for i in range(len(ratio)):
         m=np.abs(lf-lf[i])<0.12
         sm[i]=np.exp(np.mean(np.log(ratio[m]+1e-12)))
-    sm[fr>300]*=10**(2.2/20)
+    sm[fr>300]*=10**(1.0/20)
     # The EQ serves the reference only where the pluck lives. Below 260Hz
     # the mix is a deliberate departure (the drone bed the reference does
     # not have) — hands off; above 2k it may clean, never brighten.
     sm[fr<260]=1.0
     sm[fr>2000]=np.minimum(sm[fr>2000],1.0)
-    sm=np.clip(sm,10**(-8/20),10**(8/20))
+    sm=np.clip(sm,10**(-6/20),10**(6/20))
     H=np.interp(np.fft.rfftfreq(N,1/SR),fr,sm)
     L=np.fft.irfft(np.fft.rfft(L)*H,N)
     R=np.fft.irfft(np.fft.rfft(R)*H,N)
@@ -206,7 +246,7 @@ def frame_rms_db(m):
     fr=np.lib.stride_tricks.as_strided(mo,(nf,win),(mo.strides[0]*hop,mo.strides[0]))
     return 20*np.log10(np.sqrt((fr**2).mean(1)).mean()+1e-9)
 mix*=10**((-16.1-frame_rms_db(mix))/20)
-mix=np.tanh(mix*1.5)/np.tanh(1.5)
+mix=np.tanh(mix*1.18)/np.tanh(1.18)
 mix*=10**((-16.1-frame_rms_db(mix))/20)
 pk=np.abs(mix).max()
 if pk>0.995: mix*=0.995/pk
