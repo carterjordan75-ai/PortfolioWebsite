@@ -62,16 +62,16 @@ the synthesis returns.
 Passing through the field, eight times: quick resonant glides — a
 second or so each — far in the background now, more room than source,
 sweeping the panorama and gone in a tenth of a second. At six chord
-turns a LOW BRASS swell blooms — the root an octave down, harmonics
-arriving with force the way a section leans into a crescendo, a slow
-growl on top — while the bass and drone lean back a quarter to make
-its pocket (at the swells the whole mix rises about 2 dB). Twelve
-tape moments across eleven slots, three inside the first thirty
-seconds, every phrase ending on a long soft exhale (2.4 s or half the clip,
+turns a LOW BRASS swell blooms quietly — the root an octave down,
+harmonics arriving the way a section leans into a crescendo, the
+growl kept low — while the bass and drone lean back a quarter to make
+its pocket. Eight
+tape moments spread evenly across the loop (about nineteen seconds
+apart, 9s to 141s), every phrase ending on a long soft exhale (2.4 s or half the clip,
 whichever is shorter, with the music returning over 1.3 s) — and each slot
-carries its own CLARITY (0..1): the wreck's bandwidth, drive, dropout
-depth and level all follow it, so some moments sit almost readable and
-others are chewed nearly away. The bed leans darker still: pluck
+carries its own CLARITY (0..1): the wreck's bandwidth, drive and
+dropout depth follow it — but its LEVEL barely does, so the moments
+differ in texture, not loudness. The bed leans darker still: pluck
 filter at 3.2k, strings at 4.2k, one gentle pole at 5.6k across the
 bus — the voices join after that pole on purpose, staying present
 against the darker music.

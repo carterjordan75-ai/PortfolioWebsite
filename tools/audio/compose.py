@@ -272,10 +272,10 @@ for barB,bamp in BRS:
         w=np.zeros(nlen)
         for k in range(1,10):
             bloom=np.clip(np.minimum(tt/att,1)*1.35-k*0.09,0,1)
-            growl=1+0.08*np.sin(2*np.pi*5.2*tt+k)* (k/9)
-            w+=np.sin(2*np.pi*fB*det*k*tt+0.6*k)/k**0.8*bloom*growl*(1.7 if 2<=k<=6 else 1.0)
+            growl=1+0.04*np.sin(2*np.pi*5.2*tt+k)* (k/9)
+            w+=np.sin(2*np.pi*fB*det*k*tt+0.6*k)/k**0.8*bloom*growl*(1.4 if 2<=k<=6 else 1.0)
         a0=int(barB*BAR*SR); idx=np.arange(a0,a0+nlen)%N
-        np.add.at(buf,idx,w*env*1.1*bamp)
+        np.add.at(buf,idx,w*env*0.55*bamp)
 b,a=sg.butter(2,1400/(SR/2)); brL=cfilt(b,a,brL); brR=cfilt(b,a,brR)
 
 # ---------------- squeaks passing through ----------------
@@ -391,7 +391,7 @@ def wreck(x, seed, clar=0.5):
     b,a=sg.butter(2,[lo/(SR/2),hi/(SR/2)],'band'); y=sg.lfilter(b,a,x)
     y/=np.sqrt((y**2).mean())+1e-9
     y=np.tanh(y*(3.2-1.5*clar))/2.0
-    y*= (0.75+0.5*clar)
+    y*= (0.9+0.2*clar)
     drop=np.clip(np.sin(2*np.pi*r.uniform(0.5,1.3)*tt+r.uniform(0,6))*(2.6-1.6*clar)+(0.55+0.35*clar),0.25,1)
     # the tape breathes out, never cuts: a slow exhale at the end
     env=np.ones(nlen)
@@ -401,16 +401,14 @@ def wreck(x, seed, clar=0.5):
 voxL=np.zeros(N); voxR=np.zeros(N)
 #     bar   dur   f0  mode    amp  radio-cut first
 #     bar   dur   f0  mode    amp  radio  clarity
-VOX=[( 3,  4.0, 120,'talk', 0.85,True,  0.30),
-     ( 7,  3.5, 300,'talk', 0.7, False, 0.85),
-     (10,  4.0, 150,'talk', 0.9, True,  0.50),
-     (18,  2.9, 325,'laugh',0.85,False, 0.90),
-     (22,  3.4, 176,'talk', 0.65,True,  0.40),
-     (34,  5.2, 124,'talk', 0.9, True,  0.70),
-     (41,  4.2, 140,'talk', 0.75,False, 0.55),
-     (47,  3.8, 182,'talk', 0.7, True,  0.25),
-     (51,  2.6, 345,'laugh',0.9, False, 0.80),
-     (55,  5.8, 112,'talk', 1.0, True,  0.45)]
+VOX=[( 4,  4.0, 120,'talk', 0.80,True,  0.35),
+     (12,  4.0, 150,'talk', 0.78,False, 0.60),
+     (21,  4.0, 176,'talk', 0.82,True,  0.25),
+     (29,  4.0, 124,'talk', 0.80,False, 0.75),
+     (38,  4.0, 140,'talk', 0.85,True,  0.50),
+     (46,  4.0, 182,'talk', 0.78,False, 0.65),
+     (54,  4.0, 345,'talk', 0.82,True,  0.40),
+     (60,  4.0, 112,'talk', 0.80,False, 0.70)]
 vdk=np.zeros(N)
 ti=0
 for barAt,vdur,vf0,vmode,vamp,vradio,vclar in VOX:
@@ -465,7 +463,7 @@ b,a=sg.butter(1,5600/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
 # The voices are a CUT-IN, not part of the tonal bed: they join after
 # the match EQ (which, given a reference with no voices in it, would
 # dutifully remove them) and ride only the final trims.
-L+=voxL*4.2; R+=voxR*4.2
+L+=voxL*3.4; R+=voxR*3.4
 mix=np.stack([L,R],1)
 # ---------------- master to the reference's density: hot into a soft ceiling ----------------
 def frame_rms_db(m):
