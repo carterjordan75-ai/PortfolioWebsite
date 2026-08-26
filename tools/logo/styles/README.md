@@ -1,4 +1,4 @@
-# XOXO — 20 styles, one motion
+# XOXO — 32 styles, one motion
 
 Twenty standalone exports of the same mark for match-cut edits: identical
 viewBox (`-133.0 -226.3 1266.2 695.8`), identical clocks and seeds
@@ -6,13 +6,17 @@ viewBox (`-133.0 -226.3 1266.2 695.8`), identical clocks and seeds
 no arms. Cut between any two files at the same timestamp and the boil,
 the texture step, the eyes and the blinks carry straight through — only
 the skin changes. Verified: one distinct viewBox and one distinct
-eye-track signature across all twenty files.
+eye-track signature across all files.
 
 Open `index.html` for the live contact sheet. Each file loops forever;
 the resting loop follows the arrival. To rebuild or tweak any style in
 the tuner, apply its recipe below over a sleep mark with the pinned
-settings above (texture kind / Amount / Scale / Contrast under
-Global effects → Colour → Ink texture).
+settings above (texture kind / Amount / Scale / Contrast under Global effects → Colour →
+Ink texture; construction under Letters → Built as, with Detail for cell
+size, bar pitch or the hand's looseness). 01-clean is the hero; 21-32
+rebuild the letterforms themselves — pixel grids, fused bits, halftone
+mosaics, scanline rasters, hand redraws — in the same place at the same
+size, so the motion carries through a cut exactly as before.
 
 | file | recipe |
 |---|---|
@@ -36,6 +40,18 @@ Global effects → Colour → Ink texture).
 | 18-radial-glow | radial gradient #ffffff → #6b6b6b |
 | 19-gradient-lino | dusk gradient + lino .45 / 1.0 / .6 |
 | 20-blockline | outline 5 + fill + lino .42 / 1.5 / .7 |
+| 21-pixel | built as pixel / detail 1 |
+| 22-pixel-fine | pixel / 0.55 |
+| 23-bits | bits / 1.05 — fused rounded units |
+| 24-mosaic | mosaic / 1 — halftone-dither edges |
+| 25-mosaic-coarse | mosaic / 1.7 |
+| 26-scanlines | scanline / 1 |
+| 27-scan-fine | scanline / 0.6 |
+| 28-hand | hand / 1 — one naive redraw |
+| 29-hand-line | hand / 1.3 + outline 5, fill 0 |
+| 30-hand-rough | hand / 1 + lino .35 / 1.1 / .5 |
+| 31-pixel-dust | pixel / 0.8 + paper .3 / 0.4 / .7 |
+| 32-bits-dusk | bits / 1.05 + dusk gradient |
 
 A note on dark ink: a near-black solid ink reads as MONO to the site
 importer and follows the viewer's OS theme, so it is not a stable style

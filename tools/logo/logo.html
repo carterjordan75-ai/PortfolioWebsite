@@ -247,6 +247,17 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   direction letter to letter so a grid reads as tiles rather than a tilted block.</p>
   </details>
   <details class="grp"><summary>Letters</summary>
+  <div class="row"><label>Built as</label>
+   <button id="fmS" onclick="setForm('solid')">Solid</button>
+   <button id="fmP" onclick="setForm('pixel')">Pixel</button>
+   <button id="fmB" onclick="setForm('bits')">Bits</button>
+   <button id="fmD" onclick="setForm('dither')">Mosaic</button>
+   <button id="fmL" onclick="setForm('scan')">Scanline</button>
+   <button id="fmH" onclick="setForm('hand')">Hand</button></div>
+  <p class="note">The same letters, built another way: a pixel grid, fused rounded bits, a
+  halftone mosaic, a scanline raster, or one confident hand redraw. Same place, same size —
+  the eyes, the boil and the ink texture carry on regardless.</p>
+  <div class="row"><label>Detail <b id="vformScale"></b></label><input id="formScale" type="range" min="0.4" max="2.4" step=".05"></div>
    <details><summary>Squash & stretch</summary>
   <div class="row"><label>Target</label>
    <button id="tW" onclick="setTarget('whole')">Whole</button>
@@ -844,7 +855,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  spinY:0,spinX:0,spinP:1400,dither:1.1,
  bumpBlur:2,htBlur:2,hmBlur:0,texMap:'shared',
  extrude:0,exSlices:6,jiggle:0,jigSpeed:3,texType:'noise',grainC:.4,
- marks:['teardrop'], seed:1, frameX:0, frameY:0, frameZ:1,
+ marks:['teardrop'], seed:1, formStyle:'solid', formScale:1, frameX:0, frameY:0, frameZ:1,
  curves:{arc:[.4,.1,.3,1],acc:[.3,.85,.35,1],draw:[.45,.15,.4,1],
   logo:[.45,.15,.4,1],fill:[.32,.72,.36,1]},
  letters:[null,null,null,null]};
@@ -899,6 +910,98 @@ function scaleAbout(p,s){var cx=0,cy=0;p.forEach(function(q){cx+=q[0];cy+=q[1]})
  // where it belongs in the letter instead of drifting to the middle.
  if(p.hole) o.hole=p.hole.map(function(q){return [cx+(q[0]-cx)*s,cy+(q[1]-cy)*s]});
  return o}
+/**
+ * THE LETTERFORM RE-BUILT. The hero letters are smooth blobs; a form
+ * style re-emits the same geometry as a different CONSTRUCTION — a
+ * pixel grid, fused rounded bits, a halftone mosaic, a scanline
+ * raster, or a hand-drawn redraw — in the same place at the same
+ * size, inside the same wrappers, so the eye still cuts through it,
+ * the reveals still move it, and the boil and the ink texture still
+ * play over it. Deterministic off the seed, like everything else.
+ */
+function pip(p, x, y){
+ var inn=false;
+ for(var i=0,j=p.length-1;i<p.length;j=i++){
+  if(((p[i][1]>y)!==(p[j][1]>y)) &&
+     (x < (p[j][0]-p[i][0])*(y-p[i][1])/(p[j][1]-p[i][1])+p[i][0])) inn=!inn;
+ }
+ return inn;
+}
+function formBody(i, cp){
+ var b=B[i], poly=b.p, st=P.formStyle;
+ var fs=Math.max(0.3, Math.min(3, P.formScale===undefined?1:P.formScale));
+ var x0=b.cx-b.w/2, y0=b.cy-b.h/2, F2=function(v){ return v.toFixed(1) };
+ var cells='';
+ if(st==='hand'){
+  // resample the outline evenly, push each point along its normal by
+  // smooth value-noise — a NAIVE redraw, wobbly the way a quick hand
+  // is, not a polite shiver
+  var N=56, per=[], L=0, k;
+  for(k=0;k<poly.length;k++){ var q=poly[(k+1)%poly.length];
+   L+=Math.hypot(q[0]-poly[k][0], q[1]-poly[k][1]); per.push(L); }
+  var pts=[], amp=b.h*0.085*fs;
+  for(k=0;k<N;k++){
+   var d=k/N*L, j2=0; while(j2<per.length-1 && per[j2]<d) j2++;
+   var d0=j2?per[j2-1]:0, t=(d-d0)/Math.max(1e-6,per[j2]-d0);
+   var a1=poly[j2], a2c=poly[(j2+1)%poly.length];
+   var px=a1[0]+(a2c[0]-a1[0])*t, py=a1[1]+(a2c[1]-a1[1])*t;
+   var nx=(a2c[1]-a1[1]), ny=-(a2c[0]-a1[0]), nm=Math.hypot(nx,ny)||1;
+   var w1=(rnd(i*31+Math.floor(k*0.5)*7+P.seed*13)-0.5)
+        +(rnd(i*31+(Math.floor(k*0.5)+1)*7+P.seed*13)-0.5)*(k*0.5-Math.floor(k*0.5));
+   pts.push([px+nx/nm*w1*amp, py+ny/nm*w1*amp]);
+  }
+  var dh=toD(pts);
+  return {
+   fill:(P.lgfill>0)?'<g class="lfg'+i+'"><path class="p'+i+' lf"'+cp+' d="'+dh+'"/></g>':'',
+   line:(lp(i,'lgw')>0)?'<path class="p'+i+' lp" pathLength="1000" d="'+dh+'"/>':''
+  };
+ }
+ if(st==='scan'){
+  // vertical bars, thick and thin by turn — type built of lines
+  var colW=b.h/11*fs, step=colW*1.75, yStep=b.h/90;
+  var ci=0;
+  for(var x=x0+colW*0.6; x<x0+b.w; x+=step, ci++){
+   var wBar=colW*((ci%3===0)?1:0.62), runY=null, y;
+   for(y=y0; y<=y0+b.h+yStep; y+=yStep){
+    var inside=(y<=y0+b.h) && pip(poly, x, y);
+    if(inside && runY===null) runY=y;
+    if(!inside && runY!==null){
+     if(y-runY>yStep*2)
+      cells+='<rect x="'+F2(x-wBar/2)+'" y="'+F2(runY)+'" width="'+F2(wBar)
+       +'" height="'+F2(y-runY)+'" fill="currentColor"/>';
+     runY=null;
+    }
+   }
+  }
+ } else {
+  var cell=(st==='bits'? b.h/7.2 : st==='dither'? b.h/10 : b.h/9)*fs;
+  var nx2=Math.max(2, Math.round(b.w/cell)), ny2=Math.max(2, Math.round(b.h/cell));
+  var cw=b.w/nx2, ch=b.h/ny2;
+  for(var gy=0; gy<ny2; gy++) for(var gx2=0; gx2<nx2; gx2++){
+   var cx2=x0+(gx2+0.5)*cw, cy2=y0+(gy+0.5)*ch, cov=0;
+   [[-0.28,-0.28],[0.28,-0.28],[-0.28,0.28],[0.28,0.28]].forEach(function(o){
+    if(pip(poly, cx2+o[0]*cw, cy2+o[1]*ch)) cov++;
+   });
+   if(!cov) continue;
+   if(st==='dither' && cov<4){
+    // the halftone edge: part-covered cells become dot clusters
+    var r=Math.min(cw,ch)*0.17;
+    var spots=[[-0.22,-0.22],[0.22,0.22],[0.22,-0.22],[-0.22,0.22]].slice(0,cov);
+    spots.forEach(function(o,si){
+     cells+='<circle cx="'+F2(cx2+o[0]*cw)+'" cy="'+F2(cy2+o[1]*ch)+'" r="'
+      +F2(r*(0.8+0.2*((si+gx2+gy)%2)))+'" fill="currentColor"/>';
+    });
+   } else if(cov>= (st==='dither'?4:1)){
+    var over=(st==='bits')?1.03:0.985, rx=(st==='bits')?cw*0.48:0;
+    cells+='<rect x="'+F2(cx2-cw*over/2)+'" y="'+F2(cy2-ch*over/2)
+     +'" width="'+F2(cw*over)+'" height="'+F2(ch*over)
+     +(rx?'" rx="'+F2(rx):'')+'" fill="currentColor"/>';
+   }
+  }
+ }
+ return { fill:'<g class="lfg'+i+'"'+cp+'>'+cells+'</g>', line:'' };
+}
+
 function toD(p){var d=ring(p);
  // A counter is normally a second subpath on the same path. Winding is
  // irrelevant because the letterforms fill evenodd, so an inner ring
@@ -1520,7 +1623,7 @@ function svg(framed){
  var key=[P.layout,P.lgap,P.lspread,P.lscat,P.lshuffle,P.lturn,P.lsettle,P.rotX,P.rotO,
   P.lrot,P.startSpread,P.arcs,P.orbSize,P.orbvary,P.orbtilt,P.orbtvary,P.orbarc,
   P.acc,P.asize,P.spread,P.place,P.jit,P.eyes,P.eyeSize,P.eyeOval,P.eyeGlint,
-  P.glintShape,P.extrude,P.lgw,P.lgsp,P.lgbris,
+  P.glintShape,P.extrude,P.lgw,P.lgsp,P.lgbris,P.formStyle,P.formScale,
   P.sleep,P.slpEntrance,P.brows,P.browShape,P.browLen,P.browW,P.browLift,P.browTilt,
   P.marks.join('|'),str.length].join(',');
  if(BBCACHE.key===key&&BBCACHE.bb) return fitViewBox(str, BBCACHE.bb, framed);
@@ -7749,6 +7852,12 @@ function svgRaw(){
      +(P.texCol?'<path class="p'+i+' lx"'+cp+' d="'+dl2+'"/>':'')+'</g>';
    }
    var outline='<path class="p'+i+' lp" pathLength="1000" d="'+dl2+'"/>'+lgs;
+   if(P.formStyle && P.formStyle!=='solid'){
+    // the same letter, built another way — everything around it
+    // (mask, reveal, boil, texture) is none the wiser
+    var fb=formBody(i, cp);
+    fillEl=fb.fill; outline=fb.line;
+   }
    var sh=(P.d3d>0&&P.texMap==='shape');
    body+=so+(sh?'<g filter="url(#shade3d)">':'')
     +'<g class="bl b'+i+'"'+batt+'>'
@@ -8045,6 +8154,9 @@ function build(){
  ['gtN','gtP','gtM','gtH','gtB','gtL'].forEach(function(id,n){
   var e=document.getElementById(id); if(e) e.classList.toggle('on',
    P.texType===['noise','paper','mottle','halftone','brush','lino'][n])});
+ ['fmS','fmP','fmB','fmD','fmL','fmH'].forEach(function(id,n){
+  var e=document.getElementById(id); if(e) e.classList.toggle('on',
+   (P.formStyle||'solid')===['solid','pixel','bits','dither','scan','hand'][n])});
  ['tmS','tmP'].forEach(function(id,n){
   document.getElementById(id).classList.toggle('on',P.texMap===['shared','shape'][n])});
  ['ikS','ikL','ikR'].forEach(function(id,n){
@@ -8277,6 +8389,7 @@ function setFillOrder(v){P.lgfOver=v;build()}
 function setInk(m){P.inkMode=m;build()}
 function setTexMap(m){P.texMap=m;build()}
 function setTexType(m){P.texType=m;build()}
+function setForm(m){P.formStyle=m;labels();drawTex();build()}
 
 var GLINTS=['dot','oval','pill','square','star','pair','crescent'];
 var AMBIENTS=['still','float','breathe','sway','bob','pulse'];
@@ -8815,7 +8928,7 @@ var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eye
  'eyeShut','blinkSync','eyeSpeed','eyeGlint','glintIn',
  'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeWander','eyeAsym','eyePop','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armDelay','armStagger','armGrip','armSquash','armSpeed','armWait','armSize','armCount','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armTugAmt','armBow','armLift','armTilt','armEyes','armTarget','armTarget2',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
- 'morph','msize','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','boil','boilHz','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
+ 'morph','msize','formScale','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','boil','boilHz','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
 function sync(){syncSleep();drawGlints();drawBlinks();drawBrows();drawArms();drawSleepPickers();
@@ -8873,6 +8986,7 @@ var GATES=[
  ['exSlices', function(){ return P.extrude>0 }],
  ['jigSpeed', function(){ return P.jiggle>0 }],
  ['msize',    function(){ return P.morph>0 }],
+ ['formScale',function(){ return P.formStyle && P.formStyle!=='solid' }],
  ['brisSp',   function(){ return P.bris>0 }],
  ['brisW',    function(){ return P.bris>0 }],
  ['brisVar',  function(){ return P.bris>0 }],
@@ -8912,7 +9026,7 @@ function gates(){
 }
 function labels(){
  var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeWander:2,eyeAsym:2,eyePop:2,eyeEdge:2,eyeLidR:2,eyeLidRest:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
-  lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,armTugAmt:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
+  formScale:2,lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,armTugAmt:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
   var b=document.getElementById('v'+e.id); if(b) b.textContent=P[e.dataset.p]+'ms';
@@ -9770,6 +9884,7 @@ oct:'Detail levels in the roughness.',
 inkAngle:'Angle of the ink gradient.',
 grain:'How much ink the texture takes away. The mark stops being a solid fill and starts looking printed.',
 grainS:'How big the texture is. Small is a fine grain, large is a coarse weathered break-up.',
+formScale:'How fine the construction is \u2014 cell size, bar pitch, or the hand\'s looseness.',
 grainC:'How hard the texture edges are \u2014 soft mottling at 0, a crisp bitten edge at 1.',
 texMix:'How strongly a supplied texture shows.',
 texHtAmt:'How much a supplied height map dents the surface.',
