@@ -10,10 +10,10 @@ import { useRouter } from 'next/navigation'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 import { projects } from '@/data/projects'
 import {
-  getAmbientAudio,
   startAmbientAudio,
   pauseAmbientAudio,
   isAmbientPlaying,
+  subscribeAmbient,
 } from '@/lib/ambientAudio'
 import { XOXO_LOGO_URL } from '@/lib/xoxoLogoUrl'
 
@@ -40,8 +40,8 @@ export default function Navigation() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
   const { dark, setDark, fg } = useDarkMode()
-  // The toggle's visual state (On/Off + animated bars) reflects the AUDIO ELEMENT'S
-  // actual paused/playing state — not a separate flag — so the button never desyncs
+  // The toggle's visual state (On/Off + animated bars) reflects the AUDIO GRAPH'S
+  // actual playing state — not a separate flag — so the button never desyncs
   // from reality. The audio itself lives in src/lib/ambientAudio.ts as a module
   // singleton so it survives navigation between pages (and crucially, the user's
   // click gesture on the gate's submit button — see startAmbientAudio call there).
@@ -168,21 +168,13 @@ export default function Navigation() {
   const isLook = pathname === '/look'
   const isWhitePage = isArchive || isWork || isExperiments || isProjectPage || isLook
 
-  // Keep audioOn synced with the singleton audio element's state — listen to
-  // play/pause events so external changes (e.g. browser pausing on tab change,
-  // or another component pausing) are reflected in the toggle UI.
+  // Keep audioOn synced with the singleton's state — subscribe to the
+  // module's own notifications so external changes (another component
+  // pausing, playback starting from the gate's gesture) are reflected in
+  // the toggle UI.
   useEffect(() => {
-    const a = getAmbientAudio()
-    if (!a) return
     setAudioOn(isAmbientPlaying())
-    const onPlay = () => setAudioOn(true)
-    const onPause = () => setAudioOn(false)
-    a.addEventListener('play', onPlay)
-    a.addEventListener('pause', onPause)
-    return () => {
-      a.removeEventListener('play', onPlay)
-      a.removeEventListener('pause', onPause)
-    }
+    return subscribeAmbient(setAudioOn)
   }, [isWork])
 
   // Reset Info popup's expanded state whenever it closes
@@ -872,10 +864,11 @@ export default function Navigation() {
 
       </motion.header>
 
-      {/* (Ambient drone audio now lives as a module singleton in
-          src/lib/ambientAudio.ts so it survives client-side navigation and can
-          be started from the gate's submit handler while the click gesture is
-          still active.) */}
+      {/* (The ambient loop lives as a module singleton in
+          src/lib/ambientAudio.ts — a Web Audio graph, for the sample-accurate
+          loop seam — so it survives client-side navigation and can be started
+          from the gate's submit handler while the click gesture is still
+          active.) */}
 
       {/* Floating "+" pill — appears at the TOP CENTER when the header is minimized.
           Wrapped in a flex-center row so the centering is independent of the
