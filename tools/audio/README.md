@@ -31,21 +31,28 @@ event-level analysis is what mattered:
 64 bars of 4/4 at 102.4 bpm = exactly 150.000 s. Four rounds of
 A–E–F#–C#m, four bars each. A seeded rolling figure in eighths with
 sixteenth pickups (note rate 3.99/s against the reference's 4.09); the
-pluck is additive with the measured partial profile, 12 ms attack,
-per-partial decay — kept CLEAN by request: barely any strike noise,
-gentled wow, a steadier stereo image. Under the roll sits what the
+pluck is a SYNTH voice by request — a saw-rich source through a
+resonant low-pass that opens at the strike and closes into the dark
+(the filter envelope is what stops it reading as a piano), with a
+quiet sub-octave sine under each note; clean attack, gentled wow, a
+steadier image. Under the roll sits what the
 reference does not have and the ear asked for: a dark drone bed — root
 an octave below the arp, octave/twelfth/fifth on top, low-passed at
 560 Hz, breathing on whole-cycle LFOs, crossfading at the chord turns.
 Under those, the rhythm section the ear asked for: a deep muffled kick
-(a 95→38 Hz fall, low-passed at 210 — boom, not punch) on beats one and
+(a 95→33 Hz fall, low-passed at 170 — boom, not punch) on beats one and
 three with an occasional ghost, fading in after the intro and receding
 into the seam; and a proper bassline an octave below the arp — the root
 held low, restruck mid-bar, walking a fifth at each chord turn. Bass
 and drone duck gently around the kick so the low end pockets. The tape
 surface is a whisper (hiss −60 dB, a few dust ticks) and the bus is
 nearly clean — parallel tanh at drive 1.7, blend 0.38, a soft ceiling
-eased to 1.18.
+eased to 1.18. And cut in from another room, six times across the
+loop: the distorted murmur of a home tape — no recording is sampled;
+unintelligible speech is synthesised (a jittering glottal pulse
+through three wandering formants at syllable cadence), narrowed,
+driven and given dropouts. The voices join AFTER the match EQ, which
+would otherwise remove them to honour a reference that has none.
 
 The **match EQ** (smoothed ratio of the reference's Welch curve to the
 bus's, applied circularly) is deliberately confined to 260 Hz–2 kHz at

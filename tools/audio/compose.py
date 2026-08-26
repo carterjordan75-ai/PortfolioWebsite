@@ -37,26 +37,28 @@ DENS =periodic([(0,.25),(25,.45),(55,.7),(85,.9),(108,1.0),(128,.7),(142,.35)])
 RIDE =periodic([(0,.74),(30,.84),(60,.92),(100,1.0),(126,.9),(142,.76)])
 
 # ---------------- the pluck ----------------
-PART=[1.0,0.18,0.26,0.09,0.08,0.055,0.03,0.02]  # measured profile, tail kept short and clean
+# Subtractive, not struck: a saw-rich source through a resonant low-pass
+# that opens at the strike and closes into the dark — the filter envelope
+# is what makes it read as a synthesizer rather than a piano. A quiet
+# sub-octave sine sits under each note for synth weight.
 def pluck(f0,dur,vel,tstart):
     nlen=int(dur*SR); tt=np.arange(nlen)/SR
     w0=wow_at(tstart); w1=wow_at(tstart+dur*0.6)
     out=np.zeros(nlen)
-    tau0=1.15*(110.0/f0)**0.3
-    for k,ak in enumerate(PART,1):
-        fk=f0*k*(1+3e-4*k*k)
-        # linear tape-drift chirp across the note, phase in closed form
+    fc=300+1250*np.exp(-tt/0.16)
+    amp=np.exp(-tt/1.5)
+    for k in range(1,15):
+        fk=f0*k
+        if fk>4200: break
         fa=fk*2**w0; fb=fk*2**w1
-        ph=2*np.pi*(fa*tt+0.5*(fb-fa)/max(dur*0.6,1e-3)*np.minimum(tt,dur*0.6)**2/ (dur*0.6))
-        out+=ak*np.sin(ph+rng.uniform(0,2*np.pi))*np.exp(-tt/(tau0*k**-0.75))
-    atk=int(0.012*SR)
+        ph=2*np.pi*(fa*tt+0.5*(fb-fa)/max(dur*0.6,1e-3)*np.minimum(tt,dur*0.6)**2/(dur*0.6))
+        g=1.0/(1.0+(fk/fc)**4)+0.5*np.exp(-((fk-fc)/(0.22*fc))**2)
+        out+=np.sin(ph+0.7*k)/k**0.9*g
+    out+=0.26*np.sin(2*np.pi*f0/2*2**w0*tt)
+    atk=int(0.006*SR)
     env=np.ones(nlen); env[:atk]=.5-.5*np.cos(np.pi*np.arange(atk)/atk)
     env[-int(.05*SR):]*=np.linspace(1,0,int(.05*SR))
-    thump=rng.standard_normal(int(.02*SR))*np.exp(-np.arange(int(.02*SR))/SR*260)
-    b,a=sg.butter(2,1100/(SR/2)); thump=sg.lfilter(b,a,thump)
-    b,a=sg.butter(1,200/(SR/2),'high'); thump=sg.lfilter(b,a,thump)*0.22
-    out*=env; out[:len(thump)]+=thump*vel
-    return out*vel
+    return out*env*amp*vel
 
 # ---------------- the roll: eighths with sixteenth fills, seeded per bar ----------------
 plL=np.zeros(N); plR=np.zeros(N)
@@ -98,12 +100,12 @@ print("note events:",events, f"({events/T:.2f}/s)")
 
 # ---------------- the beats: a deep muffled kick, half-time and dark ----------------
 BEATS=periodic([(0,.1),(18,.45),(40,.8),(70,1.0),(105,1.0),(128,.7),(142,.2)])
-klen=int(0.55*SR); ktt=np.arange(klen)/SR
-kfrq=38+57*np.exp(-ktt/0.032)               # a 95->38Hz fall: boom, not punch
+klen=int(0.72*SR); ktt=np.arange(klen)/SR
+kfrq=33+62*np.exp(-ktt/0.030)               # a 95->33Hz fall: boom, not punch
 kph=2*np.pi*np.cumsum(kfrq)/SR
-KICK=np.sin(kph)*np.exp(-ktt/0.16)
+KICK=np.sin(kph)*np.exp(-ktt/0.24)
 KICK[:int(0.004*SR)]*=np.linspace(0,1,int(0.004*SR))
-b,a=sg.butter(2,210/(SR/2)); KICK=sg.lfilter(b,a,KICK)
+b,a=sg.butter(2,170/(SR/2)); KICK=sg.lfilter(b,a,KICK)
 KICK/=np.abs(KICK).max()
 kick=np.zeros(N); duck=np.zeros(N)
 dlen=int(0.30*SR)
@@ -144,7 +146,7 @@ for bar in range(64):
         bnote(fB,tb+2.5*BEAT,1.4*BEAT,0.66*g)
 b,a=sg.butter(2,300/(SR/2)); bass=cfilt(b,a,bass)
 # the pocket: bass and drone breathe around the kick
-bass*=(1-0.45*duck)
+bass*=(1-0.52*duck)
 
 # ---------------- the drone: a dark ambient bed under the roll ----------------
 drL=np.zeros(N); drR=np.zeros(N)
@@ -168,7 +170,7 @@ for ci in range(16):
               +0.14*np.sin(2*np.pi*fD*mult*det*3*tt+ph*3))*amp
             np.add.at(buf, absn%N, w*envD*breathe*0.12)
 b,a=sg.butter(2,560/(SR/2)); drL=cfilt(b,a,drL); drR=cfilt(b,a,drR)
-drL*= (0.7+0.3*RIDE)*(1-0.32*duck); drR*=(0.7+0.3*RIDE)*(1-0.32*duck)
+drL*= (0.7+0.3*RIDE)*(1-0.38*duck); drR*=(0.7+0.3*RIDE)*(1-0.38*duck)
 
 b,a=sg.butter(1,5200/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
 
@@ -186,6 +188,49 @@ for p,am in zip(pos,amp):
 b,a=sg.butter(2,[1800/(SR/2),9000/(SR/2)],'band'); crk=cfilt(b,a,crk)
 crk*=10**(-47/20)/max(1e-9,np.sqrt((crk**2).mean()))
 
+# ---------------- the voices: a home tape playing in the next room ----------------
+# No real recording is sampled: unintelligible speech is synthesised —
+# a jittering glottal pulse through three wandering formants, gated at
+# syllable cadence — then narrowed, driven hard and given dropouts, so
+# it reads as a distorted home movie heard through a wall.
+def murmur(dur, f0base, seed):
+    r=np.random.default_rng(seed)
+    nlen=int(dur*SR); tt=np.arange(nlen)/SR
+    gate=np.zeros(nlen); pos=0.0
+    while pos<dur-0.15:
+        slen=r.uniform(0.09,0.28)
+        if r.random()<0.82:
+            i0,i1=int(pos*SR),int(min((pos+slen)*SR,nlen))
+            if i1-i0>2: gate[i0:i1]=np.maximum(gate[i0:i1],np.hanning(i1-i0)*r.uniform(0.5,1.0))
+        pos+=slen*r.uniform(1.0,1.6)
+    f0=f0base*(1+0.06*np.sin(2*np.pi*r.uniform(2,3.4)*tt)+np.cumsum(r.normal(0,0.01,nlen))*0.0004)
+    ph=2*np.pi*np.cumsum(f0)/SR
+    src=np.diff(np.concatenate([[0],(sg.square(ph,duty=0.3)*0.5+0.5)]))
+    src+=r.standard_normal(nlen)*0.02
+    out=np.zeros(nlen)
+    for lo,hi in [(320,780),(900,1900),(2300,2900)]:
+        fcv=lo+(hi-lo)*(0.5+0.5*np.sin(2*np.pi*r.uniform(0.6,1.7)*tt+r.uniform(0,6)))
+        blk=int(0.03*SR); y=np.zeros(nlen); zi=np.zeros(2)
+        for i0 in range(0,nlen,blk):
+            b,a=sg.iirpeak(float(fcv[min(i0,nlen-1)])/(SR/2),4)
+            y[i0:i0+blk],zi=sg.lfilter(b,a,src[i0:i0+blk],zi=zi)
+        out+=y
+    out*=gate
+    b,a=sg.butter(2,[280/(SR/2),2700/(SR/2)],'band'); out=sg.lfilter(b,a,out)
+    out/=np.sqrt((out**2).mean())+1e-9
+    out=np.tanh(out*2.6)/2.0
+    drop=np.clip(np.sin(2*np.pi*r.uniform(0.5,1.3)*tt+r.uniform(0,6))*3+0.6,0,1)
+    return out*drop
+voxL=np.zeros(N); voxR=np.zeros(N)
+VOX=[(14,4.6,118,0.8),(22,3.4,176,0.65),(34,5.2,124,0.9),(47,3.8,182,0.7),
+     (55,5.8,112,1.0),(41,4.2,140,0.75)]
+for barAt,vdur,vf0,vamp in VOX:
+    ph0=murmur(vdur,vf0,int(barAt*7+vf0))
+    a0=int(barAt*BAR*SR); idx=np.arange(a0,a0+len(ph0))%N
+    pv=rng.uniform(-3,3)
+    np.add.at(voxL,idx,ph0*0.23*vamp*10**(+pv/40))
+    np.add.at(voxR,idx,ph0*0.23*vamp*10**(-pv/40))
+
 # ---------------- space: two dark rooms, one per side ----------------
 def circ_reverb(x,sec,damp,seed):
     r2=np.random.default_rng(seed)
@@ -193,11 +238,11 @@ def circ_reverb(x,sec,damp,seed):
     b,a=sg.butter(1,damp/(SR/2)); ir=sg.lfilter(b,a,ir)
     ir/=np.sqrt((ir**2).sum())
     return np.fft.irfft(np.fft.rfft(x)*np.fft.rfft(ir,N),N)
-wetL=circ_reverb(plL+plR*0.3+drL*0.3,2.2,3300,21)
-wetR=circ_reverb(plR+plL*0.3+drR*0.3,2.25,3300,22)
+wetL=circ_reverb(plL+plR*0.3+drL*0.3+voxL*1.6,2.2,3300,21)
+wetR=circ_reverb(plR+plL*0.3+drR*0.3+voxR*1.6,2.25,3300,22)
 
-L=(plL*(1-0.12*duck)+bass*1.2+kick*1.05+drL*1.3+wetL*.36+hiss+crk)*RIDE
-R=(plR*(1-0.12*duck)+bass*1.2+kick*1.05+drR*1.3+wetR*.36+hiss+crk*0.92)*RIDE
+L=(plL*(1-0.15*duck)+bass*1.35+kick*1.7+drL*1.3+wetL*.36+hiss+crk)*RIDE
+R=(plR*(1-0.15*duck)+bass*1.35+kick*1.7+drR*1.3+wetR*.36+hiss+crk*0.92)*RIDE
 
 # ---------------- the tape: the notes are driven INTO the medium ----------------
 # The reference masters at 0dBFS with its mids full of low-order harmonics
@@ -238,6 +283,10 @@ if REF:
     H=np.interp(np.fft.rfftfreq(N,1/SR),fr,sm)
     L=np.fft.irfft(np.fft.rfft(L)*H,N)
     R=np.fft.irfft(np.fft.rfft(R)*H,N)
+# The voices are a CUT-IN, not part of the tonal bed: they join after
+# the match EQ (which, given a reference with no voices in it, would
+# dutifully remove them) and ride only the final trims.
+L+=voxL*2.6; R+=voxR*2.6
 mix=np.stack([L,R],1)
 # ---------------- master to the reference's density: hot into a soft ceiling ----------------
 def frame_rms_db(m):
