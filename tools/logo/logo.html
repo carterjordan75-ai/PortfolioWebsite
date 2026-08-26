@@ -145,10 +145,13 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <p class="note">Every construction as a pickable logo — the hero is the mark exactly as
   dialled everywhere else. Pick a set and the mark FLICKS through them in sequence, a match
   cut built into the animation itself: the boil, the ink texture, the eyes and the arms play
-  across the whole run untouched. Randomised order keeps the hero as the first frame and the
-  last.</p>
+  across the whole run untouched. The hero is a pill like any other now — a set without it
+  loops without it, and when it is in, randomised order still keeps it as the first frame and
+  the last. Registration knocks each letter a touch off true on every cut, plates that never
+  land twice the same.</p>
   <div class="row" id="logopicker"></div>
   <div class="row"><label>Flick every <b id="vlogoFlick"></b></label><input id="logoFlick" type="range" min="0.08" max="1.5" step="0.01"></div>
+  <div class="row"><label>Registration <b id="vlogoReg"></b></label><input id="logoReg" type="range" min="0" max="1" step="0.01"></div>
   <div class="row" id="logoorder"><label>Order</label>
    <button id="lsOrd" onclick="setLogoShuffle(0)">As picked</button>
    <button id="lsRnd" onclick="setLogoShuffle(1)">Randomised</button></div>
@@ -879,7 +882,7 @@ var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lsco
  spinY:0,spinX:0,spinP:1400,dither:1.1,
  bumpBlur:2,htBlur:2,hmBlur:0,texMap:'shared',
  extrude:0,exSlices:6,jiggle:0,jigSpeed:3,texType:'noise',grainC:.4,
- marks:['teardrop'], seed:1, formStyle:'solid', formScale:1, logoSeq:[], logoFlick:0.35, logoShuffle:0, frameX:0, frameY:0, frameZ:1,
+ marks:['teardrop'], seed:1, formStyle:'solid', formScale:1, logoSeq:[], logoFlick:0.35, logoShuffle:0, logoReg:0.5, frameX:0, frameY:0, frameZ:1,
  curves:{arc:[.4,.1,.3,1],acc:[.3,.85,.35,1],draw:[.45,.15,.4,1],
   logo:[.45,.15,.4,1],fill:[.32,.72,.36,1]},
  letters:[null,null,null,null]};
@@ -1046,7 +1049,7 @@ function formCells(poly, b, i, col){
  }
  return cells;
 }
-function formBody(i, cp){
+function formBody(i, cp, lo){
  var b=B[i], poly=b.p, st=P.formStyle;
  var fs=Math.max(0.3, Math.min(4, P.formScale===undefined?1:P.formScale));
  var x0=b.cx-b.w/2, y0=b.cy-b.h/2, F2=function(v){ return v.toFixed(1) };
@@ -1069,6 +1072,15 @@ function formBody(i, cp){
    pts.push([px+nx/nm*w1*amp, py+ny/nm*w1*amp]);
   }
   var dh=toD(pts);
+  // a line override comes from a sequence recipe (hand line): the
+  // stroke is styled inline, because the shared .lp rule describes the
+  // user's own outline and may well be stroke:none
+  if(lo) return {
+   fill:(lo.fill>0)?'<g class="lfg'+i+'"><path class="p'+i+' lf"'+cp+' d="'+dh+'"/></g>':'',
+   line:'<path class="p'+i+'" pathLength="1000" style="fill:none;stroke:'+INK()
+    +';stroke-width:'+(lo.w*P.lw*(P.lgAlign==='inside'?2:1)).toFixed(2)
+    +'px;stroke-linejoin:round;stroke-linecap:round" d="'+dh+'"/>'
+  };
   return {
    fill:(P.lgfill>0)?'<g class="lfg'+i+'"><path class="p'+i+' lf"'+cp+' d="'+dh+'"/></g>':'',
    line:(lp(i,'lgw')>0)?'<path class="p'+i+' lp" pathLength="1000" d="'+dh+'"/>':''
@@ -1133,21 +1145,39 @@ function formBody(i, cp){
  * blur the whole eye at the mask instead. Solid keeps the smooth eye.
  */
 /**
- * THE LOGOS. Every construction as a pickable skin; a picked set
- * flicks through in sequence — the match cut built into the mark
- * itself. The hero (the mark exactly as dialled) leads, and when the
- * order is randomised it closes the loop too, first frame and last.
+ * THE LOGOS. Every skin as a pickable pill — the constructions, and
+ * the ink-texture and outline recipes from the style set (lino, dry
+ * brush, sketch, woodblock…), which bake their own per-slot filters.
+ * A picked set flicks through in sequence — the match cut built into
+ * the mark itself. The hero is a pill like any other: picked, a
+ * randomised order bookends the loop with it; left out, the loop
+ * simply never visits it.
  * One body per skin is emitted and visibility steps between them, so
  * every animation setting — boil, texture, eyes, arms — plays across
  * the whole sequence untouched.
  */
 var LOGO_STYLES=[
  ['hero',null],
+ // the hand-drawn family
+ ['hand',{formStyle:'hand',formScale:1}],
+ ['hand line',{formStyle:'hand',formScale:1.3,line:{w:5,fill:0}}],
+ ['hand rough',{formStyle:'hand',formScale:1,tex:['lino',.35,1.1,.5]}],
+ ['outline',{formStyle:'solid',line:{w:7,fill:0}}],
+ ['sketch',{formStyle:'solid',line:{w:5,fill:0},tex:['brush',.4,1.1,.5]}],
+ ['blockline',{formStyle:'solid',line:{w:5,fill:1},tex:['lino',.42,1.5,.7]}],
+ ['dry brush',{formStyle:'solid',tex:['brush',.5,1.2,.5]}],
+ ['lino',{formStyle:'solid',tex:['lino',.55,1.6,.6]}],
+ ['woodblock',{formStyle:'solid',tex:['lino',.68,2.6,.9]}],
+ // the press
+ ['halftone',{formStyle:'solid',tex:['halftone',.5,.5,.8]}],
+ ['paper',{formStyle:'solid',tex:['paper',.45,1.4,.5]}],
+ ['mottle',{formStyle:'solid',tex:['mottle',.4,1.6,.5]}],
+ ['static',{formStyle:'solid',tex:['noise',.5,.5,.9]}],
+ // the constructions
  ['pixel',{formStyle:'pixel',formScale:1}],
  ['bits',{formStyle:'bits',formScale:1.05}],
  ['mosaic',{formStyle:'dither',formScale:1}],
  ['scanline',{formStyle:'scan',formScale:1}],
- ['hand',{formStyle:'hand',formScale:1}],
  ['dots',{formStyle:'dots',formScale:1}],
  ['slices',{formStyle:'slices',formScale:1}],
  ['glitch',{formStyle:'glitch',formScale:1}],
@@ -1160,19 +1190,40 @@ var LOGO_STYLES=[
  ['stitch',{formStyle:'stitch',formScale:1}],
  ['hollow',{formStyle:'hollow',formScale:1}],
 ];
+function logoStyle(k){
+ var ent=null; LOGO_STYLES.forEach(function(e){ if(e[0]===k) ent=e });
+ return ent&&ent[1]||null;
+}
 function logoSeqOrder(){
  var sel=(P.logoSeq||[]).filter(function(k){
-  return k!=='hero' && LOGO_STYLES.some(function(e){ return e[0]===k }) });
+  return LOGO_STYLES.some(function(e){ return e[0]===k }) });
  if(!sel.length) return null;
  if(P.logoShuffle){
-  var arr=sel.slice();
+  var arr=sel.filter(function(k){ return k!=='hero' });
+  if(!arr.length) return ['hero'];
   for(var k2=arr.length-1;k2>0;k2--){
    var j2=Math.floor(rnd(P.seed*7+Math.round(P.eyeSeed||0)*13+k2*3.7)*(k2+1));
    var t2=arr[k2]; arr[k2]=arr[j2]; arr[j2]=t2;
   }
-  return ['hero'].concat(arr,['hero']);
+  // the hero, when PICKED, still closes the loop from both ends
+  return sel.indexOf('hero')>=0?['hero'].concat(arr,['hero']):arr;
  }
- return ['hero'].concat(sel);
+ return sel;
+}
+/**
+ * REGISTRATION. Each slot's plates land a touch off true — a seeded
+ * offset per SLOT per LETTER, so every cut jumps and no two frames of
+ * the flick sit identically. The pupil rides the same vector as its
+ * letter, which is what keeps a constructed eye on its own lattice.
+ * One skin alone is not a flick, so it gets no offset.
+ */
+function logoRegOff(si,i){
+ var a=(P.logoReg===undefined?0.5:P.logoReg); if(!(a>0)) return '';
+ if(((logoSeqOrder()||[]).length)<2) return '';
+ var h=(B[i]&&B[i].h)||100;
+ var dx=(rnd(P.seed*17+si*29.3+i*7.7)-.5)*2*a*h*0.055;
+ var dy=(rnd(P.seed*23+si*31.7+i*11.3)-.5)*2*a*h*0.055;
+ return ' transform="translate('+dx.toFixed(2)+','+dy.toFixed(2)+')"';
 }
 function formPupil(i){
  var st=P.formStyle;
@@ -2199,13 +2250,73 @@ function armBoilFilters(){
  return out;
 }
 /**
+ * One ink-texture instance: three differently-seeded filters for the
+ * stop-motion swap. The ink is EATEN, not tinted — the noise drives
+ * COVERAGE: a mask whose alpha is the noise's own luminance, cut at a
+ * threshold Amount moves and sharpened by Contrast, composited OUT of
+ * the mark, the way ink fails to take on a rough surface. It reads
+ * identically on white ink, black ink or a gradient, because it never
+ * touches colour at all. Parameters are arguments rather than P reads
+ * so a sequence slot can bake its own print beside the global one.
+ */
+function inkTexDefs(idp, tt, amt, scv, con, so){
+ var sc=Math.max(0.05, scv);
+ /**
+  * [type, frequency x, frequency y, octaves, clear, full]
+  *
+  * The last two are the threshold band: where the cut sits at Amount 0
+  * and at Amount 1. Per kind, because the two noise types do not
+  * produce the same numbers — fractalNoise is signed and lands around
+  * a half, turbulence is its absolute value and lands around a
+  * quarter. Scale divides the frequency, so a bigger Scale is a bigger
+  * texture rather than a busier one.
+  */
+ var T={noise:   ['fractalNoise', 0.115/sc, 0.115/sc, 4, 0.95, 0.42],
+        paper:   ['fractalNoise', 0.040/sc, 0.040/sc, 5, 0.95, 0.42],
+        mottle:  ['turbulence',   0.014/sc, 0.014/sc, 2, 0.72, 0.10],
+        halftone:['fractalNoise', 0.420/sc, 0.420/sc, 1, 0.95, 0.42],
+        // the hand-drawn pair: a dry brush dragged down the stroke,
+        // and a lino block's flecked bite
+        brush:   ['fractalNoise', 0.150/sc, 0.008/sc, 3, 0.98, 0.40],
+        lino:    ['turbulence',   0.055/sc, 0.070/sc, 3, 0.70, 0.09]}[tt]
+   ||['fractalNoise', 0.115/sc, 0.115/sc, 4, 0.95, 0.42];
+ var a=Math.max(0,Math.min(1,amt)), c=Math.max(0,Math.min(1,con));
+ // Amount lowers the threshold the noise has to clear to take ink
+ // away; a halftone or a lino wants a hard cut, a paper a soft one.
+ var hard=(tt==='halftone'||tt==='lino');
+ var slope=1+c*(hard?26:11)+(hard?6:0);
+ var t=T[4]+(T[5]-T[4])*a;
+ var inter=0.5-slope*t;
+ var out='';
+ for(var st=0; st<3; st++)
+  out+='<filter id="'+idp+'_'+st+'" x="-14%" y="-14%" width="128%" height="128%" '
+   +'color-interpolation-filters="sRGB">'
+   +'<feTurbulence type="'+T[0]+'" baseFrequency="'+T[1].toFixed(4)+' '+T[2].toFixed(4)
+   +'" numOctaves="'+T[3]+'" seed="'+Math.round(P.seed*3+so+st*31)+'" result="n"/>'
+   /**
+    * ONE channel of the noise becomes the mask's alpha; its colour is
+    * thrown away, so nothing here can tint the mark. One, not the
+    * average of three: feTurbulence's channels are independent fields,
+    * and averaging them divides the spread by root three — every pixel
+    * sat close to the middle and the threshold crossed almost all of
+    * them at once.
+    */
+   +'<feColorMatrix in="n" type="matrix" result="nl" values="'
+   +'0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0"/>'
+   +'<feComponentTransfer in="nl" result="nk">'
+   +'<feFuncA type="linear" slope="'+slope.toFixed(2)+'" intercept="'+inter.toFixed(3)+'"/>'
+   +'</feComponentTransfer>'
+   // and the mark keeps only what the mask does not claim
+   +'<feComposite in="SourceGraphic" in2="nk" operator="out"/></filter>';
+ return out;
+}
+/**
  * The prints STEP. Each texture instance holds three drawings and
  * swaps between them on the same clock as the boil — the ink's
  * imperfections are redrawn with the line, which is what makes the
  * whole thing read as stop motion rather than a static overlay.
  */
 function inkTexCSS(){
- if(!(P.grain>0)) return '';
  var hz=Math.max(.5, P.boilHz===undefined?8:P.boilHz), T=Math.round(3/hz*1000), out='';
  var mk=function(cls, base){
   var kf='';
@@ -2215,9 +2326,17 @@ function inkTexCSS(){
   }
   out+='@keyframes '+cls+'{'+kf+'}.'+cls+'{animation:'+cls+' '+T+'ms linear infinite}';
  };
- for(var li=0; li<LETTERS.length; li++) mk('itxL'+li, 'inktexL'+li);
- mk('itxA0','inktexA0'); mk('itxA1','inktexA1');
- mk('itxD','inktexD');
+ if(P.grain>0){
+  for(var li=0; li<LETTERS.length; li++) mk('itxL'+li, 'inktexL'+li);
+  mk('itxA0','inktexA0'); mk('itxA1','inktexA1');
+  mk('itxD','inktexD');
+ }
+ // a sequence slot's own print steps on the same clock
+ var OR=logoSeqOrder();
+ if(OR) OR.forEach(function(sk,si){
+  var md=logoStyle(sk); if(!md||!md.tex) return;
+  for(var li2=0; li2<LETTERS.length; li2++) mk('itxQ'+si+'L'+li2, 'inktexQ'+si+'L'+li2);
+ });
  return out;
 }
 /** The flick: each skin's slot holds, then the next takes over. */
@@ -7699,92 +7818,32 @@ function svgRaw(){
       +'" height="'+P.texScale+'" patternTransform="rotate('+P.texRot+' 500 201)">'
       +'<image href="'+P.texCol+'" x="0" y="0" width="'+P.texScale+'" height="'+P.texScale
       +'" preserveAspectRatio="none"/></pattern>'):'')
-  +(P.grain>0?(function(){
-    /**
-     * The ink is EATEN, not tinted.
-     *
-     * This used to lay noise over the artwork with an overlay blend,
-     * and overlay against pure white is the identity: base 1 stays 1,
-     * base 0 stays 0. On a flat one-colour mark — which is every mark
-     * this tool makes — the four kinds could not do anything except
-     * haze the anti-aliased edge, which is exactly what "the textures
-     * don't work" was.
-     *
-     * So the noise drives COVERAGE instead: a mask whose alpha is the
-     * noise's own luminance, cut at a threshold the Amount slider
-     * moves and sharpened by Contrast, composited OUT of the mark. The
-     * ink is broken up wherever the noise runs high — the way ink
-     * fails to take on a rough surface — and it reads identically on
-     * white ink, black ink or a gradient, because it never touches
-     * colour at all.
-     */
-    var sc=Math.max(0.05, P.grainS);
-    // [type, frequency x, frequency y, octaves] — scale divides, so a
-    // bigger Scale is a bigger texture rather than a busier one
-    /**
-     * [type, frequency x, frequency y, octaves, clear, full]
-     *
-     * The last two are the threshold band: where the cut sits at
-     * Amount 0 and at Amount 1. It is per kind because the two noise
-     * types do not produce the same numbers — fractalNoise is signed
-     * and lands around a half, turbulence is its absolute value and
-     * lands around a quarter, so one band for both left every
-     * turbulence kind (mottle, lino) below the cut and eating nothing
-     * at any setting.
-     */
-    var T={noise:   ['fractalNoise', 0.115/sc, 0.115/sc, 4, 0.95, 0.42],
-           paper:   ['fractalNoise', 0.040/sc, 0.040/sc, 5, 0.95, 0.42],
-           mottle:  ['turbulence',   0.014/sc, 0.014/sc, 2, 0.72, 0.10],
-           halftone:['fractalNoise', 0.420/sc, 0.420/sc, 1, 0.95, 0.42],
-           // the hand-drawn pair: a dry brush dragged down the stroke,
-           // and a lino block's flecked bite
-           brush:   ['fractalNoise', 0.150/sc, 0.008/sc, 3, 0.98, 0.40],
-           lino:    ['turbulence',   0.055/sc, 0.070/sc, 3, 0.70, 0.09]}[P.texType]
-      ||['fractalNoise', 0.115/sc, 0.115/sc, 4, 0.95, 0.42];
-    var a=Math.max(0,Math.min(1,P.grain)), c=Math.max(0,Math.min(1,P.grainC));
-    // Amount lowers the threshold the noise has to clear to take ink
-    // away; a halftone or a lino wants a hard cut, a paper a soft one.
-    var hard=(P.texType==='halftone'||P.texType==='lino');
-    var slope=1+c*(hard?26:11)+(hard?6:0);
-    var t=T[4]+(T[5]-T[4])*a;
-    var inter=0.5-slope*t;
+  +(function(){
     /**
      * MANY PRINTS, NOT ONE. A single field across the mark read as
      * exactly that — one big overlay the letters happened to share.
-     * Every letter now gets its own field, the arms and the
-     * decoration theirs, each seeded apart; and each instance carries
-     * THREE differently-seeded drawings for the stop-motion swap, the
-     * same trick as the boil. (Per-letter holes are safe now: the
-     * hull mask means nothing lives behind the mark to show through.)
+     * Every letter gets its own field, the arms and the decoration
+     * theirs, each seeded apart. (Per-letter holes are safe: the hull
+     * mask means nothing lives behind the mark to show through.) And a
+     * sequence slot whose recipe bakes a print gets its own instances
+     * on top, per slot per letter, whether or not a global texture is
+     * on — which is how lino letters and clean letters share one flick.
      */
-    var body=function(seed){
-     return '<feTurbulence type="'+T[0]+'" baseFrequency="'+T[1].toFixed(4)+' '+T[2].toFixed(4)
-      +'" numOctaves="'+T[3]+'" seed="'+seed+'" result="n"/>'
-      /**
-       * ONE channel of the noise becomes the mask's alpha; its colour
-       * is thrown away, so nothing here can tint the mark. One, not
-       * the average of three: feTurbulence's channels are independent
-       * fields, and averaging them divides the spread by root three —
-       * every pixel sat close to the middle and the threshold crossed
-       * almost all of them at once.
-       */
-      +'<feColorMatrix in="n" type="matrix" result="nl" values="'
-      +'0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0"/>'
-      +'<feComponentTransfer in="nl" result="nk">'
-      +'<feFuncA type="linear" slope="'+slope.toFixed(2)+'" intercept="'+inter.toFixed(3)+'"/>'
-      +'</feComponentTransfer>'
-      // and the mark keeps only what the mask does not claim
-      +'<feComposite in="SourceGraphic" in2="nk" operator="out"/>';
-    };
-    var out2='', mk=function(id, so){
-     for(var st=0; st<3; st++)
-      out2+='<filter id="'+id+'_'+st+'" x="-14%" y="-14%" width="128%" height="128%" '
-       +'color-interpolation-filters="sRGB">'+body(Math.round(P.seed*3+so+st*31))+'</filter>';
-    };
-    for(var li2=0; li2<LETTERS.length; li2++) mk('inktexL'+li2, li2*97);
-    mk('inktexA0', 501); mk('inktexA1', 598);
-    mk('inktexD', 907);
-    return out2})():'')
+    var o='';
+    if(P.grain>0){
+     for(var li2=0; li2<LETTERS.length; li2++)
+      o+=inkTexDefs('inktexL'+li2, P.texType, P.grain, P.grainS, P.grainC, li2*97);
+     o+=inkTexDefs('inktexA0', P.texType, P.grain, P.grainS, P.grainC, 501)
+      +inkTexDefs('inktexA1', P.texType, P.grain, P.grainS, P.grainC, 598)
+      +inkTexDefs('inktexD', P.texType, P.grain, P.grainS, P.grainC, 907);
+    }
+    var OR=logoSeqOrder();
+    if(OR) OR.forEach(function(sk,si){
+     var md=logoStyle(sk); if(!md||!md.tex) return;
+     for(var li3=0; li3<LETTERS.length; li3++)
+      o+=inkTexDefs('inktexQ'+si+'L'+li3, md.tex[0], md.tex[1], md.tex[2], md.tex[3], 190+si*53+li3*97);
+    });
+    return o})()
  if(P.tex>0)
   // feTurbulence displacement roughens the stroke edge — the closest
   // thing SVG gives to a brush without hand-drawing every mark.
@@ -8041,11 +8100,13 @@ function svgRaw(){
         var out2='<path class="eyP'+i+'" d="'+ring(b2.hp)+'" fill="#000" style="visibility:hidden"/>';
         var keepFS=P.formStyle, keepSc=P.formScale;
         ORD2.forEach(function(sk, si){
-         var ent=null; LOGO_STYLES.forEach(function(e2){ if(e2[0]===sk) ent=e2 });
-         if(ent&&ent[1]){ P.formStyle=ent[1].formStyle; P.formScale=ent[1].formScale; }
+         var md=logoStyle(sk);
+         if(md){ P.formStyle=md.formStyle||'solid'; P.formScale=md.formScale||1; }
          else { P.formStyle=keepFS; P.formScale=keepSc; }
          var fpu2=formPupil(i);
-         out2+='<g class="lsq'+si+'">'
+         // the pupil rides the slot's registration offset, which is
+         // what keeps a constructed eye on its letter's lattice
+         out2+='<g class="lsq'+si+'"'+logoRegOff(si,i)+'>'
           +(fpu2!==null?fpu2:'<path d="'+ring(b2.hp)+'" fill="#000"/>')+'</g>';
         });
         P.formStyle=keepFS; P.formScale=keepSc;
@@ -8133,15 +8194,26 @@ function svgRaw(){
     bodyInner='';
     var keepFS=P.formStyle, keepSc=P.formScale;
     ORD.forEach(function(sk, si){
-     var ent=null; LOGO_STYLES.forEach(function(e2){ if(e2[0]===sk) ent=e2 });
-     if(ent&&ent[1]){ P.formStyle=ent[1].formStyle; P.formScale=ent[1].formScale; }
+     var md=logoStyle(sk);
+     if(md){ P.formStyle=md.formStyle||'solid'; P.formScale=md.formScale||1; }
      else { P.formStyle=keepFS; P.formScale=keepSc; }
      var fe, ol;
      if(P.formStyle && P.formStyle!=='solid'){
-      var fb2=formBody(i, cp); fe=fb2.fill; ol=fb2.line;
+      var fb2=formBody(i, cp, md&&md.line); fe=fb2.fill; ol=fb2.line;
       if(fb2.defs) defs+=fb2.defs;
+     } else if(md&&md.line){
+      // an outline recipe over the solid letter: inline-styled stroke,
+      // because the shared .lp rule describes the user's own outline
+      // and may well be stroke:none
+      var lw2=md.line.w*P.lw*(P.lgAlign==='inside'?2:1);
+      fe=(md.line.fill>0)?fillEl0:'';
+      ol='<path class="p'+i+'" pathLength="1000" style="fill:none;stroke:'+INK()
+       +';stroke-width:'+lw2.toFixed(2)+'px;stroke-linejoin:round;stroke-linecap:round" d="'+dl2+'"/>';
      } else { fe=fillEl0; ol=outline0; }
-     bodyInner+='<g class="lsq'+si+'">'+(P.lgfOver?ol+fe:fe+ol)+'</g>';
+     var seg=(P.lgfOver?ol+fe:fe+ol);
+     // a recipe's own print, an instance per slot per letter
+     if(md&&md.tex) seg='<g class="itxQ'+si+'L'+li+'" filter="url(#inktexQ'+si+'L'+li+'_0)">'+seg+'</g>';
+     bodyInner+='<g class="lsq'+si+'"'+logoRegOff(si,i)+'>'+seg+'</g>';
     });
     P.formStyle=keepFS; P.formScale=keepSc;
    }
@@ -8681,7 +8753,7 @@ function drawLogos(){
  var el=document.getElementById('logopicker'); if(!el) return;
  var h='';
  LOGO_STYLES.forEach(function(e){
-  var k=e[0], on=(k==='hero')||((P.logoSeq||[]).indexOf(k)>=0);
+  var k=e[0], on=(P.logoSeq||[]).indexOf(k)>=0;
   h+='<button class="'+(on?'on':'')+'" onclick="toggleLogo(\''+k+'\')">'+k+'</button>';
  });
  el.innerHTML=h;
@@ -8690,7 +8762,6 @@ function drawLogos(){
  if(o2) o2.classList.toggle('on', !!P.logoShuffle);
 }
 function toggleLogo(k){
- if(k==='hero') return;
  P.logoSeq=P.logoSeq||[];
  var ix=P.logoSeq.indexOf(k);
  if(ix>=0) P.logoSeq.splice(ix,1); else P.logoSeq.push(k);
@@ -9235,7 +9306,7 @@ var KEYS=['slpAmt','slpDur','slpEase','slpHold','slpRedraw','slpRedrawStag','eye
  'eyeShut','blinkSync','eyeSpeed','eyeGlint','glintIn',
  'eyeClose','eyeHold','eyeOpen','eyeSettle','eyeEase','eyeOver','eyeHome','eyeStretch','eyeSwell','eyeSeed','eyeAxis','eyeVia','eyeWander','eyeAsym','eyePop','eyeEdge','eyeLidR','eyeLidRest','eyeAnt','eyeBounce','eyeLower','eyeLag','browLen','browW','browLift','browTilt','browSwing','browFollow','armDur','armDelay','armStagger','armGrip','armSquash','armSpeed','armWait','armSize','armCount','armW','armPasses','armVary','armTaper','armDraw','armWobble','armBoil','armTugAmt','armBow','armLift','armTilt','armEyes','armTarget','armTarget2',
  'over','curve','smooth','dur','stag','spin','squash','stretch','wresp','damp',
- 'morph','msize','formScale','logoFlick','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','boil','boilHz','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
+ 'morph','msize','formScale','logoFlick','logoReg','lgw','lgdraw','lgbris','lgsp','lgbw','lgfill','lgfWhen','lgfTime','lgSoft','lgScale','lgvar','lgTex','startSpread','d3d','d3blur','d3ang','d3elev','d3spec','d3gam','d3amb','d3gloss','d3edge','inkAngle','grain','grainS','fps','jitter','boil','boilHz','bump','bumpS','texScale','texRot','texMix','texHtAmt','spinY','spinX','spinP','dither','bumpBlur','htBlur','hmBlur','extrude','exSlices','jiggle','jigSpeed','grainC','tiltY','tiltX','persp','lw','w0','w1','w2','wpos','bris','brisSp','brisW','brisVar','tex','rough','oct',
  'acc','asize','aw','draw','orient','place','aangle','jit','spread','drift','aspin','atime',
  'arcs','orbw','halo','tapA','tapB','press','preach','dentw','orbSize','orbvary','orbtilt','orbtvary','orbarc','orbtime','orbstag'];
 function sync(){syncSleep();drawGlints();drawBlinks();drawBrows();drawArms();drawSleepPickers();
@@ -9295,6 +9366,7 @@ var GATES=[
  ['msize',    function(){ return P.morph>0 }],
  ['formScale',function(){ return P.formStyle && P.formStyle!=='solid' }],
  ['logoFlick',function(){ return (P.logoSeq||[]).length>0 }],
+ ['logoReg',  function(){ return (P.logoSeq||[]).length>0 }],
  ['brisSp',   function(){ return P.bris>0 }],
  ['brisW',    function(){ return P.bris>0 }],
  ['brisVar',  function(){ return P.bris>0 }],
@@ -9336,7 +9408,7 @@ function gates(){
 }
 function labels(){
  var f={slpAmt:2,slpEase:2,slpHold:2,eyeEase:2,eyeStretch:2,eyeSwell:2,eyeVia:2,eyeWander:2,eyeAsym:2,eyePop:2,eyeEdge:2,eyeLidR:2,eyeLidRest:2,eyeOver:2,over:3,curve:2,smooth:2,spin:2,squash:2,stretch:2,wresp:2,damp:2,morph:2,msize:2,
-  formScale:2,logoFlick:2,lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,armTugAmt:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
+  formScale:2,logoFlick:2,logoReg:2,lgw:1,lgdraw:2,lgsp:1,lgbw:2,lgfill:2,lgfWhen:2,lgfTime:2,lgSoft:2,lgScale:2,lgvar:2,lgTex:1,d3spec:2,d3gam:2,d3amb:2,d3edge:1,grain:2,grainS:2,jitter:2,boil:2,boilHz:1,armTugAmt:2,bump:1,bumpS:2,texMix:2,texHtAmt:1,dither:2,bumpBlur:1,htBlur:1,hmBlur:1,jiggle:2,jigSpeed:1,grainC:2,lw:2,w0:2,w1:2,w2:2,brisSp:1,brisW:2,brisVar:2,tex:1,rough:3,asize:2,orient:2,place:2,jit:2,spread:2,drift:1,atime:2,
   draw:2,halo:1,tapA:2,tapB:2,press:2,dentw:2,orbSize:2,orbvary:2,orbarc:1,orbtime:2};
  [].forEach.call(document.querySelectorAll('input[data-p]'),function(e){
   var b=document.getElementById('v'+e.id); if(b) b.textContent=P[e.dataset.p]+'ms';
@@ -9558,7 +9630,16 @@ function standalone(){
   +(mono?'body{color:#111}@media(prefers-color-scheme:dark){body{color:#fff}}':'')
   +'.xl{width:min(92vw,calc(92vh * '+ratio+'));height:auto;overflow:visible}'
   +'.xl .bl path{fill:currentColor;fill-rule:evenodd}.xl .mk,.xl .bw,.xl .arc path{fill:none;stroke:currentColor;'
-  +'stroke-linecap:round;stroke-linejoin:round}'+cs+'</style>'+sv;
+  +'stroke-linecap:round;stroke-linejoin:round}'+cs+'</style>'+sv
+  /**
+   * ONE CLOCK. A CSS animation starts when ITS element gets style,
+   * and a big file is parsed progressively — the last letter's flick
+   * ran up to 50ms behind the first, so a cut showed two skins at
+   * once. Load re-seats every animation on the document's zero;
+   * authored delays (the arrival stagger) ride along untouched.
+   */
+  +'<script>addEventListener("load",function(){if(document.getAnimations)'
+  +'document.getAnimations().forEach(function(a){a.startTime=0})})</'+'script>';
 }
 function show(kind){var ta=document.getElementById('ta');ta.style.display='block';
  ta.value = withFullSequence(function(){

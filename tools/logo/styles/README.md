@@ -8,14 +8,22 @@ the texture step, the eyes and the blinks carry straight through — only
 the skin changes. Verified: one distinct viewBox and one distinct
 eye-track signature across all files.
 
-`00-matchcut.html` IS the match cut: the hero flicking through twelve
-constructions on a randomised loop, hero first and last — one file, ready
-to record. Build your own in the tool under the new **Logos** section:
-pick any set of constructions, set the flick rate, choose picked or
-randomised order; every animation setting plays across the whole
-sequence. Since this pass the EYES match the construction — a pixel
-logo has a pixel pupil on the same grid, a glitched one shreds its
-pupil on the same rows, haze and glow blur the whole eye.
+`00-matchcut.html` IS the match cut: the hero flicking through fifteen
+skins on a randomised loop, hero first and last — one file, ready to
+record. Build your own in the tool under the **Logos** section: every
+skin below is a pickable pill there now, the ink-texture and outline
+recipes included (each slot bakes its own filters), not just the
+constructions. The hero is a pill like any other — a set without it
+loops without it; picked, it still bookends a randomised order. A
+**Registration** slider knocks each letter a touch off true on every
+cut, per slot per letter, so no two frames of the flick sit
+identically — the pupil rides its letter's plate, which keeps a pixel
+eye on its lattice. Exports carry a one-line load sync so every
+letter's flick shares one clock (a big file parses progressively and
+CSS animations otherwise start per element, cutting up to 50ms apart).
+The EYES match the construction — a pixel logo has a pixel pupil on
+the same grid, a glitched one shreds its pupil on the same rows, haze
+and glow blur the whole eye.
 
 Open `index.html` for the live contact sheet. (Eight near-duplicate
 overlay styles were retired when the construction families arrived.) Each file loops forever;
@@ -77,7 +85,7 @@ size, so the motion carries through a cut exactly as before.
 | 45-tenprint | 10 PRINT maze cells |
 | 46-stitch | cross-stitch cells |
 | 47-hollow | outlined pixel cells |
-| 00-matchcut | the flick itself: 12 skins, randomised, 0.32s |
+| 00-matchcut | the flick itself: 15 skins incl. the hand-drawn family, randomised, 0.32s, registration 0.5 |
 
 A note on dark ink: a near-black solid ink reads as MONO to the site
 importer and follows the viewer's OS theme, so it is not a stable style
