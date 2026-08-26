@@ -30,23 +30,27 @@ event-level analysis is what mattered:
 
 64 bars of 4/4 at 102.4 bpm = exactly 150.000 s. Four rounds of
 A–E–F#–C#m, four bars each. A seeded rolling figure in eighths with
-sixteenth pickups (note rate 4.05/s against the reference's 4.09); the
+sixteenth pickups (note rate 3.99/s against the reference's 4.09); the
 pluck is additive with the measured partial profile, 12 ms attack,
-per-partial decay, a felt-strike noise burst; every note carries the
-tape's wow/flutter/drift (whole cycles over the loop) and the global
-flat tuning. A sub pluck doubles the root at each bar line. Hiss and
-crackle run throughout; two slightly different rooms, one per side,
-via circular convolution so the tail wraps the seam.
+per-partial decay — kept CLEAN by request: barely any strike noise,
+gentled wow, a steadier stereo image. Under the roll sits what the
+reference does not have and the ear asked for: a dark drone bed — root
+an octave below the arp, octave/twelfth/fifth on top, low-passed at
+560 Hz, breathing on whole-cycle LFOs, crossfading at the chord turns.
+A sub pluck doubles the root at each bar line. The tape surface is a
+whisper now (hiss −60 dB, a few dust ticks); the warmth comes from the
+bus instead — parallel tanh at drive 4.4, blend 0.85.
 
-Then the two honest mastering moves: parallel tanh saturation for the
-harmonic ladder, and a **match EQ** — the smoothed ratio of the
-reference's Welch curve to the bus's, applied circularly — followed by
-a push into a soft ceiling to the reference's frame density.
+The **match EQ** (smoothed ratio of the reference's Welch curve to the
+bus's, applied circularly) is deliberately confined to 260 Hz–2 kHz at
+±8 dB: below that the drone is a chosen departure, above it the ear
+chose clean over the reference's crackle. A push into a soft ceiling
+lands the reference's frame density (RMS −16.1 vs −16.1).
 
-Verified against the reference with analyze.py: every band from sub to
-air within ~1.2 dB, RMS −16.1 vs −16.1, rolloff85 409 vs 420 Hz, the
-same build-crest-release arc, and a seam step smaller than the crackle
-it hides in.
+Where it lands: 60 Hz–2 kHz within ~1 dB of the reference, the top end
+deliberately cleaner, the same build-crest-release arc, the 40–300 Hz
+bed holding within 8 dB of its peaks between notes, and a seam step
+smaller than an ordinary sample-to-sample move.
 
 ## Regenerate
 

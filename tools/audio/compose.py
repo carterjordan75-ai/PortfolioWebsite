@@ -21,9 +21,9 @@ def n2f(name):
 
 # the tape: slow wow + flutter + a long drift, all whole cycles over the loop
 def wow_at(ts):
-    return (5*np.sin(2*np.pi*60*ts/T+0.7)
-           +1.2*np.sin(2*np.pi*945*ts/T+2.1)
-           +4*np.sin(2*np.pi*3*ts/T+4.0))/1200.0   # cents -> log2 units
+    return (3*np.sin(2*np.pi*60*ts/T+0.7)
+           +0.4*np.sin(2*np.pi*945*ts/T+2.1)
+           +2.5*np.sin(2*np.pi*3*ts/T+4.0))/1200.0  # cents -> log2 units
 
 # ---------------- harmony: A  E  F#  C#m, four bars each, four times round ----------------
 CYCLE=[('A',['A2','C#3','E3','A3'],['G#3','B3','C#4','D#4']),
@@ -52,9 +52,9 @@ def pluck(f0,dur,vel,tstart):
     atk=int(0.012*SR)
     env=np.ones(nlen); env[:atk]=.5-.5*np.cos(np.pi*np.arange(atk)/atk)
     env[-int(.05*SR):]*=np.linspace(1,0,int(.05*SR))
-    thump=rng.standard_normal(int(.035*SR))*np.exp(-np.arange(int(.035*SR))/SR*180)
-    b,a=sg.butter(2,2600/(SR/2)); thump=sg.lfilter(b,a,thump)
-    b,a=sg.butter(1,180/(SR/2),'high'); thump=sg.lfilter(b,a,thump)*1.25
+    thump=rng.standard_normal(int(.02*SR))*np.exp(-np.arange(int(.02*SR))/SR*260)
+    b,a=sg.butter(2,1100/(SR/2)); thump=sg.lfilter(b,a,thump)
+    b,a=sg.butter(1,200/(SR/2),'high'); thump=sg.lfilter(b,a,thump)*0.22
     out*=env; out[:len(thump)]+=thump*vel
     return out*vel
 
@@ -77,7 +77,7 @@ for bar in range(64):
         vel*=(0.55+0.45*d)
         f0=n2f(name)
         note=pluck(f0,3.2,vel,ts)
-        pan=rng.uniform(-4.5,4.5)             # each note sits somewhere else
+        pan=rng.uniform(-2.5,2.5)             # a gentle drift around centre
         gL=10**(+pan/40); gR=10**(-pan/40)
         a0=int(ts*SR); idx=np.arange(a0,a0+len(note))%N
         detL=2**(rng.uniform(-2,2)/1200); detR=2**(rng.uniform(-2,2)/1200)
@@ -105,6 +105,30 @@ for bar in range(64):
         np.add.at(sub,idx,both)
 print("note events:",events, f"({events/T:.2f}/s)")
 
+# ---------------- the drone: a dark ambient bed under the roll ----------------
+drL=np.zeros(N); drR=np.zeros(N)
+fadeD=int(4.0*SR)
+envD=np.ones(int(4*BAR*SR)+fadeD)
+envD[:fadeD]=.5-.5*np.cos(np.pi*np.arange(fadeD)/fadeD)
+envD[-fadeD:]=np.minimum(envD[-fadeD:], .5+.5*np.cos(np.pi*np.arange(fadeD)/fadeD))
+for ci in range(16):
+    _,pool,_=CHORDS[ci]
+    fD=n2f(pool[0])/2                      # an octave below the arp root
+    a0=int(ci*4*BAR*SR)-fadeD//2
+    seg=len(envD); tt=np.arange(seg)/SR
+    absn=np.arange(a0,a0+seg)
+    for buf in (drL,drR):
+        for mult,amp,k in [(1,1.0,2),(2,0.5,3),(3,0.24,4),(1.5,0.34,5)]:
+            det=1+rng.uniform(-6,6)*1e-4
+            ph=rng.uniform(0,2*np.pi)
+            breathe=1+0.13*np.sin(2*np.pi*k*absn/SR/T+ph)   # whole cycles over the loop
+            w=(np.sin(2*np.pi*fD*mult*det*tt+ph)
+              +0.35*np.sin(2*np.pi*fD*mult*det*2*tt+ph*2)
+              +0.14*np.sin(2*np.pi*fD*mult*det*3*tt+ph*3))*amp
+            np.add.at(buf, absn%N, w*envD*breathe*0.12)
+b,a=sg.butter(2,560/(SR/2)); drL=cfilt(b,a,drL); drR=cfilt(b,a,drR)
+drL*= (0.7+0.3*RIDE); drR*=(0.7+0.3*RIDE)
+
 b,a=sg.butter(1,5200/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
 b,a=sg.butter(2,150/(SR/2)); sub=cfilt(b,a,sub)
 
@@ -112,15 +136,15 @@ b,a=sg.butter(2,150/(SR/2)); sub=cfilt(b,a,sub)
 hiss=rng.standard_normal(N)
 b,a=sg.butter(2,12000/(SR/2)); hiss=cfilt(b,a,hiss)
 b,a=sg.butter(2,1200/(SR/2),'high'); hiss=cfilt(b,a,hiss)
-hiss*=10**(-52/20)*(1+0.25*np.sin(2*np.pi*60*t/T))
-ncr=int(110*T)
+hiss*=10**(-60/20)*(1+0.25*np.sin(2*np.pi*60*t/T))
+ncr=int(7*T)
 crk=np.zeros(N)
 pos=rng.integers(0,N,ncr); amp=rng.random(ncr)**3.2
 for p,am in zip(pos,amp):
     ln=rng.integers(2,9)
     crk[(p+np.arange(ln))%N]+=(rng.random(ln)-.5)*am
 b,a=sg.butter(2,[1800/(SR/2),9000/(SR/2)],'band'); crk=cfilt(b,a,crk)
-crk*=10**(-33/20)/max(1e-9,np.sqrt((crk**2).mean()))
+crk*=10**(-47/20)/max(1e-9,np.sqrt((crk**2).mean()))
 
 # ---------------- space: two dark rooms, one per side ----------------
 def circ_reverb(x,sec,damp,seed):
@@ -129,17 +153,17 @@ def circ_reverb(x,sec,damp,seed):
     b,a=sg.butter(1,damp/(SR/2)); ir=sg.lfilter(b,a,ir)
     ir/=np.sqrt((ir**2).sum())
     return np.fft.irfft(np.fft.rfft(x)*np.fft.rfft(ir,N),N)
-wetL=circ_reverb(plL+plR*0.3,2.2,3800,21)
-wetR=circ_reverb(plR+plL*0.3,2.25,3800,22)
+wetL=circ_reverb(plL+plR*0.3+drL*0.3,2.2,3300,21)
+wetR=circ_reverb(plR+plL*0.3+drR*0.3,2.25,3300,22)
 
-L=(plL+sub*1.75+wetL*.38+hiss+crk)*RIDE
-R=(plR+sub*1.75+wetR*.38+hiss+crk*0.92)*RIDE
+L=(plL+sub*1.45+drL*1.55+wetL*.36+hiss+crk)*RIDE
+R=(plR+sub*1.45+drR*1.55+wetR*.36+hiss+crk*0.92)*RIDE
 
 # ---------------- the tape: the notes are driven INTO the medium ----------------
 # The reference masters at 0dBFS with its mids full of low-order harmonics
 # of the plucks — saturation is where that ladder comes from, so the whole
 # bus (notes, room, surface) goes through it, per channel.
-drive=2.9; blend=0.72
+drive=4.4; blend=0.85
 L=blend*np.tanh(L*drive)/drive+(1-blend)*L
 R=blend*np.tanh(R*drive)/drive+(1-blend)*R
 # the macro arc again, gently, on the far side of the tape
@@ -165,8 +189,12 @@ if REF:
         m=np.abs(lf-lf[i])<0.12
         sm[i]=np.exp(np.mean(np.log(ratio[m]+1e-12)))
     sm[fr>300]*=10**(2.2/20)
-    sm=np.clip(sm,10**(-14/20),10**(18/20))
-    sm[fr<28]=np.clip(sm[fr<28],0,1.0)   # never boost below the audible sub
+    # The EQ serves the reference only where the pluck lives. Below 260Hz
+    # the mix is a deliberate departure (the drone bed the reference does
+    # not have) — hands off; above 2k it may clean, never brighten.
+    sm[fr<260]=1.0
+    sm[fr>2000]=np.minimum(sm[fr>2000],1.0)
+    sm=np.clip(sm,10**(-8/20),10**(8/20))
     H=np.interp(np.fft.rfftfreq(N,1/SR),fr,sm)
     L=np.fft.irfft(np.fft.rfft(L)*H,N)
     R=np.fft.irfft(np.fft.rfft(R)*H,N)
