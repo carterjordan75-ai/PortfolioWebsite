@@ -3,150 +3,188 @@ from scipy.interpolate import CubicSpline
 from scipy import signal as sg
 import wave, sys
 
-SR=44100; T=150.0; N=int(SR*T)          # 6,615,000 samples, exact loop
-BPM=102.4; BEAT=60/BPM                  # 64 bars of 4/4 == 150.000s
-rng=np.random.default_rng(7)
+SR=44100; T=150.0; N=int(SR*T)
+BPM=102.4; BEAT=60/BPM; BAR=4*BEAT          # 64 bars == 150.000s
+TUNE=2**(-15/1200)                           # the whole tape runs a touch flat
+rng=np.random.default_rng(11)
 t=np.arange(N)/SR
 
-def cfilt(b,a,x):                        # CIRCULAR filtering: wrap-pad, filter, cut
-    pad=int(3*SR)
-    xx=np.concatenate([x[-pad:],x,x[:pad]])
+def cfilt(b,a,x):
+    pad=int(3*SR); xx=np.concatenate([x[-pad:],x,x[:pad]])
     return sg.filtfilt(b,a,xx)[pad:-pad]
-
-def periodic(points):                    # smooth arc, equal value+slope at seam
+def periodic(points):
     xs=[p[0] for p in points]+[T]; ys=[p[1] for p in points]+[points[0][1]]
     return CubicSpline(xs,ys,bc_type='periodic')(t)
-
-ARC   =periodic([(0,.20),(20,.30),(45,.52),(70,.72),(100,1.0),(126,.84),(140,.45)])
-PULSE =periodic([(0,.05),(18,.28),(40,.55),(70,.8),(100,1.0),(128,.6),(142,.15)])
-MEL   =periodic([(0,.0),(25,.35),(50,.7),(75,.9),(103,1.0),(130,.5),(143,.08)])
-AIR   =periodic([(0,.5),(40,.7),(75,1.0),(115,.8),(140,.55)])
-
 def n2f(name):
-    names={'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11}
-    return 440.0*2**((names[name[:-1]]+12*(int(name[-1])+1)-69)/12)
+    nm={'C':0,'C#':1,'D':2,'D#':3,'E':4,'F':5,'F#':6,'G':7,'G#':8,'A':9,'A#':10,'B':11}
+    return 440.0*2**((nm[name[:-1]]+12*(int(name[-1])+1)-69)/12)*TUNE
 
-CH=[('C#2',['C#3','E3','G#3','C#4']),
-    ('A1', ['A2','C#3','E3','G#3']),
-    ('E2', ['B2','E3','G#3','B3']),
-    ('F#2',['A2','C#3','F#3','A3']),
-    ('C#2',['C#3','E3','G#3','B3']),
-    ('A1', ['A2','C#3','E3','A3']),
-    ('E2', ['B2','E3','G#3','C#4']),
-    ('F#2',['A2','C#3','F#3','G#3'])]
-CHD=T/len(CH)
+# the tape: slow wow + flutter + a long drift, all whole cycles over the loop
+def wow_at(ts):
+    return (5*np.sin(2*np.pi*60*ts/T+0.7)
+           +1.2*np.sin(2*np.pi*945*ts/T+2.1)
+           +4*np.sin(2*np.pi*3*ts/T+4.0))/1200.0   # cents -> log2 units
 
-# ---------------- sub + bass: continuous glide, whole cycles over the loop ----------------
-freq=np.zeros(N)
-for i,(root,_) in enumerate(CH):
-    freq[int(i*CHD*SR):]=n2f(root)
-gl=int(0.35*SR); k=np.hanning(2*gl+1); k/=k.sum()
-freq=np.convolve(np.concatenate([freq[-2*gl:],freq,freq[:2*gl]]),k,'same')[2*gl:-2*gl]
-ph=2*np.pi*np.cumsum(freq)/SR
-total=ph[-1]+2*np.pi*freq[-1]/SR         # phase after the wrap
-adj=total-2*np.pi*round(total/(2*np.pi)) # push to an integer cycle count
-ph-=adj*(t+1/SR)/T
-bass=np.sin(ph)*.7+np.sin(2*ph)*.24+np.sin(ph/2)*.34
-b,a=sg.butter(2,240/(SR/2)); bass=cfilt(b,a,bass)*(.55+.45*ARC)
+# ---------------- harmony: A  E  F#  C#m, four bars each, four times round ----------------
+CYCLE=[('A',['A2','C#3','E3','A3'],['G#3','B3','C#4','D#4']),
+       ('E',['E2','G#2','B2','E3'],['G#3','B3','E4','C#4']),
+       ('F#',['F#2','C#3','F#3','A3'],['A#3','C#4','F#4','G#3']),
+       ('C#',['C#2','G#2','C#3','E3'],['G#3','B3','C#4','E4'])]
+CHORDS=[CYCLE[i%4] for i in range(16)]       # 16 x 4 bars
 
-# ---------------- pads ----------------
-padL=np.zeros(N); padR=np.zeros(N)
-fadeS=int(3.2*SR)
-env0=np.ones(int(CHD*SR)+fadeS)
-env0[:fadeS]=.5-.5*np.cos(np.pi*np.arange(fadeS)/fadeS)
-env0[-fadeS:]=np.minimum(env0[-fadeS:], .5+.5*np.cos(np.pi*np.arange(fadeS)/fadeS))
-for ci,(_,voices) in enumerate(CH):
-    a0=int(ci*CHD*SR)-fadeS//2
-    seg=len(env0); tt=np.arange(seg)/SR
-    for vi,vn in enumerate(voices):
-        f0=n2f(vn)
-        for side,buf in ((0,padL),(1,padR)):
-            for li in range(2):
-                det=1+rng.uniform(-4.5,4.5)*1e-4
-                phase=rng.uniform(0,2*np.pi)
-                w=np.zeros(seg); nh=1
-                while f0*det*nh<3200 and nh<=20:
-                    w+=np.sin(2*np.pi*f0*det*nh*tt+phase*nh)/nh
-                    nh+=1
-                idx=np.arange(a0,a0+seg)%N
-                np.add.at(buf, idx, w*env0*.125)
-b,a=sg.butter(2,2800/(SR/2))
-padL=cfilt(b,a,padL)*(.55+.45*ARC); padR=cfilt(b,a,padR)*(.55+.45*ARC)
+# density / register / level arcs — the build is MORE NOTES, HIGHER TOPS
+DENS =periodic([(0,.25),(25,.45),(55,.7),(85,.9),(108,1.0),(128,.7),(142,.35)])
+RIDE =periodic([(0,.74),(30,.84),(60,.92),(100,1.0),(126,.9),(142,.76)])
 
-# ---------------- the throb ----------------
-throbL=np.zeros(N); throbR=np.zeros(N)
-plen=int(.16*SR); ptt=np.arange(plen)/SR
-penv=np.exp(-ptt*22)*np.sin(np.pi*np.minimum(ptt/.012,1)/2)
-step=BEAT/2; i8=0; s=0.0
-while s<T-1e-9:
-    ci=int(s/CHD)%len(CH)
-    f0=n2f(CH[ci][1][0])
-    accent=1.0 if (i8%4)==0 else (.55 if (i8%2)==0 else .38)
-    blip=np.sin(2*np.pi*f0*2*ptt+2.2*np.sin(2*np.pi*f0*ptt))*penv*accent
-    tick=rng.standard_normal(plen)*np.exp(-ptt*260)*.5*accent
-    blip=blip+tick
-    a0=int(s*SR); idx=np.arange(a0,a0+plen)%N
-    g=PULSE[a0%N]
-    gL,gR=(.34,.22) if i8%2==0 else (.22,.34)
-    np.add.at(throbL,idx,blip*gL*g); np.add.at(throbR,idx,blip*gR*g)
-    s+=step; i8+=1
-b,a=sg.butter(2,[170/(SR/2),3400/(SR/2)],'band')
-throbL=cfilt(b,a,throbL); throbR=cfilt(b,a,throbR)
+# ---------------- the pluck ----------------
+PART=[1.0,0.18,0.26,0.09,0.09,0.07,0.055,0.045,0.035,0.028]  # measured profile + the long tail
+def pluck(f0,dur,vel,tstart):
+    nlen=int(dur*SR); tt=np.arange(nlen)/SR
+    w0=wow_at(tstart); w1=wow_at(tstart+dur*0.6)
+    out=np.zeros(nlen)
+    tau0=1.15*(110.0/f0)**0.3
+    for k,ak in enumerate(PART,1):
+        fk=f0*k*(1+3e-4*k*k)
+        # linear tape-drift chirp across the note, phase in closed form
+        fa=fk*2**w0; fb=fk*2**w1
+        ph=2*np.pi*(fa*tt+0.5*(fb-fa)/max(dur*0.6,1e-3)*np.minimum(tt,dur*0.6)**2/ (dur*0.6))
+        out+=ak*np.sin(ph+rng.uniform(0,2*np.pi))*np.exp(-tt/(tau0*k**-0.75))
+    atk=int(0.012*SR)
+    env=np.ones(nlen); env[:atk]=.5-.5*np.cos(np.pi*np.arange(atk)/atk)
+    env[-int(.05*SR):]*=np.linspace(1,0,int(.05*SR))
+    thump=rng.standard_normal(int(.035*SR))*np.exp(-np.arange(int(.035*SR))/SR*180)
+    b,a=sg.butter(2,2600/(SR/2)); thump=sg.lfilter(b,a,thump)
+    b,a=sg.butter(1,180/(SR/2),'high'); thump=sg.lfilter(b,a,thump)*1.25
+    out*=env; out[:len(thump)]+=thump*vel
+    return out*vel
 
-# ---------------- wisps ----------------
-melL=np.zeros(N); melR=np.zeros(N)
-scale=['G#3','B3','C#4','E4','F#4','G#4','A4']
-mlen=int(2.6*SR); mtt=np.arange(mlen)/SR
-menv=np.exp(-mtt*1.9)*(.5-.5*np.cos(np.pi*np.minimum(mtt/.35,1)))
-beat=0; prev=2
-while beat<64*4:
-    a0=int(beat*BEAT*SR)%N
-    dens=MEL[a0]
-    if rng.random()<dens*.5:
-        prev=int(np.clip(prev+rng.choice([-2,-1,-1,1,1,2]),0,len(scale)-1))
-        f0=n2f(scale[prev])
-        tone=(np.sin(2*np.pi*f0*mtt)+.32*np.sin(2*np.pi*f0*2*mtt)+.1*np.sin(2*np.pi*f0*3*mtt))*menv
-        pan=rng.uniform(.25,.75)
-        for rep in range(3):
-            gg=(.5**rep)*.15*(.4+.6*dens)
-            a1=(a0+int(rep*1.5*BEAT*SR))%N
-            idx=np.arange(a1,a1+mlen)%N
-            np.add.at(melL,idx,tone*gg*(1-pan if rep%2==0 else pan))
-            np.add.at(melR,idx,tone*gg*(pan if rep%2==0 else 1-pan))
-    beat+=rng.choice([2,3,4])
-b,a=sg.butter(2,3400/(SR/2)); melL=cfilt(b,a,melL); melR=cfilt(b,a,melR)
+# ---------------- the roll: eighths with sixteenth fills, seeded per bar ----------------
+plL=np.zeros(N); plR=np.zeros(N); sub=np.zeros(N)
+events=0
+for bar in range(64):
+    ch=CHORDS[bar//4]; root,pool,ext=ch
+    tb=bar*BAR
+    d=DENS[int(tb*SR)%N]
+    # base rolling shape over the pool, direction varies by bar
+    order=[0,1,2,3,2,1,0,2] if (bar%3) else [0,2,1,3,1,2,0,1]
+    for e in range(8):                        # eighth slots
+        ts=tb+e*BEAT/2
+        pos=order[e]
+        name=pool[pos]
+        # in the thick of it the top of the figure reaches up
+        if d>0.55 and pos==3 and rng.random()<(d-0.4): name=ext[rng.integers(0,len(ext))]
+        vel=(1.06 if e==0 else 0.9)+rng.uniform(-.08,.08)
+        vel*=(0.55+0.45*d)
+        f0=n2f(name)
+        note=pluck(f0,3.2,vel,ts)
+        pan=rng.uniform(-4.5,4.5)             # each note sits somewhere else
+        gL=10**(+pan/40); gR=10**(-pan/40)
+        a0=int(ts*SR); idx=np.arange(a0,a0+len(note))%N
+        detL=2**(rng.uniform(-2,2)/1200); detR=2**(rng.uniform(-2,2)/1200)
+        np.add.at(plL,idx,note*gL)
+        nR=pluck(f0*detR/detL,3.2,vel,ts)     # a second string for the width
+        np.add.at(plR,idx,nR*gR)
+        events+=1
+        # sixteenth pickup after this slot, more often as it builds
+        if rng.random()<0.06+0.20*d:
+            name2=pool[max(0,pos-1)]
+            ts2=ts+BEAT/4
+            n2=pluck(n2f(name2),2.6,vel*0.7,ts2)
+            a2=int(ts2*SR); idx2=np.arange(a2,a2+len(n2))%N
+            np.add.at(plL,idx2,n2*10**(-pan/40))
+            np.add.at(plR,idx2,n2*10**(+pan/40))
+            events+=1
+    # the sub doubles the root at the bar line (and mid-bar when thick)
+    for ts,amp in ([(tb,1.0)]+([(tb+2*BEAT,0.7)] if d>0.5 else [])):
+        f0=n2f(pool[0])/2
+        nlen=int(2.8*SR); tt=np.arange(nlen)/SR
+        s=np.sin(2*np.pi*f0*2**wow_at(ts)*tt)*np.exp(-tt/2.3)
+        s[:int(.02*SR)]*=np.linspace(0,1,int(.02*SR))
+        a0=int(ts*SR); idx=np.arange(a0,a0+nlen)%N
+        both=s*0.5*amp*(0.6+0.4*d)
+        np.add.at(sub,idx,both)
+print("note events:",events, f"({events/T:.2f}/s)")
 
-# ---------------- air ----------------
-noise=rng.standard_normal(N)
-b,a=sg.butter(2,5000/(SR/2)); noise=cfilt(b,a,noise)
-b,a=sg.butter(1,90/(SR/2),'high'); noise=cfilt(b,a,noise)
-air=noise*.006*AIR
+b,a=sg.butter(1,5200/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
+b,a=sg.butter(2,150/(SR/2)); sub=cfilt(b,a,sub)
 
-# ---------------- circular reverb ----------------
-def circ_reverb(x, sec, damp):  # damp = tail tone
-    ir=rng.standard_normal(int(sec*SR))*np.exp(-np.arange(int(sec*SR))/SR*(6.9/sec))
+# ---------------- the surface: hiss + crackle ----------------
+hiss=rng.standard_normal(N)
+b,a=sg.butter(2,12000/(SR/2)); hiss=cfilt(b,a,hiss)
+b,a=sg.butter(2,1200/(SR/2),'high'); hiss=cfilt(b,a,hiss)
+hiss*=10**(-52/20)*(1+0.25*np.sin(2*np.pi*60*t/T))
+ncr=int(110*T)
+crk=np.zeros(N)
+pos=rng.integers(0,N,ncr); amp=rng.random(ncr)**3.2
+for p,am in zip(pos,amp):
+    ln=rng.integers(2,9)
+    crk[(p+np.arange(ln))%N]+=(rng.random(ln)-.5)*am
+b,a=sg.butter(2,[1800/(SR/2),9000/(SR/2)],'band'); crk=cfilt(b,a,crk)
+crk*=10**(-33/20)/max(1e-9,np.sqrt((crk**2).mean()))
+
+# ---------------- space: two dark rooms, one per side ----------------
+def circ_reverb(x,sec,damp,seed):
+    r2=np.random.default_rng(seed)
+    ir=r2.standard_normal(int(sec*SR))*np.exp(-np.arange(int(sec*SR))/SR*(6.9/sec))
     b,a=sg.butter(1,damp/(SR/2)); ir=sg.lfilter(b,a,ir)
     ir/=np.sqrt((ir**2).sum())
     return np.fft.irfft(np.fft.rfft(x)*np.fft.rfft(ir,N),N)
+wetL=circ_reverb(plL+plR*0.3,2.2,3800,21)
+wetR=circ_reverb(plR+plL*0.3,2.25,3800,22)
 
-wetL=circ_reverb(padL*.55+throbL*1.1+melL*1.3+air*2, 3.4, 3300)
-wetR=circ_reverb(padR*.55+throbR*1.1+melR*1.3+air*2, 3.6, 3300)
+L=(plL+sub*1.75+wetL*.38+hiss+crk)*RIDE
+R=(plR+sub*1.75+wetR*.38+hiss+crk*0.92)*RIDE
 
-L=bass*.28+padL*.85+throbL*1.05+melL*1.05+air+wetL*.34
-R=bass*.28+padR*.85+throbR*1.05+melR*1.05+air+wetR*.34
-
-b,a=sg.butter(1,7000/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
-ride=.5+.5*ARC
-mix=np.stack([L*ride,R*ride],1)
-rms0=np.sqrt((mix**2).mean())
-mix*=10**(-16.5/20)/rms0                 # land the master at ~-16.5 dBFS RMS
-mix=np.tanh(mix*1.1)/np.tanh(1.1)
-peak=np.abs(mix).max()
-if peak>.95: mix*=.95/peak
-rms=np.sqrt((mix**2).mean())
-print(f"peak {np.abs(mix).max():.3f}  rms {20*np.log10(rms):.1f} dBFS")
-print("seam delta:", float(np.abs(mix[0]-mix[-1]).max()), " (vs typical step", float(np.abs(np.diff(mix[:SR,0])).mean()),")")
+# ---------------- the tape: the notes are driven INTO the medium ----------------
+# The reference masters at 0dBFS with its mids full of low-order harmonics
+# of the plucks — saturation is where that ladder comes from, so the whole
+# bus (notes, room, surface) goes through it, per channel.
+drive=2.9; blend=0.72
+L=blend*np.tanh(L*drive)/drive+(1-blend)*L
+R=blend*np.tanh(R*drive)/drive+(1-blend)*R
+# the macro arc again, gently, on the far side of the tape
+L*=RIDE**0.8; R*=RIDE**0.8
+# ---------------- match EQ: the reference's own long-term curve is the target ----------------
+# Measured tilt, not content: Welch PSDs of both signals, the smoothed ratio
+# becomes a zero-phase correction applied circularly, so the seam survives.
+# reference WAV (stereo 16-bit 44.1k) as argv[2]; without it the EQ is skipped
+import wave as _w
+REF=sys.argv[2] if len(sys.argv)>2 else None
+if REF:
+    _f=_w.open(REF,'rb')
+    _x=np.frombuffer(_f.readframes(_f.getnframes()),dtype=np.int16).astype(np.float64)/32768.0
+    _f.close(); _ref=_x.reshape(-1,2).mean(1)
+    fr,Pr=sg.welch(_ref,SR,nperseg=8192)
+if REF:
+    fm,Pm=sg.welch((L+R)/2,SR,nperseg=8192)
+    ratio=np.sqrt((Pr+1e-16)/(Pm+1e-16))
+    # smooth in log frequency, sixth-octave-ish
+    lf=np.log(np.maximum(fr,1))
+    sm=np.copy(ratio)
+    for i in range(len(ratio)):
+        m=np.abs(lf-lf[i])<0.12
+        sm[i]=np.exp(np.mean(np.log(ratio[m]+1e-12)))
+    sm[fr>300]*=10**(2.2/20)
+    sm=np.clip(sm,10**(-14/20),10**(18/20))
+    sm[fr<28]=np.clip(sm[fr<28],0,1.0)   # never boost below the audible sub
+    H=np.interp(np.fft.rfftfreq(N,1/SR),fr,sm)
+    L=np.fft.irfft(np.fft.rfft(L)*H,N)
+    R=np.fft.irfft(np.fft.rfft(R)*H,N)
+mix=np.stack([L,R],1)
+# ---------------- master to the reference's density: hot into a soft ceiling ----------------
+def frame_rms_db(m):
+    mo=m.mean(1); hop=1024; win=2048
+    nf=(len(mo)-win)//hop
+    fr=np.lib.stride_tricks.as_strided(mo,(nf,win),(mo.strides[0]*hop,mo.strides[0]))
+    return 20*np.log10(np.sqrt((fr**2).mean(1)).mean()+1e-9)
+mix*=10**((-16.1-frame_rms_db(mix))/20)
+mix=np.tanh(mix*1.5)/np.tanh(1.5)
+mix*=10**((-16.1-frame_rms_db(mix))/20)
+pk=np.abs(mix).max()
+if pk>0.995: mix*=0.995/pk
+print(f"peak {np.abs(mix).max():.3f} rms {20*np.log10(np.sqrt((mix**2).mean())):.1f} dBFS")
+print("seam delta:",float(np.abs(mix[0]-mix[-1]).max()),"typ",float(np.abs(np.diff(mix[:SR,0])).mean()))
 out=(mix*32767).astype(np.int16)
 w=wave.open(sys.argv[1],'wb'); w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR)
 w.writeframes(out.tobytes()); w.close()
-print("wrote", sys.argv[1], len(out)/SR, "s")
+print("wrote",sys.argv[1])
