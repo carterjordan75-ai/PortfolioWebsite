@@ -45,7 +45,7 @@ def pluck(f0,dur,vel,tstart):
     nlen=int(dur*SR); tt=np.arange(nlen)/SR
     w0=wow_at(tstart); w1=wow_at(tstart+dur*0.6)
     out=np.zeros(nlen)
-    fc=240+950*np.exp(-tt/0.16)
+    fc=220+780*np.exp(-tt/0.16)
     amp=np.exp(-tt/1.5)
     for k in range(1,15):
         fk=f0*k
@@ -182,13 +182,13 @@ for ci in range(16):
 b,a=sg.butter(2,560/(SR/2)); drL=cfilt(b,a,drL); drR=cfilt(b,a,drR)
 drL*= (0.7+0.3*RIDE)*(1-0.38*duck); drR*=(0.7+0.3*RIDE)*(1-0.38*duck)
 
-b,a=sg.butter(1,3800/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
+b,a=sg.butter(1,3200/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
 
 # ---------------- the surface: hiss + crackle ----------------
 hiss=rng.standard_normal(N)
 b,a=sg.butter(2,8000/(SR/2)); hiss=cfilt(b,a,hiss)
 b,a=sg.butter(2,1200/(SR/2),'high'); hiss=cfilt(b,a,hiss)
-hiss*=10**(-60/20)*(1+0.25*np.sin(2*np.pi*60*t/T))
+hiss*=10**(-64/20)*(1+0.25*np.sin(2*np.pi*60*t/T))
 ncr=int(7*T)
 crk=np.zeros(N)
 pos=rng.integers(0,N,ncr); amp=rng.random(ncr)**3.2
@@ -249,16 +249,16 @@ for ci in range(16):
         nz=rng.standard_normal(seg)
         b,a=sg.butter(2,[900/(SR/2),3600/(SR/2)],'band')
         np.add.at(buf, absn%N, sg.lfilter(b,a,nz)*envS*0.022)
-b,a=sg.butter(1,4600/(SR/2)); stL=cfilt(b,a,stL); stR=cfilt(b,a,stR)
+b,a=sg.butter(1,4200/(SR/2)); stL=cfilt(b,a,stL); stR=cfilt(b,a,stR)
 stL*=STR*(1-0.25*duck); stR*=STR*(1-0.25*duck)
 
 # ---------------- squeaks passing through ----------------
 # Brief resonant glides that fade in, sweep past — pitch falling a
 # touch, pan crossing the field — and are gone: something driving by.
 sqL=np.zeros(N); sqR=np.zeros(N)
-SQK=[(11,1.2,1700,700,1),(26,1.0,600,1400,-1),(38,1.5,2000,900,1),
-     (52,1.1,1200,500,-1),(66,1.4,700,1700,1),(88,1.2,1900,800,-1),
-     (101,1.6,1000,1900,1),(121,1.0,1500,600,-1)]
+SQK=[(11,1.2,1300,550,1),(26,1.0,480,1100,-1),(38,1.5,1500,700,1),
+     (52,1.1,900,420,-1),(66,1.4,550,1300,1),(88,1.2,1400,600,-1),
+     (101,1.6,800,1500,1),(121,1.0,1100,480,-1)]
 for tS,dS,fa,fb,pd in SQK:
     nlen=int(dS*SR); tt=np.arange(nlen)/SR
     gl=(fa+(fb-fa)*(tt/dS))*(1-0.05*tt/dS)          # the pass drops the pitch
@@ -268,8 +268,8 @@ for tS,dS,fa,fb,pd in SQK:
     env*=np.clip((dS-tt)/(dS*0.14),0,1)             # quick out
     pan=np.linspace(-pd,pd,nlen)*0.9
     a0=int(tS*SR); idx=np.arange(a0,a0+nlen)%N
-    np.add.at(sqL,idx,w*env*0.30*np.sqrt((1-pan)/2))
-    np.add.at(sqR,idx,w*env*0.30*np.sqrt((1+pan)/2))
+    np.add.at(sqL,idx,w*env*0.14*np.sqrt((1-pan)/2))
+    np.add.at(sqR,idx,w*env*0.14*np.sqrt((1+pan)/2))
 
 # ---------------- the voices: a home tape playing in the next room ----------------
 # No real recording is sampled: unintelligible speech is synthesised —
@@ -357,13 +357,16 @@ if _os.path.isdir(_td):
             if _x2.ndim>1: _x2=_x2.mean(1)
             if _sr2!=SR: _x2=sg.resample(_x2,int(len(_x2)*SR/_sr2))
             TAPE.append((_fn,_x2))
-def wreck(x, seed):
+def wreck(x, seed, clar=0.5):
+    # clarity 0..1: buried and chewed at 0, almost readable at 1
     r=np.random.default_rng(seed)
     nlen=len(x); tt=np.arange(nlen)/SR
-    b,a=sg.butter(2,[250/(SR/2),3400/(SR/2)],'band'); y=sg.lfilter(b,a,x)
+    lo=380-200*clar; hi=2200+2600*clar
+    b,a=sg.butter(2,[lo/(SR/2),hi/(SR/2)],'band'); y=sg.lfilter(b,a,x)
     y/=np.sqrt((y**2).mean())+1e-9
-    y=np.tanh(y*2.2)/2.0
-    drop=np.clip(np.sin(2*np.pi*r.uniform(0.5,1.3)*tt+r.uniform(0,6))*2+0.78,0.3,1)
+    y=np.tanh(y*(3.2-1.5*clar))/2.0
+    y*= (0.75+0.5*clar)
+    drop=np.clip(np.sin(2*np.pi*r.uniform(0.5,1.3)*tt+r.uniform(0,6))*(2.6-1.6*clar)+(0.55+0.35*clar),0.25,1)
     # the tape breathes out, never cuts: a slow exhale at the end
     env=np.ones(nlen)
     fi=min(int(0.15*SR),nlen//4); env[:fi]=np.linspace(0,1,fi)
@@ -371,22 +374,23 @@ def wreck(x, seed):
     return y*drop*env
 voxL=np.zeros(N); voxR=np.zeros(N)
 #     bar   dur   f0  mode    amp  radio-cut first
-VOX=[( 3,  4.0, 120,'talk', 0.85,True),
-     ( 7,  3.5, 300,'talk', 0.7, False),
-     (10,  4.0, 150,'talk', 0.9, True),
-     (14,  4.6, 118,'talk', 0.8, True),
-     (18,  2.9, 325,'laugh',0.85,False),
-     (22,  3.4, 176,'talk', 0.65,True),
-     (34,  5.2, 124,'talk', 0.9, True),
-     (41,  4.2, 140,'talk', 0.75,False),
-     (47,  3.8, 182,'talk', 0.7, True),
-     (51,  2.6, 345,'laugh',0.9, False),
-     (55,  5.8, 112,'talk', 1.0, True)]
+#     bar   dur   f0  mode    amp  radio  clarity
+VOX=[( 3,  4.0, 120,'talk', 0.85,True,  0.30),
+     ( 7,  3.5, 300,'talk', 0.7, False, 0.85),
+     (10,  4.0, 150,'talk', 0.9, True,  0.50),
+     (14,  4.6, 118,'talk', 0.8, True,  0.15),
+     (18,  2.9, 325,'laugh',0.85,False, 0.90),
+     (22,  3.4, 176,'talk', 0.65,True,  0.40),
+     (34,  5.2, 124,'talk', 0.9, True,  0.70),
+     (41,  4.2, 140,'talk', 0.75,False, 0.55),
+     (47,  3.8, 182,'talk', 0.7, True,  0.25),
+     (51,  2.6, 345,'laugh',0.9, False, 0.80),
+     (55,  5.8, 112,'talk', 1.0, True,  0.45)]
 vdk=np.zeros(N)
 ti=0
-for barAt,vdur,vf0,vmode,vamp,vradio in VOX:
+for barAt,vdur,vf0,vmode,vamp,vradio,vclar in VOX:
     if TAPE:
-        ph0=wreck(TAPE[ti%len(TAPE)][1], int(barAt*7+vf0)); ti+=1
+        ph0=wreck(TAPE[ti%len(TAPE)][1], int(barAt*7+vf0), vclar); ti+=1
     else:
         ph0=murmur(vdur,vf0,int(barAt*7+vf0),vmode)
     # the music leans back while the tape speaks
@@ -427,7 +431,7 @@ R=blend*np.tanh(R*drive)/drive+(1-blend)*R
 # the macro arc again, gently, on the far side of the tape
 L*=RIDE**0.8; R*=RIDE**0.8
 # and the whole thing leans dark: one gentle pole across the master
-b,a=sg.butter(1,7200/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
+b,a=sg.butter(1,5600/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
 # (The match EQ that once pinned the bus to the reference's curve is
 # retired: the piece has been steered well away from the reference by
 # ear — strings, kicks, voices — and the EQ was quietly undoing every

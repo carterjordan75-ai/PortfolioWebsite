@@ -61,11 +61,15 @@ the synthesis returns.
 
 Passing through the field, eight times: quick resonant glides — a
 second or so each — that fade in, sweep across the panorama with their
-pitch falling a touch, and are gone in a tenth of a second. Eleven
-tape moments now, three of them inside the first thirty seconds, and
-every phrase ends on a slow 1.1s exhale rather than a cut. The whole
-master leans darker: pluck filter at 3.8k, one gentle pole at 7.2k
-across the bus.
+pitch falling a touch, and are gone in a tenth of a second. Twelve
+tape moments across eleven slots, three inside the first thirty
+seconds, every phrase ending on a slow 1.1s exhale — and each slot
+carries its own CLARITY (0..1): the wreck's bandwidth, drive, dropout
+depth and level all follow it, so some moments sit almost readable and
+others are chewed nearly away. The bed leans darker still: pluck
+filter at 3.2k, strings at 4.2k, one gentle pole at 5.6k across the
+bus — the voices join after that pole on purpose, staying present
+against the darker music.
 Murmured talk at several pitches (a jittering glottal pulse through
 three wandering formants at syllable cadence) and, twice, a young
 girl's laugh — staccato voiced bursts falling in pitch and force, a
