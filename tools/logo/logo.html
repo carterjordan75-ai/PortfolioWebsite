@@ -1739,19 +1739,37 @@ var MIDY=LCEN.reduce(function(s,c){return s+c[1]},0)/LCEN.length;
 /**
  * Which cell a letter takes.
  *
- * Shuffle swaps letters between cells rather than moving the cells, so
- * the arrangement keeps its shape and only the reading order breaks up.
- * Seeded, so a given setting always gives the same scramble — a
- * randomiser you cannot reproduce is a dice roll, not a control.
+ * The slider used to gate three FIXED pairwise swaps, which could only
+ * compose a few of the arrangements — XOOX, for one, was unreachable.
+ * Now it simply walks the complete set: every distinct way the kinds
+ * can stand (for XOXO that is all six), as-drawn at zero, and the
+ * value label names the one you are on. Deterministic — a randomiser
+ * you cannot reproduce is a dice roll, not a control.
  */
+function lArrangements(){
+  var n=LCEN.length;
+  var kindOf=function(li){ return (B[LETTERS[li][0]] && B[LETTERS[li][0]].hp) ? 'O' : 'X' };
+  var kinds=[]; for(var i=0;i<n;i++) kinds.push(kindOf(i));
+  var id=kinds.join('');
+  if(n>7) return {arrs:[id], kinds:kinds, pick:0};   // n! gets silly; the mark never does
+  var seen={}, arrs=[];
+  (function perm(rest,acc){
+   if(!rest.length){ var w=acc.join(''); if(!seen[w]){ seen[w]=1; arrs.push(w) } return }
+   for(var q=0;q<rest.length;q++)
+    perm(rest.slice(0,q).concat(rest.slice(q+1)), acc.concat(rest[q]));
+  })(kinds.slice(),[]);
+  arrs.sort();
+  arrs.splice(arrs.indexOf(id),1); arrs.unshift(id);
+  var pick=Math.max(0,Math.min(arrs.length-1, Math.floor((P.lshuffle||0)*arrs.length*0.9999)));
+  return {arrs:arrs, kinds:kinds, pick:pick};
+}
 function lOrder(){
-  var n=LCEN.length, o=[]; for(var i=0;i<n;i++) o.push(i);
-  if(P.lshuffle>0){
-    for(var i=n-1;i>0;i--){
-      var j=Math.floor(rnd(i*13+7)*(i+1));
-      if(rnd(i*29+3)<P.lshuffle){ var t=o[i]; o[i]=o[j]; o[j]=t }
-    }
-  }
+  var A=lArrangements(), n=LCEN.length;
+  var want=A.arrs[A.pick];
+  var o=new Array(n), used=new Array(n);
+  for(var li=0;li<n;li++)
+   for(var s2=0;s2<n;s2++)
+    if(!used[s2] && want.charAt(s2)===A.kinds[li]){ o[li]=s2; used[s2]=1; break }
   return nearestOfKind(o);
 }
 
@@ -9447,6 +9465,7 @@ function labels(){
  });
  KEYS.forEach(function(k){var e=document.getElementById('v'+k);if(!e)return;
   if(k==='armTarget'||k==='armTarget2'){ e.textContent=armTargetName(P[k]); return }
+  if(k==='lshuffle'){ try{ var _A=lArrangements(); e.textContent=_A.arrs[_A.pick] }catch(_e){ e.textContent=P[k] } return }
   e.textContent=(f[k]!==undefined?(+P[k]).toFixed(f[k]):P[k])
    +(k==='dur'||k==='stag'||k==='orbstag'||k==='slpDur'
      ||k==='eyeClose'||k==='eyeHold'||k==='eyeOpen'||k==='eyeSettle'
@@ -10161,7 +10180,7 @@ lgap:'Spacing between letters.',
 lrot:'Alternating tilt, one letter each way.',
 lscat:'Randomly nudges each letter off its cell.',
 lspread:'Scales the arrangement outward from its middle.',
-lshuffle:'Reorders which letter goes to which cell.',
+lshuffle:'Which letter stands where. Slides through every distinct arrangement of the letters (for XOXO, all six: XOXO, OOXX, OXOX, OXXO, XOOX, XXOO) and the value shows the one you are on.',
 lturn:'Rotates the whole arrangement, in eighths.',
 rotX:'Turns the X letterforms only.',
 rotO:'Turns the O letterforms only. The eyes stay level.',
