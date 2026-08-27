@@ -795,7 +795,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
    <select id="vidSize" title="Width of the video; the frame decides the height"><option value="1080">1080 wide</option><option value="1920">1920 wide</option><option value="720">720 wide</option></select>
    <select id="vidFps" title="Frames per second"><option value="30">30 fps</option><option value="60">60 fps</option><option value="25">25 fps</option></select>
    <button onclick="exportVideo('mp4')" title="H.264 MP4, the background colour baked in. Records what the stage is showing, in the frame it shows.">MP4</button>
-   <button onclick="exportVideo('insta')" title="MP4 for Instagram: one seamless round of the loop, kept under 7 seconds and 10 MB. Says so instead of exporting if the round runs long.">Insta</button>
+   <button onclick="exportVideo('insta')" title="MP4 for Instagram: 1080×1080 square, background baked in, one seamless round of the loop, under 7 seconds and under 10 MB. Says so instead of exporting if the round runs long.">Insta</button>
    <button onclick="exportVideo('mov')" title="QuickTime MOV, Animation codec, 8 bits + alpha — lossless, and what Premiere Pro, After Effects and Resolve import with transparency.">MOV &alpha; (Premiere)</button>
    <button onclick="exportVideo('webm')" title="WebM (VP9) with a transparent background, for the web. Plays in Chrome, Edge and Firefox; not Safari, and not Premiere.">WebM &alpha;</button>
    <button onclick="exportVideo('png')" title="Every frame as a PNG with transparency, zipped — for After Effects, Premiere, Resolve.">PNG seq &alpha;</button>
@@ -9905,7 +9905,7 @@ function frameSVG(only){
  var src=document.querySelector('#stage svg.xl'); if(!src) return null;
  var clone=src.cloneNode(true);
  var a=src.querySelectorAll('*'), b=clone.querySelectorAll('*');
- var props=['transform','transformOrigin','transformBox','opacity','fill','stroke','strokeWidth','strokeDasharray','strokeDashoffset','filter'];
+ var props=['transform','transformOrigin','transformBox','opacity','visibility','fill','stroke','strokeWidth','strokeDasharray','strokeDashoffset','filter'];
  var want=only==='handFill' ? /^armHandF/ : only==='handLine' ? /^armHandO/ : null;
  for(var i=0;i<a.length;i++){
   var cs=getComputedStyle(a[i]), e=b[i];
@@ -9938,7 +9938,7 @@ function loadSVG(xml, w, h){
   img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(xml.replace(/^<svg /,'<svg width="'+w+'" height="'+h+'" '));
  });
 }
-async function renderFrames(fps, width, alpha, say, sink){
+async function renderFrames(fps, width, alpha, say, sink, square){
  /**
   * The sequence the chooser asks for, not whatever the stage happened
   * to be showing: the whole thing, or — for a sleep mark — one round of
@@ -9959,18 +9959,25 @@ async function renderFrames(fps, width, alpha, say, sink){
  for(var k=0;k<n;k++){
   scrubT=Math.round(k/fps*1000); applyPause();
   var f=frameSVG(); if(!f) throw new Error('no stage');
-  if(!H){ H=Math.round(W/f.aspect/2)*2 }
-  var img=await loadSVG(f.xml, W, H);
+  if(!H){ H=square?W:Math.round(W/f.aspect/2)*2 }
+  // square: the mark keeps its own frame, centred, the background
+  // filling what the fit leaves — a letterbox in the mark's own colour
+  var dw=W, dh=H, dx=0, dy=0;
+  if(square){
+   if(f.aspect>=1){ dw=W; dh=Math.round(W/f.aspect); dy=Math.round((H-dh)/2) }
+   else { dh=H; dw=Math.round(H*f.aspect); dx=Math.round((W-dw)/2) }
+  }
+  var img=await loadSVG(f.xml, dw, dh);
   var c=document.createElement('canvas'); c.width=W; c.height=H;
   var ctx=c.getContext('2d',{alpha:true});
   if(!alpha){ ctx.fillStyle=bg; ctx.fillRect(0,0,W,H) }
-  ctx.drawImage(img,0,0,W,H);
+  ctx.drawImage(img,dx,dy,dw,dh);
   if(alpha && P.arms){
    // the hands as holes, then their outlines back on top
    var hf=frameSVG('handFill'), hl=frameSVG('handLine');
-   var imF=await loadSVG(hf.xml, W, H), imL=await loadSVG(hl.xml, W, H);
-   ctx.globalCompositeOperation='destination-out'; ctx.drawImage(imF,0,0,W,H);
-   ctx.globalCompositeOperation='source-over'; ctx.drawImage(imL,0,0,W,H);
+   var imF=await loadSVG(hf.xml, dw, dh), imL=await loadSVG(hl.xml, dw, dh);
+   ctx.globalCompositeOperation='destination-out'; ctx.drawImage(imF,dx,dy,dw,dh);
+   ctx.globalCompositeOperation='source-over'; ctx.drawImage(imL,dx,dy,dw,dh);
   }
   frames.push(await sink(c));
   if(k%5===0) say('rendering '+(k+1)+'/'+n);
@@ -10140,7 +10147,7 @@ async function exportVideo(kind){
   var mimeI='video/mp4;codecs=avc1';
   if(!(window.MediaRecorder && MediaRecorder.isTypeSupported(mimeI))){ vidSay('this browser cannot write MP4 — use Chrome'); return }
   VID_BUSY=true;
-  var fpsI=+document.getElementById('vidFps').value||30, widthI=+document.getElementById('vidSize').value||1080;
+  var fpsI=+document.getElementById('vidFps').value||30, widthI=1080;   // Insta is 1080×1080, square, always
   var selI=document.getElementById('expSeq'), wasSeqI=selI?selI.value:null;
   try{
    if(P.sleep && selI) selI.value='rest';
@@ -10149,7 +10156,7 @@ async function exportVideo(kind){
     vidSay('✗ the loop runs '+(estT/1000).toFixed(1)+'s — Insta needs under 7s. Shorten Round first.');
     return;
    }
-   var RI=await renderFrames(fpsI, widthI, false, vidSay);
+   var RI=await renderFrames(fpsI, widthI, false, vidSay, undefined, true);
    if(RI.T>7050){ vidSay('✗ the loop runs '+(RI.T/1000).toFixed(1)+'s — Insta needs under 7s. Shorten Round first.'); return }
    var bpsI=Math.min(Math.round(RI.W*RI.H*RI.fps*0.28), Math.floor(9.3*1024*1024*8/(RI.T/1000)));
    var blobI=await recordFrames(RI, mimeI, false, vidSay, bpsI);
