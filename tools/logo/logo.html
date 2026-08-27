@@ -792,7 +792,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
    <button onclick="show('json')">Settings</button>
   </div>
   <div class="row"><label>Video</label>
-   <select id="vidSize" title="Width of the video; the frame decides the height"><option value="1080">1080 wide</option><option value="1920">1920 wide</option><option value="720">720 wide</option></select>
+   <select id="vidSize" title="Width of the video; the frame decides the height. Closest crop measures the whole animation and frames exactly that — no empty space."><option value="1080">1080 wide</option><option value="1920">1920 wide</option><option value="720">720 wide</option><option value="crop">1080 closest crop</option></select>
    <select id="vidFps" title="Frames per second"><option value="30">30 fps</option><option value="60">60 fps</option><option value="25">25 fps</option></select>
    <button onclick="exportVideo('mp4')" title="H.264 MP4, the background colour baked in. Records what the stage is showing, in the frame it shows.">MP4</button>
    <button onclick="exportVideo('insta')" title="MP4 for Instagram: 1080×1080 square, background baked in, one seamless round of the loop, under 7 seconds and under 10 MB. Says so instead of exporting if the round runs long.">Insta</button>
@@ -9901,7 +9901,7 @@ function strippedStyles(){
  * the outline goes back on top. Over any background it then reads as
  * a hand in front of the mark, which is what the knockout was for.
  */
-function frameSVG(only){
+function frameSVG(only, cropBox){
  var src=document.querySelector('#stage svg.xl'); if(!src) return null;
  var clone=src.cloneNode(true);
  var a=src.querySelectorAll('*'), b=clone.querySelectorAll('*');
@@ -9928,6 +9928,8 @@ function frameSVG(only){
  // of it, and a video is not a view
  var full=/viewBox="([^"]+)"/.exec(fitViewBox('<svg viewBox="0 0 1 1">', BBCACHE.bb||{x:0,y:0,width:1000,height:243}, false));
  if(full) clone.setAttribute('viewBox', full[1]);
+ // a measured crop overrides everything: the frame IS the animation
+ if(cropBox) clone.setAttribute('viewBox', cropBox.map(function(v){ return +v.toFixed(1) }).join(' '));
  var vb=clone.viewBox.baseVal;
  return { xml:new XMLSerializer().serializeToString(clone), aspect:vb.width/Math.max(1e-6,vb.height) };
 }
@@ -9938,7 +9940,7 @@ function loadSVG(xml, w, h){
   img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(xml.replace(/^<svg /,'<svg width="'+w+'" height="'+h+'" '));
  });
 }
-async function renderFrames(fps, width, alpha, say, sink, square){
+async function renderFrames(fps, width, alpha, say, sink, square, crop){
  /**
   * The sequence the chooser asks for, not whatever the stage happened
   * to be showing: the whole thing, or — for a sleep mark — one round of
@@ -9956,9 +9958,47 @@ async function renderFrames(fps, width, alpha, say, sink, square){
  paused=true; clearInterval(timer); document.getElementById('pauseb').classList.add('on'); document.getElementById('pauseb').textContent='Play';
  var first=null, frames=[], W=width, H=0;
  var bg=getComputedStyle(document.getElementById('stage')).backgroundColor;
+ /**
+  * CLOSEST CROP. Semantics by pixels, not by geometry: a small alpha
+  * render of every other frame, scanned for what is actually painted.
+  * Masks, hidden flick slots, parked hoses — anything that leaves no
+  * ink leaves no mark on the crop. The union of all frames is the
+  * animation's true box; a whisker of pad for the ordinary crop, a
+  * breath of it for the Insta square, which is then squared about its
+  * own centre.
+  */
+ var cropBox=null;
+ if(crop){
+  var f0=frameSVG(); if(!f0) throw new Error('no stage');
+  var mvb=/viewBox="([^"]+)"/.exec(f0.xml)[1].split(/\s+/).map(Number);
+  var mw=224, mh=Math.max(2,Math.round(mw/(mvb[2]/mvb[3])));
+  var mx0=1e9,my0=1e9,mx1=-1e9,my1=-1e9,found=false;
+  for(var km=0;km<n;km+=2){
+   scrubT=Math.round(km/fps*1000); applyPause();
+   var fm=frameSVG();
+   var im=await loadSVG(fm.xml, mw, mh);
+   var cm=document.createElement('canvas'); cm.width=mw; cm.height=mh;
+   var gm=cm.getContext('2d',{alpha:true}); gm.drawImage(im,0,0,mw,mh);
+   var px=gm.getImageData(0,0,mw,mh).data;
+   for(var yy=0;yy<mh;yy++){ var row=yy*mw*4;
+    for(var xx=0;xx<mw;xx++) if(px[row+xx*4+3]>8){
+     found=true;
+     if(xx<mx0)mx0=xx; if(xx>mx1)mx1=xx; if(yy<my0)my0=yy; if(yy>my1)my1=yy;
+    }}
+   if(km%8===0) say('measuring crop '+(km+1)+'/'+n);
+  }
+  if(found){
+   var sxm=mvb[2]/mw, sym=mvb[3]/mh;
+   var bx=mvb[0]+mx0*sxm, by=mvb[1]+my0*sym, bw=(mx1-mx0+1)*sxm, bh=(my1-my0+1)*sym;
+   var padm=Math.max(bw,bh)*(crop==='insta'?0.07:0.02);
+   bx-=padm; by-=padm; bw+=2*padm; bh+=2*padm;
+   if(square){ var side=Math.max(bw,bh); bx-=(side-bw)/2; by-=(side-bh)/2; bw=side; bh=side }
+   cropBox=[bx,by,bw,bh];
+  }
+ }
  for(var k=0;k<n;k++){
   scrubT=Math.round(k/fps*1000); applyPause();
-  var f=frameSVG(); if(!f) throw new Error('no stage');
+  var f=frameSVG(null, cropBox); if(!f) throw new Error('no stage');
   if(!H){ H=square?W:Math.round(W/f.aspect/2)*2 }
   // square: the mark keeps its own frame, centred, the background
   // filling what the fit leaves — a letterbox in the mark's own colour
@@ -9974,7 +10014,7 @@ async function renderFrames(fps, width, alpha, say, sink, square){
   ctx.drawImage(img,dx,dy,dw,dh);
   if(alpha && P.arms){
    // the hands as holes, then their outlines back on top
-   var hf=frameSVG('handFill'), hl=frameSVG('handLine');
+   var hf=frameSVG('handFill', cropBox), hl=frameSVG('handLine', cropBox);
    var imF=await loadSVG(hf.xml, dw, dh), imL=await loadSVG(hl.xml, dw, dh);
    ctx.globalCompositeOperation='destination-out'; ctx.drawImage(imF,dx,dy,dw,dh);
    ctx.globalCompositeOperation='source-over'; ctx.drawImage(imL,dx,dy,dw,dh);
@@ -10156,7 +10196,7 @@ async function exportVideo(kind){
     vidSay('✗ the loop runs '+(estT/1000).toFixed(1)+'s — Insta needs under 7s. Shorten Round first.');
     return;
    }
-   var RI=await renderFrames(fpsI, widthI, false, vidSay, undefined, true);
+   var RI=await renderFrames(fpsI, widthI, false, vidSay, undefined, true, 'insta');
    if(RI.T>7050){ vidSay('✗ the loop runs '+(RI.T/1000).toFixed(1)+'s — Insta needs under 7s. Shorten Round first.'); return }
    var bpsI=Math.min(Math.round(RI.W*RI.H*RI.fps*0.28), Math.floor(9.3*1024*1024*8/(RI.T/1000)));
    var blobI=await recordFrames(RI, mimeI, false, vidSay, bpsI);
@@ -10170,9 +10210,11 @@ async function exportVideo(kind){
  var mime = kind==='mp4' ? 'video/mp4;codecs=avc1' : kind==='webm' ? 'video/webm;codecs=vp9' : null;
  if(kind==='mov'){
   VID_BUSY=true;
-  var fpsM=+document.getElementById('vidFps').value||30, widthM=+document.getElementById('vidSize').value||1080;
+  var fpsM=+document.getElementById('vidFps').value||30;
+  var sizeM=document.getElementById('vidSize').value, cropM=(sizeM==='crop');
+  var widthM=cropM?1080:(+sizeM||1080);
   try{
-   var RM=await renderFrames(fpsM, widthM, true, vidSay, function(c){ return Promise.resolve(qtrleFrame(c.getContext('2d').getImageData(0,0,c.width,c.height), c.width, c.height)) });
+   var RM=await renderFrames(fpsM, widthM, true, vidSay, function(c){ return Promise.resolve(qtrleFrame(c.getContext('2d').getImageData(0,0,c.width,c.height), c.width, c.height)) }, false, cropM?'fit':null);
    var stemM='xoxo-'+(P.sleep?(RM.rest?'sleep-loop':'sleep'):'loader')+'-'+RM.W+'x'+RM.H+'-'+fpsM+'fps';
    vidSay('writing MOV');
    saveBlob(movOf(RM.frames, RM.W, RM.H, fpsM), stemM+'-alpha.mov');
@@ -10185,10 +10227,12 @@ async function exportVideo(kind){
   vidSay(kind==='mp4' ? 'this browser cannot write MP4 — use Chrome' : 'this browser cannot write WebM — use Chrome'); return;
  }
  VID_BUSY=true;
- var fps=+document.getElementById('vidFps').value||30, width=+document.getElementById('vidSize').value||1080;
+ var fps=+document.getElementById('vidFps').value||30;
+ var sizeV=document.getElementById('vidSize').value, cropV=(sizeV==='crop');
+ var width=cropV?1080:(+sizeV||1080);
  var alpha=(kind!=='mp4');
  try{
-  var R=await renderFrames(fps, width, alpha, vidSay);
+  var R=await renderFrames(fps, width, alpha, vidSay, undefined, false, cropV?'fit':null);
   var stem='xoxo-'+(P.sleep?(R.rest?'sleep-loop':'sleep'):'loader')+'-'+R.W+'x'+R.H+'-'+fps+'fps';
   if(kind==='png'){
    vidSay('zipping '+R.frames.length+' frames');
