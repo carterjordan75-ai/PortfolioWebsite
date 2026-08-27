@@ -243,6 +243,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
   <div class="row"><label>Scatter <b id="vlscat"></b></label><input id="lscat" type="range" min="0" max=".6" step=".01"></div>
   <div class="row"><label>Spread <b id="vlspread"></b></label><input id="lspread" type="range" min=".5" max="2.2" step=".01"></div>
   <div class="row"><label>Shuffle order <b id="vlshuffle"></b></label><input id="lshuffle" type="range" min="0" max="1" step=".01"></div>
+  <div class="row"><label title="Show the whole mark, or just one letter of it, centred. Arms and eyes follow: every action lands on the letter that is there.">Letters</label><span id="solopicker"></span></div>
   <div class="row"><label>Turn <b id="vlturn"></b></label><input id="lturn" type="range" min="-180" max="180" step="45"></div>
   <div class="row"><label>Turn X <b id="vrotX"></b></label><input id="rotX" type="range" min="-180" max="180" step="15"></div>
   <div class="row"><label>Turn O <b id="vrotO"></b></label><input id="rotO" type="range" min="-180" max="180" step="15"></div>
@@ -791,6 +792,7 @@ details.off .need{display:inline;opacity:.55;font-weight:400;letter-spacing:0}
    <select id="vidSize" title="Width of the video; the frame decides the height"><option value="1080">1080 wide</option><option value="1920">1920 wide</option><option value="720">720 wide</option></select>
    <select id="vidFps" title="Frames per second"><option value="30">30 fps</option><option value="60">60 fps</option><option value="25">25 fps</option></select>
    <button onclick="exportVideo('mp4')" title="H.264 MP4, the background colour baked in. Records what the stage is showing, in the frame it shows.">MP4</button>
+   <button onclick="exportVideo('insta')" title="MP4 for Instagram: one seamless round of the loop, kept under 7 seconds and 10 MB. Says so instead of exporting if the round runs long.">Insta</button>
    <button onclick="exportVideo('mov')" title="QuickTime MOV, Animation codec, 8 bits + alpha — lossless, and what Premiere Pro, After Effects and Resolve import with transparency.">MOV &alpha; (Premiere)</button>
    <button onclick="exportVideo('webm')" title="WebM (VP9) with a transparent background, for the web. Plays in Chrome, Edge and Firefox; not Safari, and not Premiere.">WebM &alpha;</button>
    <button onclick="exportVideo('png')" title="Every frame as a PNG with transparency, zipped — for After Effects, Premiere, Resolve.">PNG seq &alpha;</button>
@@ -858,7 +860,7 @@ var AREAS=B.map(function(b){return b.w*b.h});
 var LO=Math.min.apply(null,AREAS), HI=Math.max.apply(null,AREAS);
 var OF=[];LETTERS.forEach(function(L,li){L.forEach(function(i){OF[i]=li})});
 
-var BASE={layout:'row',lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
+var BASE={layout:'row',solo:-1,lgap:1,lrot:0,lscat:0,lsettle:0,lspread:1,lshuffle:0,lscore:0,lturn:0,
  eyes:0,eyeDart:4,eyeGlance:1,eyeBlink:2,eyeSize:1,eyeOval:1,eyeDome:.6,
  eyeShut:.03,blinkSync:1,eyeSpeed:1,eyeGlint:.3,glintIn:0,
  eyeClose:140,eyeHold:60,eyeOpen:250,eyeSettle:260,eyeEase:.7,
@@ -1843,6 +1845,7 @@ function lHome(li){
   // positions exactly rather than on an even spacing that is close.
   t=[MIDX+(LCEN[ci][0]-MIDX)*P.lgap*P.lspread, LCEN[ci][1]];
  }
+ if(P.solo>=0){ t=[MIDX,MIDY] }
  if(P.lscat){ t[0]+=(rnd(li*7+3)-.5)*S*P.lscat; t[1]+=(rnd(li*7+11)-.5)*S*P.lscat; }
  // Turn the whole arrangement about its middle. Stepped at 45 because
  // the useful angles for a block of four are the eighths — square,
@@ -2027,6 +2030,7 @@ function fitViewBox(str, bb, framed){
 function markBox(){
  var x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
  LCEN.forEach(function(c,li){
+  if(P.solo>=0 && li!==P.solo) return;
   var a=lHome(li), b2=lRest(li), hf=lHalf(li);
   // a rotated letter needs its diagonal, not its width — and it is
   // rotated by the layout turn AND by its own kind's turn
@@ -4447,6 +4451,7 @@ var ARM_PH={ in:0.00, land:0.20, close:0.315, act:0.375, done:0.625, open:0.665,
 var ARM_SPIN=540;
 
 function armTargetLetter(){
+ if(P.solo>=0 && LCEN[P.solo]) return P.solo;
  var t=Math.round(P.armTarget===undefined?-1:P.armTarget);
  if(t>=0 && LCEN[t]) return t;
  // Auto: a different letter each time the seed moves, so it is not
@@ -4518,6 +4523,9 @@ function armVisit(total){
 function armAct(){
  var a=P.armAction||'lift';
  var n=Math.max(1,Math.min(2,Math.round(P.armCount===undefined?1:P.armCount)));
+ // One letter on the stage: a trade has no partner, so a two-hand job
+ // can only be a tug over the letter that is there.
+ if(P.solo>=0) return (a==='swap'||(a==='lift'&&n>1)) ? ((n>1)?'tug':'lift') : a;
  // Both takes set to ONE letter is not a collision to repair — it is
  // a TUG-OF-WAR: both hands grip it, fight for it, and one wins.
  if((a==='lift'&&n>1) || a==='swap'){
@@ -4591,7 +4599,7 @@ function armPlan(){
           P.armBackFrom,P.armBackSide,P.eyeSeed,P.eyeCycle,P.armSpeed,P.armWait,P.armSide,JSON.stringify(rest)].join('|');
  if(ARM_PLAN && ARM_PLAN_SIG===sig) return ARM_PLAN;
  var act=armAct(), two=armSides().length>1;
- if(two && act==='lift') act='swap';
+ if(two && act==='lift') act=(P.solo>=0)?'tug':'swap';
  var n=LCEN.length, ident=[];
  for(var i=0;i<n;i++) ident.push(i);
  var plan;
@@ -4974,7 +4982,8 @@ function armGeom(k, vis){
           rootCW:F.toW(aC), rootR:Math.max(aB?aB.w:LH, aB?aB.h:LH)/2,
           others:(function(){
            var os2=LCEN.map(function(cc,ii){ return { li:ii, p:LPc[ii], h:LHs[ii][1], w:LHs[ii][0] } })
-             .filter(function(o3){ return o3.li!==li && !(visit.pair && o3.li===partner) });
+             .filter(function(o3){ return o3.li!==li && !(visit.pair && o3.li===partner) })
+             .filter(function(o3){ return P.solo<0 || o3.li===P.solo });
            /**
             * THE GAPS ARE PLUGGED. A tube that threads between two
             * letters is clear of both and straight across the face of
@@ -4986,7 +4995,7 @@ function armGeom(k, vis){
             * the set-down live there — and so does the masked corridor
             * where its root exits.
             */
-           for(var gi=0;gi<LCEN.length;gi++) for(var gj=gi+1;gj<LCEN.length;gj++){
+           if(P.solo<0) for(var gi=0;gi<LCEN.length;gi++) for(var gj=gi+1;gj<LCEN.length;gj++){
             if(gi===li||gj===li) continue;
             if(visit.pair && (gi===partner||gj===partner)) continue;
             var pg1=LPc[gi], pg2=LPc[gj];
@@ -8070,6 +8079,7 @@ function svgRaw(){
  var ARM_BACK=armsSVG('back');
  var ARM_FRONT=armsSVG('front');
  LETTERS.forEach(function(L,li){
+  if(P.solo>=0 && li!==P.solo) return;
   var stv=lStart(li), o2=P.letters[li]||{}, tv=tiltOf(li);
   var wantS=P.target!=='letter'&&((o2.squash||0)>0||(o2.stretch||0)>0);
   var rv=angleAt(li,true);
@@ -8816,6 +8826,16 @@ function toggleLogo(k){
  drawLogos(); labels(); build();
 }
 function setLogoShuffle(v){ P.logoShuffle=v; drawLogos(); build(); }
+function drawSolo(){
+ var el=document.getElementById('solopicker'); if(!el) return;
+ var h='<button class="'+(P.solo>=0?'':'on')+'" onclick="setSolo(-1)">all</button>';
+ LETTERS.forEach(function(L,li){
+  var k=(B[L[0]]&&B[L[0]].hp)?'O':'X';
+  h+='<button class="'+(P.solo===li?'on':'')+'" onclick="setSolo('+li+')">'+k+'</button>';
+ });
+ el.innerHTML=h;
+}
+function setSolo(v){ P.solo=v; drawSolo(); labels(); build(); }
 
 var GLINTS=['dot','oval','pill','square','star','pair','crescent'];
 var AMBIENTS=['still','float','breathe','sway','bob','pulse'];
@@ -9363,7 +9383,7 @@ function sync(){syncSleep();drawGlints();drawBlinks();drawBrows();drawArms();dra
   e.value=P[e.dataset.p];
   var b=document.getElementById('v'+e.id); if(b) b.textContent=P[e.dataset.p]+'ms';
  });
- labels();drawPicker();drawLetters();drawSaved();drawTex();drawLogos()}
+ labels();drawPicker();drawLetters();drawSaved();drawTex();drawLogos();drawSolo()}
 /**
  * The takes sliders point at letters, and "3" is not a letter: the
  * readout names them as the wordmark spells them — x1 o1 x2 o2 —
@@ -9958,11 +9978,11 @@ async function renderFrames(fps, width, alpha, say, sink){
  return { frames:frames, W:W, H:H, fps:fps, T:T, rest:rest };
 }
 /** Plays rendered stills into a canvas stream at the true rate, recording it. */
-async function recordFrames(R, mime, alpha, say){
+async function recordFrames(R, mime, alpha, say, bps){
  var c=document.createElement('canvas'); c.width=R.W; c.height=R.H;
  var ctx=c.getContext('2d',{alpha:alpha});
  var stream=c.captureStream(0), track=stream.getVideoTracks()[0];
- var rec=new MediaRecorder(stream,{ mimeType:mime, videoBitsPerSecond:Math.round(R.W*R.H*R.fps*0.28) });
+ var rec=new MediaRecorder(stream,{ mimeType:mime, videoBitsPerSecond:bps||Math.round(R.W*R.H*R.fps*0.28) });
  var chunks=[]; rec.ondataavailable=function(e){ if(e.data.size) chunks.push(e.data) };
  var stopped=new Promise(function(r){ rec.onstop=r });
  // decode ahead, a few at a time, so the draw itself is instant
@@ -10105,6 +10125,38 @@ function saveBlob(blob, name){
 async function exportVideo(kind){
  if(VID_BUSY) return;
  if(!document.querySelector('#stage svg.xl')){ vidSay('nothing on the stage'); return }
+ if(kind==='insta'){
+  /**
+   * The Instagram cut: H.264 MP4, one seamless round of the loop, and
+   * two hard ceilings — under 7 seconds, under 10 MB. The bitrate is
+   * chosen from the measured round so the size lands with headroom,
+   * and if the encoder still lands fat the clip is re-encoded smaller
+   * off the same frames. Too long is not trimmed — trimming breaks
+   * the loop — it is refused with the knob to turn.
+   */
+  var mimeI='video/mp4;codecs=avc1';
+  if(!(window.MediaRecorder && MediaRecorder.isTypeSupported(mimeI))){ vidSay('this browser cannot write MP4 — use Chrome'); return }
+  VID_BUSY=true;
+  var fpsI=+document.getElementById('vidFps').value||30, widthI=+document.getElementById('vidSize').value||1080;
+  var selI=document.getElementById('expSeq'), wasSeqI=selI?selI.value:null;
+  try{
+   if(P.sleep && selI) selI.value='rest';
+   var estT=P.sleep ? Math.round(eyeSpan(totalRun())) : scrubSpan();
+   if(estT>7000){
+    vidSay('✗ the loop runs '+(estT/1000).toFixed(1)+'s — Insta needs under 7s. Shorten Round first.');
+    return;
+   }
+   var RI=await renderFrames(fpsI, widthI, false, vidSay);
+   if(RI.T>7050){ vidSay('✗ the loop runs '+(RI.T/1000).toFixed(1)+'s — Insta needs under 7s. Shorten Round first.'); return }
+   var bpsI=Math.min(Math.round(RI.W*RI.H*RI.fps*0.28), Math.floor(9.3*1024*1024*8/(RI.T/1000)));
+   var blobI=await recordFrames(RI, mimeI, false, vidSay, bpsI);
+   if(blobI.size>10*1024*1024){ vidSay('over 10MB — encoding smaller'); blobI=await recordFrames(RI, mimeI, false, vidSay, Math.floor(bpsI*0.7)) }
+   saveBlob(blobI, 'xoxo-insta-'+RI.W+'x'+RI.H+'-'+fpsI+'fps.mp4');
+   vidSay('✓ '+(RI.T/1000).toFixed(1)+'s, '+(blobI.size/1048576).toFixed(1)+'MB — Insta-ready');
+  } catch(errI){ vidSay('✗ '+(errI&&errI.message||errI)) }
+  finally { if(selI&&wasSeqI!==null) selI.value=wasSeqI; VID_BUSY=false; setTimeout(function(){ vidSay('') }, 8000) }
+  return;
+ }
  var mime = kind==='mp4' ? 'video/mp4;codecs=avc1' : kind==='webm' ? 'video/webm;codecs=vp9' : null;
  if(kind==='mov'){
   VID_BUSY=true;
