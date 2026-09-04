@@ -286,6 +286,21 @@ for barB,bamp in BRS:
         np.add.at(buf,idx,w*env*0.72*bamp)
 b,a=sg.butter(2,1400/(SR/2)); brL=cfilt(b,a,brL); brR=cfilt(b,a,brR)
 
+# ---------------- the rumble: the floor of the piece ----------------
+# Distant weather under everything: hard-lowpassed noise heaving on
+# slow irregular swells that never repeat inside the loop, driven just
+# hard enough that its upper edge (80-160Hz) reads on small speakers.
+# This is the unease — the piece must never quite sit still.
+rmb=rng.standard_normal(N)
+b,a=sg.butter(4,80/(SR/2)); rmb=cfilt(b,a,rmb)
+rmb/=np.sqrt((rmb**2).mean())
+SWELL=periodic([(0,.5),(19,.95),(37,.45),(58,1.0),(83,.55),(104,.9),(122,.4),(139,.75)])
+churn=1+0.22*np.sin(2*np.pi*7*t/T+1.3)+0.14*np.sin(2*np.pi*11*t/T+4.1)
+rmb*=np.clip(SWELL,0,None)*churn
+rmb=np.tanh(rmb*2.2)/2.2
+b,a=sg.butter(2,160/(SR/2)); rmb=cfilt(b,a,rmb)
+rmbBed=rmb*1.3*(1-0.3*duck)*(1-0.25*bduck)
+
 # ---------------- squeaks passing through ----------------
 # Brief resonant glides that fade in, sweep past — pitch falling a
 # touch, pan crossing the field — and are gone: something driving by.
@@ -460,8 +475,8 @@ def circ_reverb(x,sec,damp,seed):
 wetL=circ_reverb(plL+plR*0.3+drL*0.3+stL*1.6+brL*0.5+sqL*2.2+voxL*2.6,2.8,2600,21)
 wetR=circ_reverb(plR+plL*0.3+drR*0.3+stR*1.6+brR*0.5+sqR*2.2+voxR*2.6,2.85,2600,22)
 
-L=((plL*(1-0.15*duck)+stL*7.5+wetL*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drL*2.9*(1-0.25*vdk)*(1-0.2*bduck)+brL*(1-0.25*vdk)+sqL+hiss+crk)*RIDE
-R=((plR*(1-0.15*duck)+stR*7.5+wetR*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drR*2.9*(1-0.25*vdk)*(1-0.2*bduck)+brR*(1-0.25*vdk)+sqR+hiss+crk*0.92)*RIDE
+L=((plL*(1-0.15*duck)+stL*7.5+wetL*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drL*2.9*(1-0.25*vdk)*(1-0.2*bduck)+brL*(1-0.25*vdk)+rmbBed+sqL+hiss+crk)*RIDE
+R=((plR*(1-0.15*duck)+stR*7.5+wetR*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drR*2.9*(1-0.25*vdk)*(1-0.2*bduck)+brR*(1-0.25*vdk)+rmbBed+sqR+hiss+crk*0.92)*RIDE
 
 # ---------------- the tape: the notes are driven INTO the medium ----------------
 # The reference masters at 0dBFS with its mids full of low-order harmonics
