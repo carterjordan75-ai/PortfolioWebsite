@@ -25,11 +25,13 @@ def wow_at(ts):
            +0.25*np.sin(2*np.pi*945*ts/T+2.1)
            +1.5*np.sin(2*np.pi*3*ts/T+4.0))/1200.0  # cents -> log2 units
 
-# ---------------- harmony: A  E  F#  C#m, four bars each, four times round ----------------
-CYCLE=[('A',['A2','C#3','E3','A3'],['G#3','B3','C#4','D#4']),
-       ('E',['E2','G#2','B2','E3'],['G#3','B3','E4','C#4']),
-       ('F#',['F#2','C#3','F#3','A3'],['A#3','C#4','F#4','G#3']),
-       ('C#',['C#2','G#2','C#3','E3'],['G#3','B3','C#4','E4'])]
+# ---------------- harmony: C#m home, then bVI iv v — all shadow, no lift ----------------
+# The old cycle (A E F#m C#m) was I-V-vi-iii of A major: hope, however
+# dressed. This one never leaves C# minor's gravity.
+CYCLE=[('C#',['C#2','G#2','C#3','E3'],['G#2','B2','C#3','E3']),
+       ('A',['A2','E3','A3','B3'],['E3','G#3','A3','B3']),
+       ('F#',['F#2','C#3','F#3','A3'],['C#3','F#3','G#3','A3']),
+       ('G#',['G#2','D#3','G#3','B3'],['D#3','G#3','B3','C#4'])]
 CHORDS=[CYCLE[i%4] for i in range(16)]       # 16 x 4 bars
 
 # density arc — the roll is embers now, not an engine: sparse glints
@@ -46,16 +48,16 @@ def pluck(f0,dur,vel,tstart):
     nlen=int(dur*SR); tt=np.arange(nlen)/SR
     w0=wow_at(tstart); w1=wow_at(tstart+dur*0.6)
     out=np.zeros(nlen)
-    fc=180+520*np.exp(-tt/0.16)
+    fc=140+320*np.exp(-tt/0.16)
     amp=np.exp(-tt/1.5)
     for k in range(1,15):
         fk=f0*k
-        if fk>3400: break
+        if fk>2400: break
         fa=fk*2**w0; fb=fk*2**w1
         ph=2*np.pi*(fa*tt+0.5*(fb-fa)/max(dur*0.6,1e-3)*np.minimum(tt,dur*0.6)**2/(dur*0.6))
         g=1.0/(1.0+(fk/fc)**4)+0.5*np.exp(-((fk-fc)/(0.22*fc))**2)
         out+=np.sin(ph+0.7*k)/k**0.9*g
-    out+=0.26*np.sin(2*np.pi*f0/2*2**w0*tt)
+    out+=0.4*np.sin(2*np.pi*f0/2*2**w0*tt)
     atk=int(0.006*SR)
     env=np.ones(nlen); env[:atk]=.5-.5*np.cos(np.pi*np.arange(atk)/atk)
     env[-int(.05*SR):]*=np.linspace(1,0,int(.05*SR))
@@ -76,16 +78,13 @@ for bar in range(64):
         # embers: only the downbeat and half-bar are certain; the rest
         # of the figure fires only as the arc thickens
         if e not in (0,4) and rng.random()>(0.18+0.72*d): continue
+        # tolls, not taps: the figure never reaches the top of the pool,
+        # never leaps an octave, never sparkles — it circles the low notes
+        pos=min(pos,2)
         name=pool[pos]
-        # in the thick of it the top of the figure reaches up
-        f0mult=1
-        if d>0.45 and pos==3 and rng.random()<(d-0.28):
-            name=ext[rng.integers(0,len(ext))]
-            # in the thick of it the figure leaps an octave clear
-            if rng.random()<0.4*d: f0mult=2
         vel=(1.06 if e==0 else 0.9)+rng.uniform(-.08,.08)
-        vel*=(0.55+0.45*d)
-        f0=n2f(name)*f0mult
+        vel*=(0.5+0.4*d)
+        f0=n2f(name)
         note=pluck(f0,3.2,vel,ts)
         pan=rng.uniform(-2.5,2.5)             # a gentle drift around centre
         gL=10**(+pan/40); gR=10**(-pan/40)
@@ -95,12 +94,6 @@ for bar in range(64):
         nR=pluck(f0*detR/detL,3.2,vel,ts)     # a second string for the width
         np.add.at(plR,idx,nR*gR)
         events+=1
-        # sparkle: a ghost an octave above, off the main beats, as it builds
-        if d>0.55 and e in (2,6) and rng.random()<0.55*(d-0.4):
-            gh=pluck(n2f(pool[min(3,pos+1)])*2,2.2,vel*0.42,ts+BEAT/4)
-            ag=int((ts+BEAT/4)*SR); idg=np.arange(ag,ag+len(gh))%N
-            np.add.at(plL,idg,gh*gR); np.add.at(plR,idg,gh*gL)
-            events+=1
         # sixteenth pickup after this slot, more often as it builds
         if rng.random()<0.02+0.10*d:
             name2=pool[max(0,pos-1)]
@@ -192,7 +185,7 @@ b,a=sg.butter(1,2300/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
 hiss=rng.standard_normal(N)
 b,a=sg.butter(2,8000/(SR/2)); hiss=cfilt(b,a,hiss)
 b,a=sg.butter(2,1200/(SR/2),'high'); hiss=cfilt(b,a,hiss)
-hiss*=10**(-64/20)*(1+0.25*np.sin(2*np.pi*60*t/T))
+hiss*=10**(-70/20)*(1+0.25*np.sin(2*np.pi*60*t/T))
 ncr=int(7*T)
 crk=np.zeros(N)
 pos=rng.integers(0,N,ncr); amp=rng.random(ncr)**3.2
@@ -200,18 +193,18 @@ for p,am in zip(pos,amp):
     ln=rng.integers(2,9)
     crk[(p+np.arange(ln))%N]+=(rng.random(ln)-.5)*am
 b,a=sg.butter(2,[1800/(SR/2),9000/(SR/2)],'band'); crk=cfilt(b,a,crk)
-crk*=10**(-50/20)/max(1e-9,np.sqrt((crk**2).mean()))
+crk*=10**(-56/20)/max(1e-9,np.sqrt((crk**2).mean()))
 
 # ---------------- the strings: a large section, swelling with the build ----------------
 STR=periodic([(0,.3),(14,.55),(38,.85),(68,1.0),(108,1.0),(126,.85),(140,.4)])
-SV=[['A2','E3','A3','C#4'],    # A — cello section
-    ['E2','B2','E3','G#3'],    # E
+SV=[['C#2','G#2','C#3','E3'],  # C#m — the cellar itself
+    ['A2','E3','A3','B3'],     # A add9, no bright third on top
     ['F#2','C#3','F#3','A3'],  # F#m
-    ['C#3','G#3','C#4','E4']]  # C#m
-# the section's voice: a written soprano line, two long notes per
-# chord, doubled an octave down — the singing top that reads as
-# strings from the first bar it enters
-LINE=[['E4','C#4'],['B3','E4'],['C#4','A3'],['G#3','B3']]
+    ['G#2','D#3','G#3','B3']]  # G#m
+# the section's voice, rewritten: no soprano, no singing — a low chant
+# of two falling notes per chord, each pair sinking. Falling is the
+# whole gesture of the piece now.
+LINE=[['E3','C#3'],['C#3','B2'],['A2','G#2'],['B2','G#2']]
 stL=np.zeros(N); stR=np.zeros(N)
 fadeS2=int(3.5*SR)
 def ensemble(fv,seg,tt,depth=0.13,nmax=10,fmax=3800):
@@ -252,11 +245,11 @@ for ci in range(16):
             w=(ensemble(fv,segH,ttH,depth=0.2,nmax=8,fmax=3200)
               +0.9*ensemble(fv/2,segH,ttH,depth=0.16,nmax=8,fmax=2200))
             np.add.at(buf, absH%N, w*envH*0.11)
-    for buf in (stL,stR):                     # the bow's breath
+    for buf in (stL,stR):                     # the bow's breath, kept low
         nz=rng.standard_normal(seg)
-        b,a=sg.butter(2,[900/(SR/2),3600/(SR/2)],'band')
-        np.add.at(buf, absn%N, sg.lfilter(b,a,nz)*envS*0.022)
-b,a=sg.butter(1,3400/(SR/2)); stL=cfilt(b,a,stL); stR=cfilt(b,a,stR)
+        b,a=sg.butter(2,[600/(SR/2),2400/(SR/2)],'band')
+        np.add.at(buf, absn%N, sg.lfilter(b,a,nz)*envS*0.012)
+b,a=sg.butter(1,2800/(SR/2)); stL=cfilt(b,a,stL); stR=cfilt(b,a,stR)
 stL*=STR*(1-0.25*duck); stR*=STR*(1-0.25*duck)
 
 # ---------------- low brass: deep swells at the turns ----------------
@@ -284,7 +277,7 @@ for barB,bamp in BRS:
             w+=np.sin(2*np.pi*fB*det*k*tt+0.6*k)/k**0.8*bloom*growl*(1.4 if 2<=k<=6 else 1.0)
         a0=int(barB*BAR*SR); idx=np.arange(a0,a0+nlen)%N
         np.add.at(buf,idx,w*env*0.72*bamp)
-b,a=sg.butter(2,1400/(SR/2)); brL=cfilt(b,a,brL); brR=cfilt(b,a,brR)
+b,a=sg.butter(2,1100/(SR/2)); brL=cfilt(b,a,brL); brR=cfilt(b,a,brR)
 
 # ---------------- the rumble: the floor of the piece ----------------
 # Distant weather under everything: hard-lowpassed noise heaving on
@@ -292,22 +285,22 @@ b,a=sg.butter(2,1400/(SR/2)); brL=cfilt(b,a,brL); brR=cfilt(b,a,brR)
 # hard enough that its upper edge (80-160Hz) reads on small speakers.
 # This is the unease — the piece must never quite sit still.
 rmb=rng.standard_normal(N)
-b,a=sg.butter(4,80/(SR/2)); rmb=cfilt(b,a,rmb)
+b,a=sg.butter(4,70/(SR/2)); rmb=cfilt(b,a,rmb)
 rmb/=np.sqrt((rmb**2).mean())
 SWELL=periodic([(0,.5),(19,.95),(37,.45),(58,1.0),(83,.55),(104,.9),(122,.4),(139,.75)])
 churn=1+0.22*np.sin(2*np.pi*7*t/T+1.3)+0.14*np.sin(2*np.pi*11*t/T+4.1)
 rmb*=np.clip(SWELL,0,None)*churn
 rmb=np.tanh(rmb*2.2)/2.2
-b,a=sg.butter(2,160/(SR/2)); rmb=cfilt(b,a,rmb)
-rmbBed=rmb*1.3*(1-0.3*duck)*(1-0.25*bduck)
+b,a=sg.butter(2,140/(SR/2)); rmb=cfilt(b,a,rmb)
+rmbBed=rmb*1.6*(1-0.3*duck)*(1-0.25*bduck)
 
 # ---------------- squeaks passing through ----------------
 # Brief resonant glides that fade in, sweep past — pitch falling a
 # touch, pan crossing the field — and are gone: something driving by.
 sqL=np.zeros(N); sqR=np.zeros(N)
-SQK=[(11,1.2,900,420,1),(26,1.0,380,820,-1),(38,1.5,1050,520,1),
-     (52,1.1,700,340,-1),(66,1.4,430,950,1),(88,1.2,980,460,-1),
-     (101,1.6,620,1050,1),(121,1.0,820,380,-1)]
+SQK=[(11,1.2,630,300,1),(26,1.0,270,580,-1),(38,1.5,740,360,1),
+     (52,1.1,490,240,-1),(66,1.4,300,660,1),(88,1.2,690,320,-1),
+     (101,1.6,430,740,1),(121,1.0,580,270,-1)]
 for tS,dS,fa,fb,pd in SQK:
     nlen=int(dS*SR); tt=np.arange(nlen)/SR
     gl=(fa+(fb-fa)*(tt/dS))*(1-0.05*tt/dS)          # the pass drops the pitch
@@ -317,8 +310,8 @@ for tS,dS,fa,fb,pd in SQK:
     env*=np.clip((dS-tt)/(dS*0.14),0,1)             # quick out
     pan=np.linspace(-pd,pd,nlen)*0.9
     a0=int(tS*SR); idx=np.arange(a0,a0+nlen)%N
-    np.add.at(sqL,idx,w*env*0.05*np.sqrt((1-pan)/2))
-    np.add.at(sqR,idx,w*env*0.05*np.sqrt((1+pan)/2))
+    np.add.at(sqL,idx,w*env*0.035*np.sqrt((1-pan)/2))
+    np.add.at(sqR,idx,w*env*0.035*np.sqrt((1+pan)/2))
 
 # ---------------- the voices: a home tape playing in the next room ----------------
 # No real recording is sampled: unintelligible speech is synthesised —
@@ -451,8 +444,8 @@ for barAt,vdur,vf0,vmode,vamp,vradio,vclar in VOX:
         rc=radiocut(int(barAt*13+7))
         ar=a0-len(rc)-int(0.12*SR)
         idr=np.arange(ar,ar+len(rc))%N
-        np.add.at(voxL,idr,rc*0.4*vamp*10**(+pv/40))
-        np.add.at(voxR,idr,rc*0.4*vamp*10**(-pv/40))
+        np.add.at(voxL,idr,rc*0.22*vamp*10**(+pv/40))
+        np.add.at(voxR,idr,rc*0.22*vamp*10**(-pv/40))
 
 # the memory: each phrase trails away in darkened, quieter repeats —
 # circular, so a tail crossing the seam simply arrives at the start
@@ -472,11 +465,11 @@ def circ_reverb(x,sec,damp,seed):
     b,a=sg.butter(1,damp/(SR/2)); ir=sg.lfilter(b,a,ir)
     ir/=np.sqrt((ir**2).sum())
     return np.fft.irfft(np.fft.rfft(x)*np.fft.rfft(ir,N),N)
-wetL=circ_reverb(plL+plR*0.3+drL*0.3+stL*1.6+brL*0.5+sqL*2.2+voxL*2.6,2.8,2600,21)
-wetR=circ_reverb(plR+plL*0.3+drR*0.3+stR*1.6+brR*0.5+sqR*2.2+voxR*2.6,2.85,2600,22)
+wetL=circ_reverb(plL+plR*0.3+drL*0.3+stL*1.3+brL*0.5+sqL*1.6+voxL*2.6,2.8,1800,21)
+wetR=circ_reverb(plR+plL*0.3+drR*0.3+stR*1.3+brR*0.5+sqR*1.6+voxR*2.6,2.85,1800,22)
 
-L=((plL*(1-0.15*duck)+stL*7.5+wetL*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drL*2.9*(1-0.25*vdk)*(1-0.2*bduck)+brL*(1-0.25*vdk)+rmbBed+sqL+hiss+crk)*RIDE
-R=((plR*(1-0.15*duck)+stR*7.5+wetR*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drR*2.9*(1-0.25*vdk)*(1-0.2*bduck)+brR*(1-0.25*vdk)+rmbBed+sqR+hiss+crk*0.92)*RIDE
+L=((plL*(1-0.15*duck)+stL*7.5+wetL*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.85+drL*3.3*(1-0.25*vdk)*(1-0.2*bduck)+brL*(1-0.25*vdk)+rmbBed+sqL+hiss+crk)*RIDE
+R=((plR*(1-0.15*duck)+stR*7.5+wetR*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.85+drR*3.3*(1-0.25*vdk)*(1-0.2*bduck)+brR*(1-0.25*vdk)+rmbBed+sqR+hiss+crk*0.92)*RIDE
 
 # ---------------- the tape: the notes are driven INTO the medium ----------------
 # The reference masters at 0dBFS with its mids full of low-order harmonics
@@ -488,7 +481,7 @@ R=blend*np.tanh(R*drive)/drive+(1-blend)*R
 # the macro arc again, gently, on the far side of the tape
 L*=RIDE**0.8; R*=RIDE**0.8
 # and the whole thing leans dark: one gentle pole across the master
-b,a=sg.butter(1,4300/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
+b,a=sg.butter(1,3400/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
 # (The match EQ that once pinned the bus to the reference's curve is
 # retired: the piece has been steered well away from the reference by
 # ear — strings, kicks, voices — and the EQ was quietly undoing every
