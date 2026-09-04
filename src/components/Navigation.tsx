@@ -506,7 +506,10 @@ export default function Navigation() {
                           top: 0,
                           left: 0,
                           right: 0,
-                          height: 18,
+                          // Tall enough to span the affordance line, the gap
+                          // beneath it AND the dropped (translateY 22px) label —
+                          // clicks used to die in the band between them.
+                          height: 44,
                           zIndex: 10002,
                         }}
                       />
@@ -766,7 +769,10 @@ export default function Navigation() {
                           top: 0,
                           left: 0,
                           right: 0,
-                          height: 18,
+                          // Tall enough to span the affordance line, the gap
+                          // beneath it AND the dropped (translateY 22px) label —
+                          // clicks used to die in the band between them.
+                          height: 44,
                           zIndex: 10002,
                         }}
                       />
