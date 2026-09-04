@@ -179,7 +179,7 @@ for ci in range(16):
 b,a=sg.butter(2,380/(SR/2)); drL=cfilt(b,a,drL); drR=cfilt(b,a,drR)
 drL*= (0.7+0.3*RIDE)*(1-0.38*duck); drR*=(0.7+0.3*RIDE)*(1-0.38*duck)
 
-b,a=sg.butter(1,1600/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
+b,a=sg.butter(1,1300/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
 
 # ---------------- the surface: hiss + crackle ----------------
 hiss=rng.standard_normal(N)
@@ -234,7 +234,7 @@ for ci in range(16):
         for buf in (stL,stR):
             w=ensemble(fv,seg,tt)*0.055
             if vi<2:                          # the two lowest voices sink an octave further
-                w+=ensemble(fv/2,seg,tt,depth=0.1,nmax=8,fmax=1400)*0.09
+                w+=ensemble(fv/2,seg,tt,depth=0.1,nmax=8,fmax=1400)*0.11
             np.add.at(buf, absn%N, w*envS)
     for h,vn in enumerate(LINE[ci%4]):        # the line above, octave-doubled
         fv=n2f(vn)
@@ -249,7 +249,7 @@ for ci in range(16):
         nz=rng.standard_normal(seg)
         b,a=sg.butter(2,[600/(SR/2),2400/(SR/2)],'band')
         np.add.at(buf, absn%N, sg.lfilter(b,a,nz)*envS*0.012)
-b,a=sg.butter(1,2300/(SR/2)); stL=cfilt(b,a,stL); stR=cfilt(b,a,stR)
+b,a=sg.butter(1,1800/(SR/2)); stL=cfilt(b,a,stL); stR=cfilt(b,a,stR)
 stL*=STR*(1-0.25*duck); stR*=STR*(1-0.25*duck)
 
 # ---------------- low brass: deep swells at the turns ----------------
@@ -277,7 +277,7 @@ for barB,bamp in BRS:
             w+=np.sin(2*np.pi*fB*det*k*tt+0.6*k)/k**0.8*bloom*growl*(1.4 if 2<=k<=6 else 1.0)
         a0=int(barB*BAR*SR); idx=np.arange(a0,a0+nlen)%N
         np.add.at(buf,idx,w*env*0.72*bamp)
-b,a=sg.butter(2,950/(SR/2)); brL=cfilt(b,a,brL); brR=cfilt(b,a,brR)
+b,a=sg.butter(2,850/(SR/2)); brL=cfilt(b,a,brL); brR=cfilt(b,a,brR)
 
 # ---------------- the rumble: the floor of the piece ----------------
 # Distant weather under everything: hard-lowpassed noise heaving on
@@ -292,14 +292,15 @@ churn=1+0.22*np.sin(2*np.pi*7*t/T+1.3)+0.14*np.sin(2*np.pi*11*t/T+4.1)
 rmb*=np.clip(SWELL,0,None)*churn
 rmb=np.tanh(rmb*2.2)/2.2
 b,a=sg.butter(2,140/(SR/2)); rmb=cfilt(b,a,rmb)
-rmbBed=rmb*1.8*(1-0.3*duck)*(1-0.25*bduck)
+rmbBed=rmb*2.0*(1-0.3*duck)*(1-0.25*bduck)
 
 # ---------------- squeaks passing through ----------------
 # Brief resonant glides that fade in, sweep past — pitch falling a
 # touch, pan crossing the field — and are gone: something driving by.
 sqL=np.zeros(N); sqR=np.zeros(N)
-SQK=[(26,1.0,190,410,-1),(52,1.1,340,170,-1),
-     (88,1.2,480,220,-1),(121,1.0,410,190,-1)]
+# Retired: every pass whistled or moaned its way into notice — the
+# piece wants nothing arriving that isn't music or memory.
+SQK=[]
 for tS,dS,fa,fb,pd in SQK:
     nlen=int(dS*SR); tt=np.arange(nlen)/SR
     gl=(fa+(fb-fa)*(tt/dS))*(1-0.05*tt/dS)          # the pass drops the pitch
@@ -418,19 +419,25 @@ def wreck(x, seed, clar=0.5):
 voxL=np.zeros(N); voxR=np.zeros(N)
 #     bar   dur   f0  mode    amp  radio-cut first
 #     bar   dur   f0  mode    amp  radio  clarity
-VOX=[( 4,  4.0, 120,'talk', 0.80,True,  0.25),
+VOX=[( 4,  4.0, 120,'talk', 0.80,False, 0.25),
      (12,  4.0, 150,'talk', 0.78,False, 0.42),
-     (21,  4.0, 176,'talk', 0.82,True,  0.18),
+     (21,  4.0, 176,'talk', 0.82,False, 0.18),
      (29,  4.0, 124,'talk', 0.80,False, 0.52),
-     (38,  4.0, 140,'talk', 0.85,True,  0.35),
+     (38,  4.0, 140,'talk', 0.85,False, 0.35),
      (46,  4.0, 182,'talk', 0.78,False, 0.45),
-     (54,  4.0, 345,'talk', 0.82,True,  0.28),
+     (54,  4.0, 345,'talk', 0.82,False, 0.28),
      (60,  4.0, 112,'talk', 0.80,False, 0.50)]
 vdk=np.zeros(N)
 ti=0
 for barAt,vdur,vf0,vmode,vamp,vradio,vclar in VOX:
     if TAPE:
-        ph0=wreck(TAPE[ti%len(TAPE)][1], int(barAt*7+vf0), vclar); ti+=1
+        # fleeting: not the phrase, a fragment of it — two to four
+        # seconds surfacing from somewhere inside the clip, then gone
+        rV=np.random.default_rng(int(barAt*11+vf0))
+        srcT=TAPE[ti%len(TAPE)][1]
+        wlen=int(rV.uniform(2.2,3.8)*SR)
+        stT=int(rV.uniform(0,max(1,len(srcT)-wlen)))
+        ph0=wreck(srcT[stT:stT+wlen], int(barAt*7+vf0), vclar); ti+=1
     else:
         ph0=murmur(vdur,vf0,int(barAt*7+vf0),vmode)
     # the music leans back while the tape speaks
@@ -469,8 +476,8 @@ def circ_reverb(x,sec,damp,seed):
 wetL=circ_reverb(plL+plR*0.3+drL*0.3+stL*1.3+brL*0.5+sqL*1.2+voxL*3.2,2.8,1400,21)
 wetR=circ_reverb(plR+plL*0.3+drR*0.3+stR*1.3+brR*0.5+sqR*1.2+voxR*3.2,2.85,1400,22)
 
-L=((plL*(1-0.15*duck)+stL*7.5+wetL*.36)*(1-0.24*vdk)+bass*1.45*(1-0.24*bduck)+kick*1.85+drL*3.3*(1-0.18*vdk)*(1-0.2*bduck)+brL*(1-0.25*vdk)+rmbBed+sqL+hiss+crk)*RIDE
-R=((plR*(1-0.15*duck)+stR*7.5+wetR*.36)*(1-0.24*vdk)+bass*1.45*(1-0.24*bduck)+kick*1.85+drR*3.3*(1-0.18*vdk)*(1-0.2*bduck)+brR*(1-0.25*vdk)+rmbBed+sqR+hiss+crk*0.92)*RIDE
+L=((plL*(1-0.15*duck)+stL*7.5+wetL*.36)*(1-0.24*vdk)+bass*1.6*(1-0.24*bduck)+kick*1.85+drL*3.7*(1-0.18*vdk)*(1-0.2*bduck)+brL*(1-0.25*vdk)+rmbBed+sqL+hiss+crk)*RIDE
+R=((plR*(1-0.15*duck)+stR*7.5+wetR*.36)*(1-0.24*vdk)+bass*1.6*(1-0.24*bduck)+kick*1.85+drR*3.7*(1-0.18*vdk)*(1-0.2*bduck)+brR*(1-0.25*vdk)+rmbBed+sqR+hiss+crk*0.92)*RIDE
 
 # ---------------- the tape: the notes are driven INTO the medium ----------------
 # The reference masters at 0dBFS with its mids full of low-order harmonics
@@ -482,7 +489,7 @@ R=blend*np.tanh(R*drive)/drive+(1-blend)*R
 # the macro arc again, gently, on the far side of the tape
 L*=RIDE**0.8; R*=RIDE**0.8
 # and the whole thing leans dark: one gentle pole across the master
-b,a=sg.butter(1,2700/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
+b,a=sg.butter(1,2100/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
 # (The match EQ that once pinned the bus to the reference's curve is
 # retired: the piece has been steered well away from the reference by
 # ear — strings, kicks, voices — and the EQ was quietly undoing every

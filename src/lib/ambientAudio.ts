@@ -22,7 +22,7 @@
  * user interaction" — same behaviour as the old element.
  */
 
-const AUDIO_SRC = '/assets/audio/home-loop.9d39672c.m4a'
+const AUDIO_SRC = '/assets/audio/home-loop.aefd1cf0.m4a'
 const LOOP_SECONDS = 150            // the composition is exactly 64 bars at 102.4bpm
 const PRIMING_SECONDS = 2112 / 44100 // AAC encoder delay baked into the file
 const VOLUME = 0.9
