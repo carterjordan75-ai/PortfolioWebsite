@@ -32,8 +32,9 @@ CYCLE=[('A',['A2','C#3','E3','A3'],['G#3','B3','C#4','D#4']),
        ('C#',['C#2','G#2','C#3','E3'],['G#3','B3','C#4','E4'])]
 CHORDS=[CYCLE[i%4] for i in range(16)]       # 16 x 4 bars
 
-# density / register / level arcs — the build is MORE NOTES, HIGHER TOPS
-DENS =periodic([(0,.25),(25,.45),(55,.7),(85,.9),(108,1.0),(128,.7),(142,.35)])
+# density arc — the roll is embers now, not an engine: sparse glints
+# that gather toward the middle and recede again
+DENS =periodic([(0,.12),(25,.22),(55,.38),(85,.52),(108,.55),(128,.32),(142,.14)])
 RIDE =periodic([(0,.74),(30,.84),(60,.92),(100,1.0),(126,.9),(142,.76)])
 
 # ---------------- the pluck ----------------
@@ -45,11 +46,11 @@ def pluck(f0,dur,vel,tstart):
     nlen=int(dur*SR); tt=np.arange(nlen)/SR
     w0=wow_at(tstart); w1=wow_at(tstart+dur*0.6)
     out=np.zeros(nlen)
-    fc=220+780*np.exp(-tt/0.16)
+    fc=180+520*np.exp(-tt/0.16)
     amp=np.exp(-tt/1.5)
     for k in range(1,15):
         fk=f0*k
-        if fk>4200: break
+        if fk>3400: break
         fa=fk*2**w0; fb=fk*2**w1
         ph=2*np.pi*(fa*tt+0.5*(fb-fa)/max(dur*0.6,1e-3)*np.minimum(tt,dur*0.6)**2/(dur*0.6))
         g=1.0/(1.0+(fk/fc)**4)+0.5*np.exp(-((fk-fc)/(0.22*fc))**2)
@@ -72,6 +73,9 @@ for bar in range(64):
     for e in range(8):                        # eighth slots
         ts=tb+e*BEAT/2
         pos=order[e]
+        # embers: only the downbeat and half-bar are certain; the rest
+        # of the figure fires only as the arc thickens
+        if e not in (0,4) and rng.random()>(0.18+0.72*d): continue
         name=pool[pos]
         # in the thick of it the top of the figure reaches up
         f0mult=1
@@ -98,7 +102,7 @@ for bar in range(64):
             np.add.at(plL,idg,gh*gR); np.add.at(plR,idg,gh*gL)
             events+=1
         # sixteenth pickup after this slot, more often as it builds
-        if rng.random()<0.06+0.20*d:
+        if rng.random()<0.02+0.10*d:
             name2=pool[max(0,pos-1)]
             ts2=ts+BEAT/4
             n2=pluck(n2f(name2),2.6,vel*0.7,ts2)
@@ -124,7 +128,7 @@ for bar in range(64):
     tb=bar*BAR; g=BEATS[int(tb*SR)%N]
     if g<0.12: continue
     hits=[(0.0,1.0),(2.0,0.74)]
-    if rng.random()<0.28: hits.append((3.5,0.4))
+    if rng.random()<0.2: hits.append((3.5,0.4))
     for off,vel in hits:
         a0=int((tb+off*BEAT)*SR)
         idx=np.arange(a0,a0+klen)%N
@@ -171,18 +175,18 @@ for ci in range(16):
     seg=len(envD); tt=np.arange(seg)/SR
     absn=np.arange(a0,a0+seg)
     for buf in (drL,drR):
-        for mult,amp,k in [(1,1.0,2),(2,0.5,3),(3,0.24,4),(1.5,0.34,5)]:
+        for mult,amp,k in [(1,1.45,2),(2,0.42,3),(3,0.10,4),(1.5,0.30,5)]:
             det=1+rng.uniform(-6,6)*1e-4
             ph=rng.uniform(0,2*np.pi)
-            breathe=1+0.13*np.sin(2*np.pi*k*absn/SR/T+ph)   # whole cycles over the loop
+            breathe=1+0.2*np.sin(2*np.pi*k*absn/SR/T+ph)    # whole cycles over the loop
             w=(np.sin(2*np.pi*fD*mult*det*tt+ph)
-              +0.35*np.sin(2*np.pi*fD*mult*det*2*tt+ph*2)
-              +0.14*np.sin(2*np.pi*fD*mult*det*3*tt+ph*3))*amp
+              +0.22*np.sin(2*np.pi*fD*mult*det*2*tt+ph*2)
+              +0.06*np.sin(2*np.pi*fD*mult*det*3*tt+ph*3))*amp
             np.add.at(buf, absn%N, w*envD*breathe*0.12)
-b,a=sg.butter(2,560/(SR/2)); drL=cfilt(b,a,drL); drR=cfilt(b,a,drR)
+b,a=sg.butter(2,430/(SR/2)); drL=cfilt(b,a,drL); drR=cfilt(b,a,drR)
 drL*= (0.7+0.3*RIDE)*(1-0.38*duck); drR*=(0.7+0.3*RIDE)*(1-0.38*duck)
 
-b,a=sg.butter(1,3200/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
+b,a=sg.butter(1,2300/(SR/2)); plL=cfilt(b,a,plL); plR=cfilt(b,a,plR)
 
 # ---------------- the surface: hiss + crackle ----------------
 hiss=rng.standard_normal(N)
@@ -196,10 +200,10 @@ for p,am in zip(pos,amp):
     ln=rng.integers(2,9)
     crk[(p+np.arange(ln))%N]+=(rng.random(ln)-.5)*am
 b,a=sg.butter(2,[1800/(SR/2),9000/(SR/2)],'band'); crk=cfilt(b,a,crk)
-crk*=10**(-47/20)/max(1e-9,np.sqrt((crk**2).mean()))
+crk*=10**(-50/20)/max(1e-9,np.sqrt((crk**2).mean()))
 
 # ---------------- the strings: a large section, swelling with the build ----------------
-STR=periodic([(0,.16),(14,.38),(38,.75),(68,1.0),(108,1.0),(126,.82),(140,.22)])
+STR=periodic([(0,.3),(14,.55),(38,.85),(68,1.0),(108,1.0),(126,.85),(140,.4)])
 SV=[['A2','E3','A3','C#4'],    # A — cello section
     ['E2','B2','E3','G#3'],    # E
     ['F#2','C#3','F#3','A3'],  # F#m
@@ -232,38 +236,42 @@ for ci in range(16):
     a0=int(ci*4*BAR*SR)-fadeS2//2
     seg=len(envS); tt=np.arange(seg)/SR
     absn=np.arange(a0,a0+seg)
-    for vn in SV[ci%4]:                       # the pad beneath
+    for vi,vn in enumerate(SV[ci%4]):         # the pad beneath, cellar-doubled
         fv=n2f(vn)
         for buf in (stL,stR):
-            np.add.at(buf, absn%N, ensemble(fv,seg,tt)*envS*0.035)
+            w=ensemble(fv,seg,tt)*0.055
+            if vi<2:                          # the two lowest voices sink an octave further
+                w+=ensemble(fv/2,seg,tt,depth=0.1,nmax=8,fmax=1400)*0.075
+            np.add.at(buf, absn%N, w*envS)
     for h,vn in enumerate(LINE[ci%4]):        # the line above, octave-doubled
         fv=n2f(vn)
         aH=int((ci*4+h*2)*BAR*SR)-fadeS2//2
         segH=len(envH); ttH=np.arange(segH)/SR
         absH=np.arange(aH,aH+segH)
         for buf in (stL,stR):
-            w=(ensemble(fv,segH,ttH,depth=0.2,nmax=8,fmax=4200)
-              +0.6*ensemble(fv/2,segH,ttH,depth=0.16,nmax=8,fmax=2600))
-            np.add.at(buf, absH%N, w*envH*0.15)
+            w=(ensemble(fv,segH,ttH,depth=0.2,nmax=8,fmax=3200)
+              +0.9*ensemble(fv/2,segH,ttH,depth=0.16,nmax=8,fmax=2200))
+            np.add.at(buf, absH%N, w*envH*0.11)
     for buf in (stL,stR):                     # the bow's breath
         nz=rng.standard_normal(seg)
         b,a=sg.butter(2,[900/(SR/2),3600/(SR/2)],'band')
         np.add.at(buf, absn%N, sg.lfilter(b,a,nz)*envS*0.022)
-b,a=sg.butter(1,4200/(SR/2)); stL=cfilt(b,a,stL); stR=cfilt(b,a,stR)
+b,a=sg.butter(1,3400/(SR/2)); stL=cfilt(b,a,stL); stR=cfilt(b,a,stR)
 stL*=STR*(1-0.25*duck); stR*=STR*(1-0.25*duck)
 
 # ---------------- low brass: deep swells at the turns ----------------
 # A bass-trombone-and-tuba shape: the root an octave down, harmonics
 # that BLOOM through the swell (brightness arriving with force, the
 # brass crescendo), a slow growl on the upper partials, gone again
-# over three seconds. Six swells, riding the build.
+# over four seconds. Eight swells, riding the build — the low brass is
+# now a pillar of the piece, not an ornament.
 brL=np.zeros(N); brR=np.zeros(N); bduck=np.zeros(N)
-BRS=[(16,.5),(24,.7),(32,.85),(40,1.0),(48,.9),(56,.6)]
+BRS=[(8,.45),(16,.62),(24,.78),(32,.9),(40,1.0),(48,.95),(56,.7),(61,.5)]
 for barB,bamp in BRS:
     _,poolB,_=CHORDS[(barB//4)%16]
     fB=n2f(poolB[0])/2
-    dB=8.0; nlen=int(dB*SR); tt=np.arange(nlen)/SR
-    att=3.5; relB=3.0
+    dB=10.0; nlen=int(dB*SR); tt=np.arange(nlen)/SR
+    att=4.5; relB=3.6
     env=np.minimum(tt/att,1)**1.5*np.clip((dB-tt)/relB,0,1)**1.2
     a0d=int(barB*BAR*SR)
     np.maximum.at(bduck,(np.arange(a0d,a0d+nlen))%N,env*bamp)
@@ -272,19 +280,19 @@ for barB,bamp in BRS:
         w=np.zeros(nlen)
         for k in range(1,10):
             bloom=np.clip(np.minimum(tt/att,1)*1.35-k*0.09,0,1)
-            growl=1+0.04*np.sin(2*np.pi*5.2*tt+k)* (k/9)
+            growl=1+0.03*np.sin(2*np.pi*5.2*tt+k)* (k/9)
             w+=np.sin(2*np.pi*fB*det*k*tt+0.6*k)/k**0.8*bloom*growl*(1.4 if 2<=k<=6 else 1.0)
         a0=int(barB*BAR*SR); idx=np.arange(a0,a0+nlen)%N
-        np.add.at(buf,idx,w*env*0.55*bamp)
+        np.add.at(buf,idx,w*env*0.72*bamp)
 b,a=sg.butter(2,1400/(SR/2)); brL=cfilt(b,a,brL); brR=cfilt(b,a,brR)
 
 # ---------------- squeaks passing through ----------------
 # Brief resonant glides that fade in, sweep past — pitch falling a
 # touch, pan crossing the field — and are gone: something driving by.
 sqL=np.zeros(N); sqR=np.zeros(N)
-SQK=[(11,1.2,1300,550,1),(26,1.0,480,1100,-1),(38,1.5,1500,700,1),
-     (52,1.1,900,420,-1),(66,1.4,550,1300,1),(88,1.2,1400,600,-1),
-     (101,1.6,800,1500,1),(121,1.0,1100,480,-1)]
+SQK=[(11,1.2,900,420,1),(26,1.0,380,820,-1),(38,1.5,1050,520,1),
+     (52,1.1,700,340,-1),(66,1.4,430,950,1),(88,1.2,980,460,-1),
+     (101,1.6,620,1050,1),(121,1.0,820,380,-1)]
 for tS,dS,fa,fb,pd in SQK:
     nlen=int(dS*SR); tt=np.arange(nlen)/SR
     gl=(fa+(fb-fa)*(tt/dS))*(1-0.05*tt/dS)          # the pass drops the pitch
@@ -294,8 +302,8 @@ for tS,dS,fa,fb,pd in SQK:
     env*=np.clip((dS-tt)/(dS*0.14),0,1)             # quick out
     pan=np.linspace(-pd,pd,nlen)*0.9
     a0=int(tS*SR); idx=np.arange(a0,a0+nlen)%N
-    np.add.at(sqL,idx,w*env*0.06*np.sqrt((1-pan)/2))
-    np.add.at(sqR,idx,w*env*0.06*np.sqrt((1+pan)/2))
+    np.add.at(sqL,idx,w*env*0.05*np.sqrt((1-pan)/2))
+    np.add.at(sqR,idx,w*env*0.05*np.sqrt((1+pan)/2))
 
 # ---------------- the voices: a home tape playing in the next room ----------------
 # No real recording is sampled: unintelligible speech is synthesised —
@@ -387,16 +395,16 @@ def wreck(x, seed, clar=0.5):
     # clarity 0..1: buried and chewed at 0, almost readable at 1
     r=np.random.default_rng(seed)
     nlen=len(x); tt=np.arange(nlen)/SR
-    lo=380-200*clar; hi=2200+2600*clar
+    lo=340-180*clar; hi=1400+1300*clar
     b,a=sg.butter(2,[lo/(SR/2),hi/(SR/2)],'band'); y=sg.lfilter(b,a,x)
     y/=np.sqrt((y**2).mean())+1e-9
-    y=np.tanh(y*(3.2-1.5*clar))/2.0
+    y=np.tanh(y*(2.3-1.0*clar))/2.0
     y*= (0.9+0.2*clar)
     drop=np.clip(np.sin(2*np.pi*r.uniform(0.5,1.3)*tt+r.uniform(0,6))*(2.6-1.6*clar)+(0.55+0.35*clar),0.25,1)
-    # the tape breathes out, never cuts: a slow exhale at the end
+    # a memory surfaces and sinks: a slow rise in, a slower exhale out
     env=np.ones(nlen)
-    fi=min(int(0.15*SR),nlen//4); env[:fi]=np.linspace(0,1,fi)
-    fo=min(int(2.4*SR),int(nlen*0.5)); env[-fo:]=(0.5+0.5*np.cos(np.pi*np.arange(fo)/fo))**1.3
+    fi=min(int(0.6*SR),nlen//4); env[:fi]=.5-.5*np.cos(np.pi*np.arange(fi)/fi)
+    fo=min(int(3.4*SR),int(nlen*0.6)); env[-fo:]=(0.5+0.5*np.cos(np.pi*np.arange(fo)/fo))**1.6
     return y*drop*env
 voxL=np.zeros(N); voxR=np.zeros(N)
 #     bar   dur   f0  mode    amp  radio-cut first
@@ -431,6 +439,17 @@ for barAt,vdur,vf0,vmode,vamp,vradio,vclar in VOX:
         np.add.at(voxL,idr,rc*0.4*vamp*10**(+pv/40))
         np.add.at(voxR,idr,rc*0.4*vamp*10**(-pv/40))
 
+# the memory: each phrase trails away in darkened, quieter repeats —
+# circular, so a tail crossing the seam simply arrives at the start
+def mem_echo(x):
+    b,a=sg.butter(1,1500/(SR/2))
+    e=np.zeros(N); y=x.copy(); d=int(0.43*SR)
+    for k in range(4):
+        y=cfilt(b,a,np.roll(y,d))*0.42
+        e+=y
+    return e
+voxL+=mem_echo(voxL); voxR+=mem_echo(voxR)
+
 # ---------------- space: two dark rooms, one per side ----------------
 def circ_reverb(x,sec,damp,seed):
     r2=np.random.default_rng(seed)
@@ -438,11 +457,11 @@ def circ_reverb(x,sec,damp,seed):
     b,a=sg.butter(1,damp/(SR/2)); ir=sg.lfilter(b,a,ir)
     ir/=np.sqrt((ir**2).sum())
     return np.fft.irfft(np.fft.rfft(x)*np.fft.rfft(ir,N),N)
-wetL=circ_reverb(plL+plR*0.3+drL*0.3+stL*1.6+sqL*2.2+voxL*1.6,2.2,3300,21)
-wetR=circ_reverb(plR+plL*0.3+drR*0.3+stR*1.6+sqR*2.2+voxR*1.6,2.25,3300,22)
+wetL=circ_reverb(plL+plR*0.3+drL*0.3+stL*1.6+brL*0.5+sqL*2.2+voxL*2.6,2.8,2600,21)
+wetR=circ_reverb(plR+plL*0.3+drR*0.3+stR*1.6+brR*0.5+sqR*2.2+voxR*2.6,2.85,2600,22)
 
-L=((plL*(1-0.15*duck)+stL*7.5+wetL*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drL*1.3*(1-0.25*vdk)*(1-0.2*bduck)+brL*(1-0.25*vdk)+sqL+hiss+crk)*RIDE
-R=((plR*(1-0.15*duck)+stR*7.5+wetR*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drR*1.3*(1-0.25*vdk)*(1-0.2*bduck)+brR*(1-0.25*vdk)+sqR+hiss+crk*0.92)*RIDE
+L=((plL*(1-0.15*duck)+stL*7.5+wetL*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drL*2.9*(1-0.25*vdk)*(1-0.2*bduck)+brL*(1-0.25*vdk)+sqL+hiss+crk)*RIDE
+R=((plR*(1-0.15*duck)+stR*7.5+wetR*.36)*(1-0.32*vdk)+bass*1.35*(1-0.24*bduck)+kick*1.7+drR*2.9*(1-0.25*vdk)*(1-0.2*bduck)+brR*(1-0.25*vdk)+sqR+hiss+crk*0.92)*RIDE
 
 # ---------------- the tape: the notes are driven INTO the medium ----------------
 # The reference masters at 0dBFS with its mids full of low-order harmonics
@@ -454,7 +473,7 @@ R=blend*np.tanh(R*drive)/drive+(1-blend)*R
 # the macro arc again, gently, on the far side of the tape
 L*=RIDE**0.8; R*=RIDE**0.8
 # and the whole thing leans dark: one gentle pole across the master
-b,a=sg.butter(1,5600/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
+b,a=sg.butter(1,4300/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
 # (The match EQ that once pinned the bus to the reference's curve is
 # retired: the piece has been steered well away from the reference by
 # ear — strings, kicks, voices — and the EQ was quietly undoing every
@@ -463,7 +482,7 @@ b,a=sg.butter(1,5600/(SR/2)); L=cfilt(b,a,L); R=cfilt(b,a,R)
 # The voices are a CUT-IN, not part of the tonal bed: they join after
 # the match EQ (which, given a reference with no voices in it, would
 # dutifully remove them) and ride only the final trims.
-L+=voxL*3.4; R+=voxR*3.4
+L+=voxL*2.6; R+=voxR*2.6
 mix=np.stack([L,R],1)
 # ---------------- master to the reference's density: hot into a soft ceiling ----------------
 def frame_rms_db(m):
