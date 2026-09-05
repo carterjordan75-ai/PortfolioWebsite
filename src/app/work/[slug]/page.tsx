@@ -90,6 +90,31 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   // active video's audio button.
   const [activeAudioIdx, setActiveAudioIdx] = useState<number | null>(null)
   const [pageAudioMuted, setPageAudioMuted] = useState(false)
+  // Muting is a SESSION choice, not a page one: turning sound off on any
+  // video keeps every project-page video silent — across navigations —
+  // until the visitor turns it back on (or the tab closes; sessionStorage
+  // is the memory). A short toast confirms the choice and its scope.
+  // Restored in an effect, not the useState initializer, so server and
+  // first client render agree and hydration stays clean.
+  const [muteNotice, setMuteNotice] = useState<'off' | 'on' | null>(null)
+  const muteNoticeTimer = useRef<number | null>(null)
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('xoxo_video_sound_off') === '1') setPageAudioMuted(true)
+    } catch {}
+    return () => { if (muteNoticeTimer.current) window.clearTimeout(muteNoticeTimer.current) }
+  }, [])
+  const toggleAudioMuted = () => {
+    const next = !pageAudioMuted
+    setPageAudioMuted(next)
+    try {
+      if (next) sessionStorage.setItem('xoxo_video_sound_off', '1')
+      else sessionStorage.removeItem('xoxo_video_sound_off')
+    } catch {}
+    setMuteNotice(next ? 'off' : 'on')
+    if (muteNoticeTimer.current) window.clearTimeout(muteNoticeTimer.current)
+    muteNoticeTimer.current = window.setTimeout(() => setMuteNotice(null), 3600)
+  }
   const rightColRef = useRef<HTMLDivElement | null>(null)
   // Map of media idx → its root element, populated by the MediaBlock root
   // ref callback. Used to compute which item is closest to the viewport
@@ -677,7 +702,7 @@ Contact: carterjordan75@gmail.com`
                             isLightboxOpen={expandedMedia !== null}
                             audioActive={idx === activeAudioIdx}
                             pageAudioMuted={pageAudioMuted}
-                            onAudioToggle={() => setPageAudioMuted(p => !p)}
+                            onAudioToggle={toggleAudioMuted}
                             rootRef={(el) => {
                               if (el) mediaBlockRefs.current.set(idx, el)
                               else mediaBlockRefs.current.delete(idx)
@@ -708,7 +733,7 @@ Contact: carterjordan75@gmail.com`
                                 isLightboxOpen={expandedMedia !== null}
                                 audioActive={idx === activeAudioIdx}
                                 pageAudioMuted={pageAudioMuted}
-                                onAudioToggle={() => setPageAudioMuted(p => !p)}
+                                onAudioToggle={toggleAudioMuted}
                                 rootRef={(el) => {
                                   if (el) mediaBlockRefs.current.set(idx, el)
                                   else mediaBlockRefs.current.delete(idx)
@@ -867,6 +892,42 @@ Contact: carterjordan75@gmail.com`
             />
           </>
         )}
+
+        {/* Session-mute notice — appears on either flip of the video sound
+            toggle and names the scope, so "why are all my videos silent"
+            never becomes a mystery. pointer-events-none: purely a status,
+            never a click target. Centered via framer's x so the entry/exit
+            transform doesn't fight a Tailwind translate class. */}
+        <AnimatePresence>
+          {muteNotice && (
+            <motion.div
+              key={muteNotice}
+              initial={{ opacity: 0, y: 14, x: '-50%', scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
+              exit={{ opacity: 0, y: 8, x: '-50%', scale: 0.97 }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              className="fixed bottom-6 left-1/2 z-[9998] px-5 py-3 rounded-full text-white text-center pointer-events-none"
+              style={{
+                background: 'rgba(0,0,0,0.78)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1px solid rgba(255,255,255,0.14)',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+              }}
+              role="status"
+              aria-live="polite"
+            >
+              <span className="block text-[10px] font-bold uppercase tracking-[0.18em]">
+                {muteNotice === 'off' ? 'Sound off' : 'Sound on'}
+              </span>
+              <span className="block text-[9px] uppercase tracking-[0.12em] mt-0.5" style={{ opacity: 0.55 }}>
+                {muteNotice === 'off'
+                  ? 'All videos stay muted this session until you turn sound back on'
+                  : 'Videos will play audio again'}
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </PageTransition>
   )
