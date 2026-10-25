@@ -9,12 +9,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 import { projects } from '@/data/projects'
-import {
-  startAmbientAudio,
-  pauseAmbientAudio,
-  isAmbientPlaying,
-  subscribeAmbient,
-} from '@/lib/ambientAudio'
 import { XOXO_LOGO_URL } from '@/lib/xoxoLogoUrl'
 
 const hoverColors = [
@@ -40,12 +34,6 @@ export default function Navigation() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
   const { dark, setDark, fg } = useDarkMode()
-  // The toggle's visual state (On/Off + animated bars) reflects the AUDIO GRAPH'S
-  // actual playing state — not a separate flag — so the button never desyncs
-  // from reality. The audio itself lives in src/lib/ambientAudio.ts as a module
-  // singleton so it survives navigation between pages (and crucially, the user's
-  // click gesture on the gate's submit button — see startAmbientAudio call there).
-  const [audioOn, setAudioOn] = useState(false)
   const [indexHover, setIndexHover] = useState(false)
   // Tooltip hover — keyed by href. Only one nav item can be hovered at a
   // time, so a single string-or-null state covers Misc + Look (and any
@@ -168,15 +156,6 @@ export default function Navigation() {
   const isLook = pathname === '/look'
   const isWhitePage = isArchive || isWork || isExperiments || isProjectPage || isLook
 
-  // Keep audioOn synced with the singleton's state — subscribe to the
-  // module's own notifications so external changes (another component
-  // pausing, playback starting from the gate's gesture) are reflected in
-  // the toggle UI.
-  useEffect(() => {
-    setAudioOn(isAmbientPlaying())
-    return subscribeAmbient(setAudioOn)
-  }, [isWork])
-
   // Reset Info popup's expanded state whenever it closes
   useEffect(() => {
     if (!showInfo) setInfoExpanded(false)
@@ -200,49 +179,6 @@ export default function Navigation() {
   useEffect(() => {
     if (!canMinimize && headerMinimized) setHeaderMinimized(false)
   }, [canMinimize, headerMinimized])
-
-  // Audio lifecycle for the home page:
-  // - On entry: ensure the singleton ambient drone is playing. If a fresh
-  //   visitor came through the gate, startAmbientAudio() was already called
-  //   inside the submit handler's click gesture — so the audio is playing and
-  //   this call is a no-op. For direct visits (cookie still valid, no gate),
-  //   browsers block unmuted autoplay, so we fall back to "play on first
-  //   interaction" the same way the previous implementation did.
-  // - On leave: pause the singleton.
-  useEffect(() => {
-    if (!isWork) {
-      pauseAmbientAudio()
-      return
-    }
-
-    let firstInteractListener: ((e: Event) => void) | null = null
-
-    startAmbientAudio()
-
-    firstInteractListener = (e: Event) => {
-      const target = e.target as HTMLElement | null
-      // Skip if the audio toggle itself is the first interaction — its own
-      // onClick will handle the play, and we don't want to race it.
-      const isAudioToggle = !!target?.closest('[aria-label="Toggle ambient audio"]')
-      if (!isAudioToggle) startAmbientAudio()
-      if (firstInteractListener) {
-        document.removeEventListener('pointerdown', firstInteractListener, true)
-        document.removeEventListener('keydown', firstInteractListener, true)
-        firstInteractListener = null
-      }
-    }
-    document.addEventListener('pointerdown', firstInteractListener, true)
-    document.addEventListener('keydown', firstInteractListener, true)
-
-    return () => {
-      if (firstInteractListener) {
-        document.removeEventListener('pointerdown', firstInteractListener, true)
-        document.removeEventListener('keydown', firstInteractListener, true)
-      }
-      pauseAmbientAudio()
-    }
-  }, [isWork])
-
 
   // No header on the passcode gate — clean, focused screen. (Check is here at
   // the very end so all hooks above always run, preserving React's rules of hooks.)
@@ -317,50 +253,6 @@ export default function Navigation() {
               </button>
             )}
 
-            {/* Audio toggle — home page only. Matches the nav-link opacity scale. */}
-            {isWork && (
-              <button
-                onClick={() => {
-                  if (isAmbientPlaying()) {
-                    pauseAmbientAudio()
-                  } else {
-                    startAmbientAudio()
-                  }
-                }}
-                className="flex items-center justify-center rounded-full flex-shrink-0 opacity-50 hover:opacity-70 hover:scale-110"
-                style={{
-                  width: '30px',
-                  height: '30px',
-                  border: `1.5px solid ${fg}`,
-                  color: fg,
-                  transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out',
-                }}
-                aria-label="Toggle ambient audio"
-              >
-                {audioOn ? (
-                  <span className="flex gap-[2px] items-center" style={{ height: '12px' }}>
-                    {[0, 1, 2].map(i => (
-                      <span
-                        key={i}
-                        className="w-[2px] rounded-full"
-                        style={{
-                          background: fg,
-                          animationName: 'navAudioBar',
-                          animationDuration: '0.7s',
-                          animationTimingFunction: 'ease-in-out',
-                          animationDelay: `${i * 0.12}s`,
-                          animationIterationCount: 'infinite',
-                          animationDirection: 'alternate',
-                          height: '4px',
-                        }}
-                      />
-                    ))}
-                  </span>
-                ) : (
-                  <span style={{ fontSize: '14px', lineHeight: 1 }}>♪</span>
-                )}
-              </button>
-            )}
           </div>
           {/* Minimize control — home + /misc. Sits below the info/audio
               cluster. Just a dash line, no circle. */}
@@ -869,12 +761,6 @@ export default function Navigation() {
         </div>
 
       </motion.header>
-
-      {/* (The ambient loop lives as a module singleton in
-          src/lib/ambientAudio.ts — a Web Audio graph, for the sample-accurate
-          loop seam — so it survives client-side navigation and can be started
-          from the gate's submit handler while the click gesture is still
-          active.) */}
 
       {/* Floating "+" pill — appears at the TOP CENTER when the header is minimized.
           Wrapped in a flex-center row so the centering is independent of the

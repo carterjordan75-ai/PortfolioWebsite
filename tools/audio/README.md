@@ -124,3 +124,13 @@ fetched a name keeps that version forever. Returning visitors were
 stranded on old audio exactly this way once. The AAC's 2112-sample priming is handled at runtime by
 `src/lib/ambientAudio.ts`, which picks loop points from the decoded
 duration — see the comments there before changing the encode.
+
+## Removed from the site (2026-10-25)
+
+The home page no longer plays the loop: `src/lib/ambientAudio.ts`, the
+`public/assets/audio/` asset, the nav audio toggle and the gate-submit
+start call were all deleted on request. This folder keeps the full
+composer pipeline. To bring the sound back, restore `ambientAudio.ts`
+and the Navigation/gate wiring from git history (removed in the commit
+titled "The home page goes quiet"), then run compose.py + install.py
+as above — install.py fails loudly until that module exists again.
