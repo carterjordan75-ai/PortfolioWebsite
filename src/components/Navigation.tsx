@@ -202,9 +202,13 @@ export default function Navigation() {
         className={`fixed left-0 right-0 px-6 py-4 md:px-10 md:py-5 ${isWhitePage ? 'archive-nav top-2 mx-2' : 'mix-blend-difference top-0'}`}
         style={{ zIndex: 10000 }}
       >
-        {/* Centered cluster — info / audio toggles on top, minimize control underneath */}
+        {/* Centered cluster — toggles on top, minimize control underneath.
+            items-start, not items-center: the dash must sit directly under
+            the INFO button (always the row's first 30px slot), not under
+            the midpoint of however many toggles the page happens to show —
+            with two buttons a centered dash lands 25px off the ⓘ. */}
         {isWhitePage && (
-          <div className="hidden md:flex flex-col items-center gap-2 absolute top-6" style={{ left: '50%', transform: 'translateX(-50%)' }}>
+          <div className="hidden md:flex flex-col items-start gap-2 absolute top-6" style={{ left: '50%', transform: 'translateX(-50%)' }}>
           <div id="archive-toggle-mount" className="flex items-center justify-center gap-5">
             {/* Info button — classic circled i. Always first / leftmost.
                 Matches the Index/Misc/Look nav-link opacity scale (50% → 70% on hover). */}
