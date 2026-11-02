@@ -75,11 +75,10 @@ function MediaPanel({
   const [hasAudio, setHasAudio] = useState(false)
   // Gallery view — when true, the panel shows a grid of all items in this side
   // instead of the auto-cycling slideshow.
-  // Default to slideshow (full-side single item). Gallery icon toggles to
-  // grid. Previously default-on gallery view was a workaround for missing-
-  // media; the actual fix landed on /api/misc + project-media surfacing so
-  // we can go back to the cleaner slideshow on load.
-  const [galleryView, setGalleryView] = useState(false)
+  // Default to the GRID on both sides — a deliberate choice this time, not
+  // the old missing-media workaround: the page should open as a browsable
+  // wall, with the slideshow one icon-tap away.
+  const [galleryView, setGalleryView] = useState(true)
   // Which thumbnail (if any) is currently hovered in the gallery grid. Drives
   // a magnetic-repulsion effect on the surrounding tiles — every other tile
   // gets pushed away from the hovered one, with the push amount falling off
