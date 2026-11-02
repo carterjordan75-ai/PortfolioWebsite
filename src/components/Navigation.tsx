@@ -517,16 +517,21 @@ export default function Navigation() {
                                 animate={{ opacity: 1 }}
                                 transition={{ delay: 0.2 }}
                               >
+                                {/* A BUTTON on sight, not a whisper of a link:
+                                    bordered pill in the panel's own visual
+                                    language, leading to the full index. */}
                                 <Link
                                   href="/indexx"
                                   onClick={() => setIndexHover(false)}
-                                  className="text-[8px] uppercase tracking-[0.12em] font-bold hover:opacity-80 hover:scale-110 inline-block origin-left"
+                                  className="inline-flex items-center text-[8px] uppercase tracking-[0.14em] font-bold px-2.5 py-1 rounded-full hover:opacity-90 hover:scale-105 origin-left"
                                   style={{
-                                    opacity: 0.35,
+                                    opacity: 0.55,
+                                    border: `1px solid ${dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)'}`,
+                                    background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
                                     transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out',
                                   }}
                                 >
-                                  See all projects →
+                                  See more →
                                 </Link>
                               </motion.div>
                             </div>
