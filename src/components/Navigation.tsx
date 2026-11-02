@@ -57,17 +57,19 @@ export default function Navigation() {
     }
     setTipHover(href)
   }
-  // Active bucket inside the Index hover dropdown. 'gen' is first and the
-  // default (visible on open); '3d' is the secondary bucket.
-  const [indexCategory, setIndexCategory] = useState<'3d' | 'gen'>('gen')
   // Header minimize state. Only available on the home page. When true, the
   // header slides off-screen and a small floating pill in the top-center
   // restores it on click.
   const [headerMinimized, setHeaderMinimized] = useState(false)
-  const [featuredProjects, setFeaturedProjects] = useState(projects.filter(p => p.featured))
+  // The WHOLE project set, not just featured: the Index dropdown is a
+  // curated list of names now, and a name shouldn't vanish because its
+  // project lost the featured flag. The full set is also the correct
+  // second argument for projectHref, which disambiguates numbered brand
+  // URLs (/nike-2) against siblings — featured-only could miscount.
+  const [allProjects, setAllProjects] = useState(projects)
   const router = useRouter()
 
-  // Fetch latest featured projects from API (includes admin-added ones).
+  // Fetch latest projects from API (includes admin-added ones).
   // Wrapped so it can re-run — a single mount-time fetch left the dropdown
   // stale when a project was added via the admin modal (no reload happens),
   // so we also refetch every time the INDEX dropdown opens and whenever an
@@ -76,9 +78,8 @@ export default function Navigation() {
     fetch('/api/projects', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => {
-        if (data.projects) {
-          const featured = data.projects.filter((p: Record<string, unknown>) => p.featured)
-          if (featured.length > 0) setFeaturedProjects(featured)
+        if (data.projects && data.projects.length > 0) {
+          setAllProjects(data.projects)
         }
       })
       .catch(() => {})
@@ -458,79 +459,19 @@ export default function Navigation() {
                           }}
                         >
                           <div className="py-2 px-1">
-                            {/* GENAI / 3D switch — picks which bucket of featured
-                                projects the dropdown lists.
-
-                                Drawn as a segmented control inside its own
-                                bordered track. The two labels used to sit bare
-                                on the panel with the inactive one at 0.3 alpha,
-                                which read as a heading you couldn't do anything
-                                with — nothing said the dim word was a control
-                                until you happened to hover it. The track outline
-                                makes it a switch on sight, and the inactive
-                                segment is legible now rather than a ghost. */}
-                            <div className="px-3 py-1 mb-1">
-                              <div
-                                role="tablist"
-                                aria-label="Project category"
-                                className="inline-flex items-center gap-0.5 p-0.5 rounded-full"
-                                style={{
-                                  border: `1px solid ${dark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.12)'}`,
-                                  background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                                }}
-                              >
-                                {([
-                                  { cat: 'gen', label: 'GenAI' },
-                                  { cat: '3d', label: '3D' },
-                                ] as const).map(({ cat, label }) => {
-                                  const active = indexCategory === cat
-                                  return (
-                                    <button
-                                      key={cat}
-                                      role="tab"
-                                      aria-selected={active}
-                                      onClick={() => setIndexCategory(cat)}
-                                      onMouseEnter={(e) => {
-                                        if (active) return
-                                        e.currentTarget.style.opacity = '1'
-                                        e.currentTarget.style.background = dark
-                                          ? 'rgba(255,255,255,0.09)'
-                                          : 'rgba(0,0,0,0.06)'
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        if (active) return
-                                        e.currentTarget.style.opacity = '0.6'
-                                        e.currentTarget.style.background = 'transparent'
-                                      }}
-                                      className="text-[8px] uppercase tracking-[0.16em] font-bold px-2.5 py-1 rounded-full cursor-pointer"
-                                      style={{
-                                        color: active
-                                          ? (dark ? '#0a0a0a' : '#ffffff')
-                                          : (dark ? '#fff' : '#000'),
-                                        opacity: active ? 1 : 0.6,
-                                        background: active
-                                          ? (dark ? '#ffffff' : '#000000')
-                                          : 'transparent',
-                                        transition: 'opacity 0.18s ease-out, background 0.18s ease-out, color 0.18s ease-out',
-                                      }}
-                                    >
-                                      {label}
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            </div>
                             {(() => {
-                              // Filter featured projects by the active category. Projects
-                              // without a `category` field default to '3d' so existing
-                              // data continues to show under the 3D bucket.
-                              // Clients explicitly hidden from this dropdown
-                              const HIDDEN_CLIENTS = new Set(['KFC', 'CAT'])
-                              const visible = featuredProjects.filter((p) => {
-                                if (HIDDEN_CLIENTS.has(p.client)) return false
-                                const cat = ((p as Record<string, unknown>).category as string | undefined) || '3d'
-                                return cat === indexCategory
-                              })
+                              // No buckets, no switch: the dropdown is a CURATED
+                              // list — these six names, this order. Matching
+                              // against the fetched projects is loose (case and
+                              // punctuation ignored) so admin spellings like
+                              // "XUOXE" or "Tiffany & Co." still land; a name
+                              // with no matching project is skipped until the
+                              // data catches up.
+                              const WANTED = ['Softboys', 'Tiffany & Co', 'Heartbreak Hotel', 'Nike', 'Xuoxe', 'Vessels']
+                              const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+                              const visible = WANTED
+                                .map((name) => allProjects.find((p) => norm(p.client) === norm(name)))
+                                .filter((p): p is (typeof allProjects)[number] => !!p)
                               if (visible.length === 0) {
                                 return (
                                   <div className="px-3 py-3 text-center">
@@ -542,11 +483,11 @@ export default function Navigation() {
                               }
                               return visible.map((p, i) => (
                                 <motion.button
-                                  key={`${indexCategory}-${p.slug}`}
+                                  key={p.slug}
                                   initial={{ opacity: 0, x: -8 }}
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ duration: 0.25, delay: 0.08 + i * 0.04, ease: [0.16, 1, 0.3, 1] }}
-                                  onClick={() => { setIndexHover(false); router.push(projectHref(p, featuredProjects)) }}
+                                  onClick={() => { setIndexHover(false); router.push(projectHref(p, allProjects)) }}
                                   className="w-full text-left px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-[0.02em]"
                                   style={{
                                     color: dark ? '#fff' : '#000',
@@ -577,9 +518,7 @@ export default function Navigation() {
                                 transition={{ delay: 0.2 }}
                               >
                                 <Link
-                                  // GEN tab → category-filtered index page;
-                                  // 3D tab → full /indexx with both buckets.
-                                  href={indexCategory === 'gen' ? '/indexx?cat=gen' : '/indexx'}
+                                  href="/indexx"
                                   onClick={() => setIndexHover(false)}
                                   className="text-[8px] uppercase tracking-[0.12em] font-bold hover:opacity-80 hover:scale-110 inline-block origin-left"
                                   style={{
@@ -587,7 +526,7 @@ export default function Navigation() {
                                     transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out',
                                   }}
                                 >
-                                  {indexCategory === 'gen' ? 'See all generative →' : 'See all projects →'}
+                                  See all projects →
                                 </Link>
                               </motion.div>
                             </div>
