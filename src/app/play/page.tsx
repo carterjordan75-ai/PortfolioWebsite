@@ -18,8 +18,7 @@ export default function PlayPage() {
     <PageTransition>
       <div className="flex min-h-screen flex-col" style={{ background: dark ? '#0a0a0a' : '#f5f5f0', color: fg }}>
         <main className="flex-1 px-6 md:px-10 pt-36 pb-24">
-          <h1 className="text-[clamp(64px,14vw,220px)] leading-none font-bold tracking-[-0.06em]">Play</h1>
-          <p className="mt-8 text-[11px] uppercase tracking-[0.12em]" style={{ color: fg60 }}>Experimental work.</p>
+          <p className="text-[11px] uppercase tracking-[0.12em]" style={{ color: fg60 }}>Experimental work.</p>
           <section className="mt-16" aria-labelledby="gel-title">
             <div className="mb-4 flex items-center justify-between gap-4 text-[10px] uppercase tracking-[0.12em]" style={{ color: fg60 }}>
               <h2 id="gel-title">Gel</h2>
