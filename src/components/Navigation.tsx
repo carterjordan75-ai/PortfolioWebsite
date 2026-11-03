@@ -16,7 +16,7 @@ const hoverColors = [
   '#fb5607', '#3a86ff', '#8338ec', '#ff006e', '#38b000',
 ]
 
-const navItems: { href: string; label: string; description?: string }[] = [
+const navItems: { href: string; label: string; description?: string; xuoxe?: boolean }[] = [
   { href: '/indexx', label: 'Index' },
   {
     href: '/misc',
@@ -24,11 +24,19 @@ const navItems: { href: string; label: string; description?: string }[] = [
     description: 'A collection of images from projects, experiments and stills — in no particular order.',
   },
   {
-    href: '/play',
-    label: 'Play',
-    description: 'Experimental work, interactive pieces and ongoing explorations.',
+    href: 'https://xuoxe.com',
+    label: 'XUOXE',
+    xuoxe: true,
   },
 ]
+
+function XuoxeMark({ size = 26 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="-235 -235 470 470" aria-hidden="true" focusable="false">
+      <path d="M101,61L140,61A61,61,0,0,0,140,-61L101,-61A40,40,0,0,1,61,-101L61,-140A61,61,0,0,0,-61,-140L-61,-101A40,40,0,0,1,-101,-61L-140,-61A61,61,0,0,0,-140,61L-101,61A40,40,0,0,1,-61,101L-61,140A61,61,0,0,0,61,140L61,101A40,40,0,0,1,101,61Z" transform="rotate(45)" fill="currentColor" />
+    </svg>
+  )
+}
 
 export default function Navigation() {
   const pathname = usePathname()
@@ -334,7 +342,12 @@ export default function Navigation() {
             {/* Desktop nav */}
             <nav className={`hidden md:flex items-center gap-8 ${isWhitePage ? '' : 'text-white'}`}>
               {navItems.map((item) => (
-                item.href === '/indexx' ? (
+                item.xuoxe ? (
+                  <a key={item.href} href={item.href} aria-label="XUOXE" title="XUOXE"
+                    className="inline-flex items-center justify-center opacity-50 hover:opacity-100 hover:scale-110 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4">
+                    <XuoxeMark />
+                  </a>
+                ) : item.href === '/indexx' ? (
                   <div
                     key={item.href}
                     ref={indexWrapperRef}
@@ -765,13 +778,15 @@ export default function Navigation() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
               >
-                <Link
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className="text-3xl font-bold tracking-wide"
-                >
-                  {item.label}
-                </Link>
+                {item.xuoxe ? (
+                  <a href={item.href} aria-label="XUOXE" onClick={() => setMobileOpen(false)} className="inline-flex items-center justify-center">
+                    <XuoxeMark size={44} />
+                  </a>
+                ) : (
+                  <Link href={item.href} onClick={() => setMobileOpen(false)} className="text-3xl font-bold tracking-wide">
+                    {item.label}
+                  </Link>
+                )}
               </motion.div>
             ))}
           </motion.div>
