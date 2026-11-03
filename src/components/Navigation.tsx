@@ -24,9 +24,9 @@ const navItems: { href: string; label: string; description?: string }[] = [
     description: 'A collection of images from projects, experiments and stills — in no particular order.',
   },
   {
-    href: '/look',
-    label: 'Look',
-    description: 'Moodboard of references that feed the work.',
+    href: '/play',
+    label: 'Play',
+    description: 'Experimental work, interactive pieces and ongoing explorations.',
   },
 ]
 
@@ -36,7 +36,7 @@ export default function Navigation() {
   const { dark, setDark, fg } = useDarkMode()
   const [indexHover, setIndexHover] = useState(false)
   // Tooltip hover — keyed by href. Only one nav item can be hovered at a
-  // time, so a single string-or-null state covers Misc + Look (and any
+  // time, so a single string-or-null state covers Misc + Play (and any
   // future nav item that supplies a `description`).
   const [tipHover, setTipHover] = useState<string | null>(null)
   // Distance to slide the tooltip LEFT so it lines up under the INDEX
@@ -154,8 +154,8 @@ export default function Navigation() {
     (pathname.startsWith('/work/') && pathname !== '/work') ||
     (segs.length === 1 && !RESERVED.has(segs[0]))
   const isExperiments = pathname === '/misc'
-  const isLook = pathname === '/look'
-  const isWhitePage = isArchive || isWork || isExperiments || isProjectPage || isLook
+  const isPlay = pathname === '/play'
+  const isWhitePage = isArchive || isWork || isExperiments || isProjectPage || isPlay
 
   // Reset Info popup's expanded state whenever it closes
   useEffect(() => {
@@ -212,7 +212,7 @@ export default function Navigation() {
           <div className="hidden md:flex flex-col items-start gap-2 absolute top-6" style={{ left: '50%', transform: 'translateX(-50%)' }}>
           <div id="archive-toggle-mount" className="flex items-center justify-center gap-5">
             {/* Info button — classic circled i. Always first / leftmost.
-                Matches the Index/Misc/Look nav-link opacity scale (50% → 70% on hover). */}
+                Matches the Index/Misc/Play nav-link opacity scale (50% → 70% on hover). */}
             <button
               onClick={(e) => { e.stopPropagation(); setShowInfo(true); setInfoDismissable(false); setTimeout(() => setInfoDismissable(true), 300) }}
               className="flex items-center justify-center rounded-full flex-shrink-0 opacity-50 hover:opacity-70 hover:scale-110"
@@ -366,7 +366,7 @@ export default function Navigation() {
                     >
                       {item.label}
                     </Link>
-                    {/* Click-affordance line — same idea as Misc/Look: the
+                    {/* Click-affordance line — same idea as Misc/Play: the
                         INDEX label drops down on hover, but a thin line
                         stays at the original position so the user can still
                         click through without chasing the dropped label. */}
@@ -541,7 +541,7 @@ export default function Navigation() {
                     </AnimatePresence>
                   </div>
                 ) : item.description ? (
-                  // Items with a description (Misc, Look) get the same
+                  // Items with a description (Misc, Play) get the same
                   // "drop down" hover motion as INDEX: the label slides
                   // down + scales up while a small description tooltip
                   // animates open beneath. Bridge div fills the visual
@@ -639,7 +639,7 @@ export default function Navigation() {
                           transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
                           // Anchored to INDEX's wrapper position via tipOffset
                           // (measured synchronously on hover-enter). That way
-                          // the Misc/Look description box appears at the same
+                          // the Misc/Play description box appears at the same
                           // screen X as the INDEX dropdown, matching its
                           // box position exactly.
                           className="absolute top-full mt-[38px] rounded-xl overflow-hidden"

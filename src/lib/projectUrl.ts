@@ -15,7 +15,7 @@
 
 /** Route segments that already mean something. A project cannot take one. */
 export const RESERVED = new Set([
-  'work', 'indexx', 'misc', 'look', 'gate', 'logo', 'character', 'loaders',
+  'work', 'indexx', 'misc', 'look', 'play', 'gate', 'logo', 'character', 'loaders',
   'dailies', 'mobile-lock', 'api', '_next', 'assets', 'placeholder', 'favicon',
 ])
 

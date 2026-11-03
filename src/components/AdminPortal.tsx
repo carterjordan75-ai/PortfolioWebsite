@@ -132,7 +132,7 @@ export default function AdminPortal({ show, onClose }: { show: boolean; onClose:
     { id: 'archive', label: 'Index / Archive' },
     { id: 'employment', label: 'Employment' },
     { id: 'experiments', label: 'Misc' },
-    { id: 'look', label: 'Look Gallery' },
+    { id: 'look', label: 'Look Archive' },
     { id: 'info', label: 'Info / About' },
     { id: 'logo', label: 'Logo' },
     { id: 'loaders', label: 'Loaders' },
@@ -1803,7 +1803,7 @@ function LookUploadPanel() {
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-white text-[14px] font-bold uppercase tracking-[0.1em]">Look Gallery</h2>
+        <h2 className="text-white text-[14px] font-bold uppercase tracking-[0.1em]">Look Archive</h2>
         <div className="flex items-center gap-3">
           <button
             onClick={handlePinterestSync}
@@ -1813,9 +1813,7 @@ function LookUploadPanel() {
           >
             {pinSyncing ? '⏳ Syncing…' : '↻ Sync Pinterest'}
           </button>
-          <a href="/look" target="_blank" className="text-white/30 text-[8px] uppercase tracking-[0.1em] hover:text-white/60 transition-colors">
-            View Page →
-          </a>
+          <span className="text-white/30 text-[8px] uppercase tracking-[0.1em]">Archived — hidden from site</span>
         </div>
       </div>
       {pinSyncStatus && (
