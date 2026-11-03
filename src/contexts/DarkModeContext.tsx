@@ -38,8 +38,7 @@ export function DarkModeProvider({ children }: { children: ReactNode }) {
   // Home page (`/`) is always rendered in light mode, regardless of the user's
   // saved preference. Toggling dark mode on Index/Misc still works, but doesn't
   // bleed onto the home page where the design assumes a light backdrop.
-  // Play always uses dark mode without changing the saved preference.
-  const dark = pathname === '/play' ? true : pathname === '/' ? false : darkPref
+  const dark = pathname === '/' ? false : darkPref
 
   // Persist preference + sync body class to the EFFECTIVE dark state (so the
   // home page gets archive-light styling even when the user's stored pref is dark).
