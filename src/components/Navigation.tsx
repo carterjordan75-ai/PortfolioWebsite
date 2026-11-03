@@ -343,7 +343,7 @@ export default function Navigation() {
             <nav className={`hidden md:flex items-center gap-8 ${isWhitePage ? '' : 'text-white'}`}>
               {navItems.map((item) => (
                 item.xuoxe ? (
-                  <a key={item.href} href={item.href} aria-label="XUOXE" title="XUOXE"
+                  <a key={item.href} href={item.href} target="_blank" rel="noopener noreferrer" aria-label="XUOXE (opens in a new tab)" title="XUOXE"
                     className="inline-flex items-center justify-center opacity-50 hover:opacity-100 hover:scale-110 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4">
                     <XuoxeMark />
                   </a>
@@ -779,7 +779,7 @@ export default function Navigation() {
                 transition={{ delay: i * 0.05 }}
               >
                 {item.xuoxe ? (
-                  <a href={item.href} aria-label="XUOXE" onClick={() => setMobileOpen(false)} className="inline-flex items-center justify-center">
+                  <a href={item.href} target="_blank" rel="noopener noreferrer" aria-label="XUOXE (opens in a new tab)" onClick={() => setMobileOpen(false)} className="inline-flex items-center justify-center">
                     <XuoxeMark size={44} />
                   </a>
                 ) : (
