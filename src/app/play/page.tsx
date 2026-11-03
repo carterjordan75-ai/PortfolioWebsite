@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { gelHtml } from './gel'
 import PageTransition from '@/components/PageTransition'
 import EmailPopup from '@/components/EmailPopup'
 import AdminPortal from '@/components/AdminPortal'
@@ -25,7 +26,7 @@ export default function PlayPage() {
               <span>Press &amp; drag</span>
             </div>
             <iframe
-              src="/play/gel-build-21.html"
+              srcDoc={gelHtml}
               title="Interactive XOXO gel — press and drag to deform the logo"
               className="w-full border-0"
               style={{ height: 'min(75vh, 900px)', minHeight: 420, background: '#000' }}
