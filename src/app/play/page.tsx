@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { gelHtml } from './gel'
 import EmailPopup from '@/components/EmailPopup'
 import AdminPortal from '@/components/AdminPortal'
@@ -25,7 +25,6 @@ export default function PlayPage() {
   const infoPanel = useRef<HTMLDivElement>(null)
   const piece = experiments[index]
   const background = dark ? '#0a0a0a' : '#f5f5f0'
-  const themedHtml = useMemo(() => piece.html.replaceAll('#0a0a0a', background), [piece.html, background])
   const circle = { border: `1.5px solid ${borderThick}`, color: fg }
   const buttonClass = 'w-14 h-14 rounded-full flex items-center justify-center text-[8px] uppercase tracking-[0.1em] font-bold hover:scale-105 transition-transform'
   const closeExpanded = useCallback(() => {
@@ -73,7 +72,7 @@ export default function PlayPage() {
         }}>
         <div className="play-row">
           <article key={piece.id} className="play-panel" aria-roledescription="slide" aria-label={`${index + 1} of ${experiments.length}: ${piece.title}`}>
-            <iframe ref={interactiveFrame} key={`${piece.id}-${expanded}`} srcDoc={themedHtml}
+            <iframe ref={interactiveFrame} key={`${piece.id}-${expanded}`} srcDoc={piece.html}
               title={expanded ? `Interactive ${piece.title} — press and drag` : `${piece.title} preview`}
               tabIndex={expanded ? 0 : -1} aria-hidden={!expanded} className={expanded ? 'play-interactive' : 'play-preview'} />
             {!expanded && <button ref={openButton} type="button" className="play-open"
@@ -120,7 +119,7 @@ export default function PlayPage() {
         .play-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 104px 24px 22px; perspective: 1200px; }
         .play-row { width: min(72vw, calc(100svh - 270px)); aspect-ratio: 1; position: relative; }
         .play-panel { width: 100%; height: 100%; position: relative; border-radius: 16px; overflow: hidden; background: var(--play-bg); border: 1px solid var(--play-line); box-shadow: 0 24px 80px var(--play-shadow); }
-        .play-preview, .play-interactive { display: block; width: 100%; height: 100%; border: 0; background: var(--play-bg); }
+        .play-preview, .play-interactive { display: block; width: 100%; height: 100%; border: 0; background: #000; }
         .play-preview { pointer-events: none; }
         .play-open { position: absolute; inset: 0; width: 100%; cursor: pointer; border: 0; background: transparent; color: var(--play-fg); }
         button:focus-visible { outline: 2px solid var(--play-fg); outline-offset: -4px; }
