@@ -19,6 +19,18 @@ export default function PlayPage() {
         <main className="flex-1 px-6 md:px-10 pt-36 pb-24">
           <h1 className="text-[clamp(64px,14vw,220px)] leading-none font-bold tracking-[-0.06em]">Play</h1>
           <p className="mt-8 text-[11px] uppercase tracking-[0.12em]" style={{ color: fg60 }}>Experimental work.</p>
+          <section className="mt-16" aria-labelledby="gel-title">
+            <div className="mb-4 flex items-center justify-between gap-4 text-[10px] uppercase tracking-[0.12em]" style={{ color: fg60 }}>
+              <h2 id="gel-title">Gel</h2>
+              <span>Press &amp; drag</span>
+            </div>
+            <iframe
+              src="/play/gel-build-21.html"
+              title="Interactive XOXO gel — press and drag to deform the logo"
+              className="w-full border-0"
+              style={{ height: 'min(75vh, 900px)', minHeight: 420, background: '#000' }}
+            />
+          </section>
         </main>
         <footer className="px-6 md:px-10 py-5" style={{ borderTop: `3px solid ${borderThick}` }}>
           <div className="flex items-center justify-between gap-4">
