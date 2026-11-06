@@ -12,9 +12,11 @@
  *   - The first call lazy-loads @ffmpeg/ffmpeg + the @ffmpeg/core WASM from
  *     unpkg (~30 MB, cached by the browser).
  *   - The single-threaded core is used so we don't need COOP/COEP headers.
- *   - Each conversion uses VP9 at CRF 35 with `cpu-used 5` / `deadline good`
- *     — a sane speed/quality tradeoff for portfolio video. Audio is Opus
- *     at 128 kbps.
+ *   - Conversions encode VP8 (see convertMp4ToWebm for why not VP9) at one
+ *     of two quality tiers: 'standard' for bulk project/gallery media, and
+ *     'hero' for the full-screen home videos, where the standard bitrate
+ *     visibly banded smooth gradients. Callers can also ask for 'original'
+ *     via prepareForUpload to skip video conversion entirely.
  *   - On any failure we fall through and upload the original MP4 unchanged.
  *
  * Callers should treat this as a black-box "pre-upload" pass: hand it a
@@ -85,6 +87,18 @@ export function isMp4(file: File): boolean {
   return /\.mp4$/i.test(file.name) || file.type === 'video/mp4'
 }
 
+export type VideoQuality = 'standard' | 'hero'
+
+// Encoder budget per tier. 'standard' is the long-standing tradeoff for bulk
+// uploads. 'hero' exists because 1.5 Mbps VP8 visibly bands the smooth
+// airbrushed gradients on the full-screen home videos (the 2026-11 pinball
+// upload came out crushed); 4× the budget keeps those gradients clean while
+// still shrinking a multi-hundred-MB master to web weight.
+const VIDEO_QUALITY: Record<VideoQuality, { bv: string; crf: string }> = {
+  standard: { bv: '1500k', crf: '30' },
+  hero: { bv: '6000k', crf: '12' },
+}
+
 /**
  * Convert an MP4 File to a WebM File. Throws on failure (caller should
  * catch and fall back to uploading the original).
@@ -93,6 +107,7 @@ export async function convertMp4ToWebm(
   file: File,
   onProgress?: (ratio: number) => void,
   onStatus?: (msg: string) => void,
+  quality: VideoQuality = 'standard',
 ): Promise<File> {
   const { fetchFile } = await import('@ffmpeg/util')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,10 +140,9 @@ export async function convertMp4ToWebm(
       '-vf', "scale='min(1920,iw)':-2",
       '-c:v', 'libvpx',
       // VP8 needs an explicit target bitrate even when using CRF — without
-      // -b:v it caps quality very low. 1.5 Mbps is a sensible default for
-      // 1080p web video.
-      '-b:v', '1500k',
-      '-crf', '30',
+      // -b:v it caps quality very low. The tier decides the budget.
+      '-b:v', VIDEO_QUALITY[quality].bv,
+      '-crf', VIDEO_QUALITY[quality].crf,
       '-cpu-used', '3',
       '-deadline', 'good',
       '-c:a', 'libvorbis',
@@ -171,14 +185,20 @@ export async function convertMp4ToWebm(
 export async function prepareForUpload(
   file: File,
   onStatus?: (msg: string) => void,
+  opts?: { video?: VideoQuality | 'original' },
 ): Promise<File> {
   if (isMp4(file)) {
+    if (opts?.video === 'original') {
+      onStatus?.(`✓ Keeping ${file.name} at original quality`)
+      return file
+    }
     onStatus?.(`Preparing ${file.name}…`)
     try {
       const converted = await convertMp4ToWebm(
         file,
         (ratio) => onStatus?.(`Converting ${file.name} — ${Math.round(ratio * 100)}%`),
         onStatus,
+        opts?.video,
       )
       onStatus?.(`✓ Converted ${file.name} → ${converted.name}`)
       return converted

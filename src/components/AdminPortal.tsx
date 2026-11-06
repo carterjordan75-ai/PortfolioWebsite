@@ -468,8 +468,15 @@ function HomePagePanel() {
     // Direct-to-Blob upload (browser PUTs straight to Vercel Blob, bypassing
     // the 4.5 MB Vercel-Hobby function-payload cap that was rejecting the
     // larger home videos through /api/upload).
-    // MP4s are auto-converted to WebM in the browser before upload.
-    const ready = await prepareForUpload(pendingFile, (msg) => setStatus(msg))
+    //
+    // Home videos are the site's full-screen hero, so quality beats weight
+    // here: an already-web-sized MP4 uploads untouched, and only oversized
+    // masters are converted — at the hero bitrate, because the standard
+    // 1.5 Mbps tier visibly banded the airbrushed gradients.
+    const HERO_PASSTHROUGH_MAX = 25 * 1024 * 1024
+    const ready = await prepareForUpload(pendingFile, (msg) => setStatus(msg), {
+      video: isMp4(pendingFile) && pendingFile.size <= HERO_PASSTHROUGH_MAX ? 'original' : 'hero',
+    })
     const slugify = (s: string) =>
       s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'video'
     const extMatch = ready.name.match(/\.[^.]+$/)
