@@ -16,7 +16,8 @@ import ProjectMediaPanel, { type ProjectMediaItem } from '@/components/ProjectMe
 import ProjectLinks, { type ProjectLink } from '@/components/ProjectLinks'
 import PageLoader from '@/components/PageLoader'
 import { useEditMode } from '@/contexts/EditModeContext'
-import { resolveProject, brandIn } from '@/lib/projectUrl'
+import { resolveProject, brandIn, projectHref } from '@/lib/projectUrl'
+import { hoverColors } from '@/lib/indexPalette'
 
 // Client logo mapping
 const clientLogos: Record<string, { src: string; width: number; height: number }> = {
@@ -83,6 +84,9 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   // Press links, same deal — local so the inline editor reflects a change
   // immediately instead of waiting on a refetch.
   const [localLinks, setLocalLinks] = useState<ProjectLink[]>([])
+  // Which row of the miniature index (bottom of the left panel) is under
+  // the cursor. Slug, not index: the list is derived fresh each render.
+  const [indexHoverSlug, setIndexHoverSlug] = useState<string | null>(null)
 
   // Scroll-driven audio: only one inline video plays audio at a time —
   // whichever is most centered in the right-column scroll container.
@@ -622,17 +626,55 @@ Contact: carterjordan75@gmail.com`
                 <span className="text-[9px] tracking-[0.1em] uppercase" style={{ opacity: 0.35 }}>© 2026</span>
               </div>
 
-              {/* Nav — the index, and only the index.
-                  There used to be previous/next arrows flanking this,
-                  paging one project to the next. They are gone
-                  deliberately: which projects are on show is a decision
-                  made in one place, and a reader who can walk sideways
-                  out of a project is not reading the set that decision
-                  produced. Going back to the index to choose again is
-                  the whole navigation. */}
-              <div className="flex justify-center items-center pt-3" style={{ borderTop: `1px solid ${rule}` }}>
-                <Link href="/indexx" className="text-[10px] uppercase tracking-[0.1em] font-bold hover:opacity-70 transition-opacity" style={{ opacity: 0.5 }}>Index</Link>
-              </div>
+              {/* Nav — the index, in place.
+                  There used to be previous/next arrows here, paging one
+                  project to the next; they stayed gone. Instead the
+                  featured set itself renders as miniature index rows —
+                  same row-per-colour hover treatment as /indexx, same
+                  palette, same order — so the next stop is chosen from
+                  the same set the index page curates. The row for the
+                  project being read holds its colour as a you-are-here. */}
+              {(() => {
+                const source = (adminAll.length ? adminAll : projects) as Array<
+                  Record<string, unknown> & { slug?: string; client?: string; title?: string; year?: number; featured?: boolean }
+                >
+                const featuredRows = source.filter(p => p.featured)
+                return (
+                  <div className="pt-3" style={{ borderTop: `1px solid ${rule}` }}>
+                    <div className="flex justify-center items-center mb-2">
+                      <Link href="/indexx" className="text-[10px] uppercase tracking-[0.1em] font-bold hover:opacity-70 transition-opacity" style={{ opacity: 0.5 }}>Index</Link>
+                    </div>
+                    <div style={{ borderTop: `1px solid ${rule}` }}>
+                      {featuredRows.map((p, i) => {
+                        const color = hoverColors[i % hoverColors.length]
+                        const isCurrent = p.slug === project.slug
+                        const lit = isCurrent || indexHoverSlug === p.slug
+                        return (
+                          <button
+                            key={String(p.slug)}
+                            onClick={() => { if (!isCurrent) router.push(projectHref(p, source)) }}
+                            onMouseEnter={() => setIndexHoverSlug(String(p.slug))}
+                            onMouseLeave={() => setIndexHoverSlug(s => (s === p.slug ? null : s))}
+                            className="w-full flex items-baseline justify-between gap-3 px-2 py-[7px] text-left"
+                            style={{
+                              background: lit ? color : 'transparent',
+                              color: lit ? '#ffffff' : undefined,
+                              borderBottom: `1px solid ${rule}`,
+                              cursor: isCurrent ? 'default' : 'pointer',
+                              transition: 'background 0.12s ease-out, color 0.12s ease-out',
+                            }}
+                          >
+                            <span className="text-[10px] uppercase tracking-[0.04em] font-black leading-tight truncate">
+                              {String(p.client || p.title || p.slug)}
+                            </span>
+                            <span className="text-[10px] font-black leading-tight">{String(p.year ?? '')}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           </div>
 

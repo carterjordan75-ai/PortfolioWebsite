@@ -16,11 +16,7 @@ import { useDarkMode } from '@/contexts/DarkModeContext'
 type SortOrder = 'latest' | 'earliest'
 type ClientSort = 'az' | 'za'
 
-const hoverColors = [
-  '#e94560', '#ff6b35', '#00b4d8', '#7209b7', '#06d6a0',
-  '#fb5607', '#3a86ff', '#8338ec', '#ff006e', '#38b000',
-  '#f72585', '#4cc9f0', '#ef476f', '#ffd166', '#118ab2',
-]
+import { hoverColors } from '@/lib/indexPalette'
 
 // Wrap the page in a Suspense boundary so useSearchParams can read query
 // params without forcing the whole tree out of static rendering.
