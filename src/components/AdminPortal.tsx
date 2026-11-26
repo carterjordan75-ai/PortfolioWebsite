@@ -14,7 +14,6 @@ import { upload } from '@vercel/blob/client'
 import { useEditMode } from '@/contexts/EditModeContext'
 import { downloadAssetsZip } from '@/lib/downloadZip'
 import { prepareForUpload, isMp4 } from '@/lib/convertVideo'
-import { deleteBlobUrls } from '@/lib/blobClient'
 import { mirrorToMisc } from '@/lib/miscMirror'
 import MediaLibraryPicker from './MediaLibraryPicker'
 
@@ -504,9 +503,13 @@ function HomePagePanel() {
   }
 
   const remove = (i: number) => {
-    const removedSrc = videos[i]?.src
+    // Remove the ROW only — never the file. Home rows frequently point at
+    // files shared from project folders (handleLibraryPick below), and
+    // project pages pull home-video files the same way, so deleting the
+    // blob here broke whichever other page still used it (this is what
+    // killed the Softboys hero in Nov 2026). Unused files are reclaimed in
+    // the Storage manager, which cross-checks references first.
     persist(videos.filter((_, idx) => idx !== i))
-    void deleteBlobUrls([removedSrc])
   }
 
   const move = (i: number, dir: -1 | 1) => {
@@ -894,17 +897,11 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
       if (data.success) {
         setProjects(data.projects)
         setStatus(`✓ Project ${action === 'add' ? 'added' : 'updated'}`)
-        // Diff vs originals to find media + logo Blobs that are no longer
-        // referenced and free them. (Only runs on an edit since `add` has
-        // empty originals.)
-        const orig = originalAssetsRef.current
-        const keptPaths = new Set(mediaFiles.map(m => m.path))
-        const orphans: string[] = []
-        for (const p of orig.mediaPaths) {
-          if (!keptPaths.has(p)) orphans.push(p)
-        }
-        if (orig.logoPath && orig.logoPath !== logoPath) orphans.push(orig.logoPath)
-        void deleteBlobUrls(orphans)
+        // Dropped media/logo files are NOT deleted from Blob here: the same
+        // URL can be referenced from the home rotation, Misc or another
+        // project via the library picker, and a diff against one project's
+        // list can't see those. The Storage manager reclaims genuinely
+        // unused files after cross-checking every reference.
         resetForm()
       } else {
         setStatus(`✗ ${data.error || 'Unknown error'}`)
@@ -915,18 +912,11 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
   }
 
   const handleDelete = async (slug: string) => {
-    // Collect every Blob URL the project references — media items + logo +
-    // thumbnail + hero — so we can free them after the project record is
-    // removed.
-    const target = projects.find(p => p.slug === slug) as Record<string, unknown> | undefined
-    const blobs: Array<string | undefined> = []
-    if (target) {
-      const media = (target.media as Array<{ path?: string }> | undefined) || []
-      for (const m of media) blobs.push(m?.path)
-      blobs.push(target.logoPath as string | undefined)
-      blobs.push(target.thumbnail as string | undefined)
-      blobs.push(target.heroMedia as string | undefined)
-    }
+    // Removes the project RECORD only. Its files stay in Blob: library
+    // picks mean the home page, Misc or another project may still show
+    // them, and a wrong cascade here is unrecoverable (no trash). Reclaim
+    // space afterwards in the Storage manager, which cross-checks every
+    // reference before deleting.
     const res = await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -936,7 +926,6 @@ function IndexAdminPanel({ onClose }: { onClose: () => void }) {
     if (data.success) {
       setProjects(data.projects)
       setStatus('✓ Project removed')
-      void deleteBlobUrls(blobs)
     }
   }
 
@@ -2315,8 +2304,10 @@ function MiscUploadPanel() {
     setItems(updated)
     // Tombstone the removed URL so the /misc page's auto-surface fallback
     // can't re-add it from a featured project on next reload.
+    // The FILE is left in Blob on purpose: Misc items are usually mirrors
+    // of project uploads (same URL), so deleting the blob here gutted the
+    // project page too. The Storage manager reclaims unreferenced files.
     if (!(await saveItems(updated, removedSrc ? [removedSrc] : []))) return
-    void deleteBlobUrls([removedSrc])
     setStatus('✓ Removed')
     setTimeout(() => setStatus(null), 1500)
   }

@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { upload } from '@vercel/blob/client'
 import { downloadAssetsZip } from '@/lib/downloadZip'
 import { prepareForUpload } from '@/lib/convertVideo'
-import { deleteBlobUrls } from '@/lib/blobClient'
 import { mirrorToMisc } from '@/lib/miscMirror'
 import MediaLibraryPicker from './MediaLibraryPicker'
 
@@ -338,31 +337,22 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     }
   }
 
-  // Only cascade-delete a Blob URL if it lives in THIS project's own media
-  // folder — i.e. it was uploaded directly to this project. Items pulled in
-  // via the library picker have URLs in other folders (media/home-videos/,
-  // media/Misc/, media/projects/<other-slug>/) and are still referenced by
-  // their original location, so we leave their Blobs alone.
-  const isOwnedBlob = (url?: string): boolean => {
-    if (!url) return false
-    try {
-      const u = new URL(url)
-      return u.pathname.includes(`/media/projects/${slug}/`)
-    } catch {
-      return false
-    }
-  }
+  // Removing or replacing an item NEVER deletes the underlying Blob file.
+  // One file can be referenced from several places at once (the library
+  // picker shares URLs into the home rotation and other projects, and the
+  // Misc mirror shares project uploads into the gallery), and the old
+  // "free the Blob when its row goes" logic deleted files other pages were
+  // still showing — that's how the Softboys hero and a Xuoxe piece vanished
+  // in Nov 2026. Unused files are reclaimed deliberately in the admin
+  // Storage manager, which cross-checks references before deleting.
 
   const handleReplace = async (idx: number, file: File) => {
     setUploadingIdx(idx)
     setStatus(null)
-    const oldUrl = media[idx]?.path
     const item = await uploadFile(file)
     if (item) {
       const next = media.map((m, i) => i === idx ? item : m)
       await persist(next)
-      // Free the old Blob only if it belonged to this project.
-      if (isOwnedBlob(oldUrl)) void deleteBlobUrls([oldUrl])
       setStatus('✓ Replaced')
     } else {
       setStatus('✗ Replace failed')
@@ -373,11 +363,8 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
   }
 
   const handleDelete = async (idx: number) => {
-    const removed = media[idx]?.path
     const next = media.filter((_, i) => i !== idx)
     await persist(next)
-    // Only free the Blob if this project owns it. Library picks stay alive.
-    if (isOwnedBlob(removed)) void deleteBlobUrls([removed])
   }
 
   // Library picker added items — appended to the project's media list with
