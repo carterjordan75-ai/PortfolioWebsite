@@ -87,6 +87,17 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   // Which row of the miniature index (bottom of the left panel) is under
   // the cursor. Slug, not index: the list is derived fresh each render.
   const [indexHoverSlug, setIndexHoverSlug] = useState<string | null>(null)
+  // Resizable split between the text panel and the media column. The
+  // percentage drives a CSS variable on the row, so mobile (stacked)
+  // layout never sees it. Restored from localStorage after mount —
+  // never in the initializer, which would mismatch the server render.
+  const [splitPct, setSplitPct] = useState(33)
+  const [splitActive, setSplitActive] = useState(false)
+  const [splitHover, setSplitHover] = useState(false)
+  const splitRowRef = useRef<HTMLDivElement | null>(null)
+  // Only persist once the handle has actually been dragged this visit,
+  // so merely opening a page never writes the default over a saved split.
+  const splitTouched = useRef(false)
 
   // Scroll-driven audio: only one inline video plays audio at a time —
   // whichever is most centered in the right-column scroll container.
@@ -147,6 +158,31 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   useEffect(() => {
     void fetchAdminProject()
   }, [fetchAdminProject])
+
+  // Saved split, if any. Storage can throw (private windows) — the
+  // default third is always a fine answer.
+  useEffect(() => {
+    try {
+      const v = parseFloat(localStorage.getItem('xoxo_work_split') || '')
+      if (v >= 20 && v <= 60) setSplitPct(v)
+    } catch {}
+  }, [])
+
+  // Persist when a drag ends (splitActive falls with a touched handle);
+  // while dragging, the guard keeps this effect a no-op.
+  useEffect(() => {
+    if (splitActive || !splitTouched.current) return
+    try { localStorage.setItem('xoxo_work_split', splitPct.toFixed(2)) } catch {}
+  }, [splitActive, splitPct])
+
+  // No text selection while dragging — the pointer sweeps across the
+  // whole left panel's copy otherwise.
+  useEffect(() => {
+    if (!splitActive) return
+    const prev = document.body.style.userSelect
+    document.body.style.userSelect = 'none'
+    return () => { document.body.style.userSelect = prev }
+  }, [splitActive])
 
 
 
@@ -419,11 +455,22 @@ Contact: carterjordan75@gmail.com`
     <PageTransition>
       <div style={{ background: pageBg, color: fg, minHeight: '100vh' }}>
 
-        <div className="flex flex-col md:flex-row" style={{ height: '100vh', paddingTop: '68px' }}>
+        <div
+          ref={splitRowRef}
+          className="flex flex-col md:flex-row relative"
+          style={{
+            height: '100vh',
+            paddingTop: '68px',
+            // The split lives in a variable so only the md: row layout
+            // reads it — the stacked mobile columns stay full-width.
+            '--split-left': `${splitPct}%`,
+            '--split-right': `${100 - splitPct}%`,
+          } as React.CSSProperties}
+        >
 
-          {/* LEFT — 1/3 — format5-style, scrollbar on left via direction trick */}
+          {/* LEFT — resizable (default a third) — format5-style, scrollbar on left via direction trick */}
           <div
-            className="w-full md:w-[33%] overflow-y-auto flex-shrink-0"
+            className="w-full md:w-[var(--split-left)] overflow-y-auto flex-shrink-0"
             style={{ borderRight: `1px solid ${rule}`, direction: 'rtl' }}
           >
             <div ref={leftPanelRef} className="px-5 py-5 flex flex-col" style={{ direction: 'ltr', color: dark ? '#ffffff' : '#000000' }}>
@@ -678,11 +725,73 @@ Contact: carterjordan75@gmail.com`
             </div>
           </div>
 
-          {/* RIGHT — 2/3 — Media with expand. Gap between stacked items is
+          {/* Drag handle astride the split line. Invisible at rest (the
+              column border is the line); hovering brightens the line and
+              raises a grip pill, which is the entire affordance — the
+              site hides the native cursor, so col-resize would never
+              show. Pointer capture keeps the drag alive while the
+              pointer crosses videos; double-click returns to a third. */}
+          {(() => {
+            const lit = splitHover || splitActive
+            return (
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize panels"
+                className="hidden md:block absolute"
+                style={{ left: 'calc(var(--split-left) - 4px)', top: '68px', bottom: 0, width: 9, zIndex: 30, touchAction: 'none' }}
+                onPointerEnter={() => setSplitHover(true)}
+                onPointerLeave={() => setSplitHover(false)}
+                onPointerDown={(e) => {
+                  e.preventDefault()
+                  e.currentTarget.setPointerCapture(e.pointerId)
+                  splitTouched.current = true
+                  setSplitActive(true)
+                }}
+                onPointerMove={(e) => {
+                  if (!splitActive) return
+                  const row = splitRowRef.current
+                  if (!row) return
+                  const r = row.getBoundingClientRect()
+                  setSplitPct(Math.min(60, Math.max(20, ((e.clientX - r.left) / r.width) * 100)))
+                }}
+                onPointerUp={(e) => {
+                  e.currentTarget.releasePointerCapture?.(e.pointerId)
+                  setSplitActive(false)
+                }}
+                onDoubleClick={() => {
+                  setSplitPct(33)
+                  splitTouched.current = false
+                  try { localStorage.removeItem('xoxo_work_split') } catch {}
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 0, bottom: 0,
+                    width: lit ? 3 : 1,
+                    background: fg,
+                    opacity: lit ? (splitActive ? 0.85 : 0.5) : 0,
+                    transition: 'opacity 0.15s ease-out, width 0.15s ease-out',
+                  }}
+                />
+                <div
+                  style={{
+                    position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+                    width: 4, height: 36, borderRadius: 999,
+                    background: fg,
+                    opacity: lit ? 0.9 : 0,
+                    transition: 'opacity 0.15s ease-out',
+                  }}
+                />
+              </div>
+            )
+          })()}
+
+          {/* RIGHT — the rest — Media with expand. Gap between stacked items is
               4 (16px) and grouped-row gap is 3 (12px) so consecutive media
               don't read as a single edge-to-edge block. The page background
               shows through the gaps, providing a clean visual separator. */}
-          <div ref={rightColRef} className="w-full md:w-[67%] overflow-y-auto relative">
+          <div ref={rightColRef} className="w-full md:w-[var(--split-right)] overflow-y-auto relative">
             <div className="p-3 md:p-4 space-y-4">
 
               {/* Dynamic feed of admin-uploaded media. Consecutive items
