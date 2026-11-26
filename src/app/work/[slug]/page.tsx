@@ -91,7 +91,9 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   // percentage drives a CSS variable on the row, so mobile (stacked)
   // layout never sees it. Restored from localStorage after mount —
   // never in the initializer, which would mismatch the server render.
-  const [splitPct, setSplitPct] = useState(33)
+  // Default = the drag range's floor: the work leads, the text panel
+  // opens at its narrowest and is pulled wider when wanted.
+  const [splitPct, setSplitPct] = useState(20)
   const [splitActive, setSplitActive] = useState(false)
   const [splitHover, setSplitHover] = useState(false)
   const splitRowRef = useRef<HTMLDivElement | null>(null)
@@ -496,7 +498,7 @@ Contact: carterjordan75@gmail.com`
           } as React.CSSProperties}
         >
 
-          {/* LEFT — resizable (default a third) — format5-style, scrollbar on left via direction trick */}
+          {/* LEFT — resizable (opens at its narrowest; media leads) — format5-style, scrollbar on left via direction trick */}
           <div
             className="w-full md:w-[var(--split-left)] overflow-y-auto flex-shrink-0"
             style={{ borderRight: `1px solid ${rule}`, direction: 'rtl' }}
@@ -758,7 +760,8 @@ Contact: carterjordan75@gmail.com`
               raises a grip pill, which is the entire affordance — the
               site hides the native cursor, so col-resize would never
               show. Pointer capture keeps the drag alive while the
-              pointer crosses videos; double-click returns to a third. */}
+              pointer crosses videos; double-click returns the default
+              media-maxed split. */}
           {(() => {
             const lit = splitHover || splitActive || showSplitHint
             return (
@@ -789,7 +792,7 @@ Contact: carterjordan75@gmail.com`
                   setSplitActive(false)
                 }}
                 onDoubleClick={() => {
-                  setSplitPct(33)
+                  setSplitPct(20)
                   splitTouched.current = false
                   try { localStorage.removeItem('xoxo_work_split') } catch {}
                 }}
