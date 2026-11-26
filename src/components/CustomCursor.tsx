@@ -14,7 +14,13 @@ export default function CustomCursor() {
   const hovering = mode === 'hover'
 
   useEffect(() => {
-    const move = (e: MouseEvent) => {
+    // Pointer events, not mouse events: a drag that takes pointer
+    // capture and preventDefaults its pointerdown (the project-page
+    // split handle does both) suppresses every compatibility mousemove,
+    // which froze this cursor in place for the whole drag. pointermove
+    // keeps firing throughout.
+    const move = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return
       const x = `${e.clientX}px`
       const y = `${e.clientY}px`
       if (dotRef.current) { dotRef.current.style.left = x; dotRef.current.style.top = y }
@@ -22,7 +28,8 @@ export default function CustomCursor() {
       if (arrowsRef.current) { arrowsRef.current.style.left = x; arrowsRef.current.style.top = y }
     }
 
-    const checkHover = (e: MouseEvent) => {
+    const checkHover = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return
       const target = e.target as HTMLElement
       if (target.closest('[data-cursor="col-resize"]')) {
         setMode('resize')
@@ -32,11 +39,11 @@ export default function CustomCursor() {
       setMode(isClickable ? 'hover' : 'default')
     }
 
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseover', checkHover)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerover', checkHover)
     return () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseover', checkHover)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerover', checkHover)
     }
   }, [])
 
