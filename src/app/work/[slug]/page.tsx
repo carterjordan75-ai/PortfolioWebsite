@@ -98,6 +98,8 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   // Only persist once the handle has actually been dragged this visit,
   // so merely opening a page never writes the default over a saved split.
   const splitTouched = useRef(false)
+  // One-time (per browser, ever) overlay teaching that the split drags.
+  const [showSplitHint, setShowSplitHint] = useState(false)
 
   // Scroll-driven audio: only one inline video plays audio at a time —
   // whichever is most centered in the right-column scroll container.
@@ -183,6 +185,32 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
     document.body.style.userSelect = 'none'
     return () => { document.body.style.userSelect = prev }
   }, [splitActive])
+
+  // First-ever project page in this browser: once the page is actually
+  // visible (data in, loader done), raise the drag-to-resize overlay for
+  // a few seconds. The flag is written the moment it shows — once per
+  // user means once, even if they close mid-hint — and any pointerdown
+  // (including grabbing the handle) dismisses it early.
+  useEffect(() => {
+    if (adminLoading || (neededLoader.current && !loaderDone)) return
+    if (!window.matchMedia('(min-width: 768px)').matches) return
+    try { if (localStorage.getItem('xoxo_split_hint')) return } catch { return }
+    const show = window.setTimeout(() => {
+      // The flag is written only when the overlay actually appears.
+      // Writing it synchronously in the effect body made StrictMode's
+      // double-run mark it seen and then cancel the very first show.
+      try { localStorage.setItem('xoxo_split_hint', '1') } catch {}
+      setShowSplitHint(true)
+    }, 900)
+    const hide = window.setTimeout(() => setShowSplitHint(false), 5900)
+    const dismiss = () => setShowSplitHint(false)
+    window.addEventListener('pointerdown', dismiss)
+    return () => {
+      window.clearTimeout(show)
+      window.clearTimeout(hide)
+      window.removeEventListener('pointerdown', dismiss)
+    }
+  }, [adminLoading, loaderDone])
 
 
 
@@ -732,12 +760,13 @@ Contact: carterjordan75@gmail.com`
               show. Pointer capture keeps the drag alive while the
               pointer crosses videos; double-click returns to a third. */}
           {(() => {
-            const lit = splitHover || splitActive
+            const lit = splitHover || splitActive || showSplitHint
             return (
               <div
                 role="separator"
                 aria-orientation="vertical"
                 aria-label="Resize panels"
+                data-cursor="col-resize"
                 className="hidden md:block absolute"
                 style={{ left: 'calc(var(--split-left) - 4px)', top: '68px', bottom: 0, width: 9, zIndex: 30, touchAction: 'none' }}
                 onPointerEnter={() => setSplitHover(true)}
@@ -786,6 +815,43 @@ Contact: carterjordan75@gmail.com`
               </div>
             )
           })()}
+
+          {/* One-time drag-to-resize overlay: both panels veiled, a
+              caption pinned to the split line, chevrons breathing
+              outward. Pointer events pass straight through; the
+              window-level pointerdown in the hint effect dismisses it. */}
+          <AnimatePresence>
+            {showSplitHint && (
+              <motion.div
+                key="split-hint"
+                className="hidden md:block absolute pointer-events-none"
+                style={{ left: 0, right: 0, top: '68px', bottom: 0, zIndex: 40 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.35 }}
+              >
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 'var(--split-left)', background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }} />
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: 'var(--split-left)', right: 0, background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }} />
+                <div style={{ position: 'absolute', left: 'var(--split-left)', top: '50%', transform: 'translate(-50%, -50%)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <motion.span
+                    animate={{ x: [-2, -9, -2] }}
+                    transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{ fontSize: 13, fontWeight: 900, lineHeight: 1, color: fg }}
+                  >◀</motion.span>
+                  <span
+                    className="text-[9px] uppercase tracking-[0.18em] font-bold px-3 py-1.5 rounded-full whitespace-nowrap"
+                    style={{ background: dark ? '#ffffff' : '#0a0a0a', color: dark ? '#0a0a0a' : '#ffffff' }}
+                  >Drag to resize</span>
+                  <motion.span
+                    animate={{ x: [2, 9, 2] }}
+                    transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{ fontSize: 13, fontWeight: 900, lineHeight: 1, color: fg }}
+                  >▶</motion.span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* RIGHT — the rest — Media with expand. Gap between stacked items is
               4 (16px) and grouped-row gap is 3 (12px) so consecutive media

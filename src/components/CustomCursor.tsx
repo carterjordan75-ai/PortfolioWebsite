@@ -5,7 +5,13 @@ import { useEffect, useRef, useState } from 'react'
 export default function CustomCursor() {
   const dotRef = useRef<HTMLDivElement>(null)
   const ringRef = useRef<HTMLDivElement>(null)
-  const [hovering, setHovering] = useState(false)
+  const arrowsRef = useRef<HTMLDivElement>(null)
+  // 'resize' wins over 'hover': anything tagged data-cursor="col-resize"
+  // (the project-page split handle) flanks the dot with ◀ ▶ so the
+  // resize affordance lives on the cursor itself — the native
+  // col-resize arrows can never appear under the global cursor: none.
+  const [mode, setMode] = useState<'default' | 'hover' | 'resize'>('default')
+  const hovering = mode === 'hover'
 
   useEffect(() => {
     const move = (e: MouseEvent) => {
@@ -13,12 +19,17 @@ export default function CustomCursor() {
       const y = `${e.clientY}px`
       if (dotRef.current) { dotRef.current.style.left = x; dotRef.current.style.top = y }
       if (ringRef.current) { ringRef.current.style.left = x; ringRef.current.style.top = y }
+      if (arrowsRef.current) { arrowsRef.current.style.left = x; arrowsRef.current.style.top = y }
     }
 
     const checkHover = (e: MouseEvent) => {
       const target = e.target as HTMLElement
+      if (target.closest('[data-cursor="col-resize"]')) {
+        setMode('resize')
+        return
+      }
       const isClickable = target.closest('a, button, [role="button"], input, select, textarea, label[for], [data-card], [data-heart], [data-slider], .cursor-pointer, .animated-border-btn')
-      setHovering(!!isClickable)
+      setMode(isClickable ? 'hover' : 'default')
     }
 
     window.addEventListener('mousemove', move)
@@ -48,6 +59,26 @@ export default function CustomCursor() {
           mask: 'radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px))',
         }}
       />
+      {/* Resize arrows — flank the dot while over a split handle.
+          White + difference so they read on any background in either
+          theme. */}
+      <div
+        ref={arrowsRef}
+        className="pointer-events-none fixed z-[99999]"
+        style={{
+          transform: 'translate(-50%, -50%)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: mode === 'resize' ? '30px' : '14px',
+          opacity: mode === 'resize' ? 1 : 0,
+          transition: 'opacity 0.12s ease, gap 0.15s ease',
+          color: '#ffffff',
+          mixBlendMode: 'difference',
+        }}
+      >
+        <span style={{ fontSize: '12px', fontWeight: 900, lineHeight: 1 }}>◀</span>
+        <span style={{ fontSize: '12px', fontWeight: 900, lineHeight: 1 }}>▶</span>
+      </div>
       {/* Inner dot */}
       <div
         ref={dotRef}
