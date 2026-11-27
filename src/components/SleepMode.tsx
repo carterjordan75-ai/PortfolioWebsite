@@ -135,6 +135,17 @@ export default function SleepMode() {
     }
   }, [blocked, dark, pathname])
 
+  // The body class drives the soften stylesheet in the render below:
+  // while asleep the page's own media blurs (element filters — the
+  // sleep surface must never use backdrop-filter, see the veil note).
+  // Removed the instant the sleeper wakes, so the media snaps back
+  // sharp while the veil fades out.
+  useEffect(() => {
+    if (!asleep || !art) return
+    document.body.classList.add('xoxo-asleep')
+    return () => document.body.classList.remove('xoxo-asleep')
+  }, [asleep, art])
+
   if (blocked) return null
 
   // Enough to read as a veil rather than a wall: the page behind stays
@@ -175,8 +186,23 @@ export default function SleepMode() {
     : undefined
 
   return (
-    <AnimatePresence>
-      {asleep && art && (
+    <>
+      {/* The page softens ITSELF while asleep: media blurs with an
+          ordinary element filter, which has no backdrop to double.
+          Scoped under the body class so nothing leaks while awake. The
+          transition sits on the asleep state only — drifting off eases
+          the blur in over the fade; waking drops the class and the
+          media snaps sharp at once, which is the pace waking wants. */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html:
+            'body.xoxo-asleep video,body.xoxo-asleep img{' +
+            'filter:blur(18px);' +
+            'transition:filter 0.9s cubic-bezier(0.4,0,0.2,1)}',
+        }}
+      />
+      <AnimatePresence>
+        {asleep && art && (
         <motion.div
           key="xoxo-sleep"
           initial={{ opacity: 0 }}
@@ -199,30 +225,22 @@ export default function SleepMode() {
           aria-hidden
         >
           {/*
-            The veil is TWO childless layers: the blur, then the tint.
+            The veil is a TINT ONLY — no backdrop-filter, anywhere, ever.
 
-            Chromium paints a backdrop-filter element's own background
-            colour a second time across the rectangle of any composited
-            box over it — and the mark's iframe is always one — so a veil
-            that carried `background` and `backdrop-filter` together
-            showed a darker rectangle exactly the mark's frame size,
-            flickering over bright footage (the Tiffany clip). Moving the
-            mark out of the veil did not cure it; splitting the veil did:
-            with no background on the filtered layer there is nothing
-            visible to double (a doubled BLUR changes nothing), and the
-            tint is an ordinary translucent div that composites once.
-            Verified by pixel measurement over a bright moving backdrop:
-            combined layer ≈ 10% darker inside the frame, split layers
-            indistinguishable from a no-blur control.
+            backdrop-filter is what drew the flickering darker rectangle
+            around the mark: while a video plays behind, Chromium
+            intermittently re-applies the filtered veil across the
+            painted bounds of composited content above it. Every
+            arrangement that kept the property showed the box somewhere
+            — veil-with-children, childless sibling, split colour/blur
+            layers, even a full-viewport frame — because the bug tracks
+            painted content, not layout boxes. Every arrangement without
+            it has been clean in every test. So the softening that
+            backdrop-filter provided comes from the page side instead:
+            while asleep, the stylesheet below blurs media elements
+            directly (an ordinary element filter, which has no backdrop
+            to double), and this plain translucent div only dims.
           */}
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              backdropFilter: 'blur(18px)',
-              WebkitBackdropFilter: 'blur(18px)',
-            }}
-          />
           <div
             style={{
               position: 'absolute',
@@ -253,7 +271,8 @@ export default function SleepMode() {
             <XoxoBrandLoader art={art} knockout="transparent" bleed={bleed} />
           </div>
         </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
+    </>
   )
 }
