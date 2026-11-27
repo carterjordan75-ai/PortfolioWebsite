@@ -13,7 +13,7 @@ import { clearSleepPool } from '@/lib/sleepPool'
 import { upload } from '@vercel/blob/client'
 import { useEditMode } from '@/contexts/EditModeContext'
 import { downloadAssetsZip } from '@/lib/downloadZip'
-import { prepareForUpload, isMp4 } from '@/lib/convertVideo'
+import { prepareForUpload, isMp4, type VideoQuality } from '@/lib/convertVideo'
 import { mirrorToMisc } from '@/lib/miscMirror'
 import MediaLibraryPicker from './MediaLibraryPicker'
 
@@ -372,6 +372,13 @@ type HomeVideo = {
 
 const HOME_VIDEO_CATEGORIES = ['3D & Motion', 'Generative Film'] as const
 
+// An already-web-sized MP4 defaults to uploading untouched; anything over
+// this defaults to the hero compression tier. Just a default — the form's
+// quality select lets the user override either way, because compression
+// has visibly stepped/banded smooth gradients before and sometimes only
+// the exact exported file will do.
+const HERO_PASSTHROUGH_MAX = 25 * 1024 * 1024
+
 // Home Page admin: ordered list of full-screen videos that auto-play / cycle on
 // the home page. Upload sends to /api/upload?section=home-videos, which writes the
 // file to public/assets/home-videos/ (and a backup in /Assets/home-videos/) and
@@ -417,6 +424,9 @@ function HomePagePanel() {
   const [pendingTitle, setPendingTitle] = useState('')
   const [pendingCategory, setPendingCategory] = useState<string>(HOME_VIDEO_CATEGORIES[0])
   const [pendingYear, setPendingYear] = useState<string>(String(new Date().getFullYear()))
+  // Preselected per file (small MP4 → original, big → hero compression),
+  // then the user has the final say in the form's quality select.
+  const [pendingQuality, setPendingQuality] = useState<VideoQuality | 'original'>('hero')
 
   // Debounced auto-save for inline-edited rows
   const persistTimerRef = useRef<number | null>(null)
@@ -457,11 +467,13 @@ function HomePagePanel() {
     setPendingTitle('')
     setPendingCategory(HOME_VIDEO_CATEGORIES[0])
     setPendingYear(String(new Date().getFullYear()))
+    setPendingQuality('hero')
   }
 
   const handleFilePick = (file: File) => {
     setPendingFile(file)
     setPendingTitle(file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 60))
+    setPendingQuality(isMp4(file) && file.size <= HERO_PASSTHROUGH_MAX ? 'original' : 'hero')
   }
 
   const handleUpload = async () => {
@@ -474,12 +486,10 @@ function HomePagePanel() {
     // larger home videos through /api/upload).
     //
     // Home videos are the site's full-screen hero, so quality beats weight
-    // here: an already-web-sized MP4 uploads untouched, and only oversized
-    // masters are converted — at the hero bitrate, because the standard
-    // 1.5 Mbps tier visibly banded the airbrushed gradients.
-    const HERO_PASSTHROUGH_MAX = 25 * 1024 * 1024
+    // here. The form's quality select decides what happens to an MP4 —
+    // handleFilePick preselects it (small file → original, big → hero).
     const ready = await prepareForUpload(pendingFile, (msg) => setStatus(msg), {
-      video: isMp4(pendingFile) && pendingFile.size <= HERO_PASSTHROUGH_MAX ? 'original' : 'hero',
+      video: pendingQuality,
     })
     const slugify = (s: string) =>
       s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'video'
@@ -721,6 +731,21 @@ function HomePagePanel() {
                   placeholder="Year"
                   className={`${inputBase} w-16`}
                 />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-white/35 text-[7px] uppercase tracking-[0.12em] flex-shrink-0">
+                  Quality
+                </label>
+                <select
+                  value={pendingQuality}
+                  onChange={(e) => setPendingQuality(e.target.value as VideoQuality | 'original')}
+                  className={`${inputBase} flex-1 cursor-pointer`}
+                  title="How this video uploads. Original keeps the exact file you exported — pick it when compression causes stepping or banding. Only MP4s are ever compressed."
+                >
+                  <option value="original" className="bg-black text-white">Original — no compression</option>
+                  <option value="hero" className="bg-black text-white">Compressed — high quality</option>
+                  <option value="standard" className="bg-black text-white">Compressed — standard (small file)</option>
+                </select>
               </div>
               <div className="flex gap-2 pt-1">
                 <button
@@ -2102,6 +2127,9 @@ function MiscUploadPanel() {
   const [newTitle, setNewTitle] = useState('')
   const [newYear, setNewYear] = useState(new Date().getFullYear())
   const [newMedium, setNewMedium] = useState<string[]>(['3D'])
+  // How MP4s in the batch upload: compressed to WebM or kept untouched.
+  // 'original' is the escape hatch for clips the compression steps/bands.
+  const [newQuality, setNewQuality] = useState<VideoQuality | 'original'>('standard')
   const [editIdx, setEditIdx] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState(false)
   // Grid vs list, and which items point at something that is no longer
@@ -2265,12 +2293,14 @@ function MiscUploadPanel() {
       const file = list[i]
       const titleForFile = newTitle.trim() || titleFromFilename(file.name)
 
-      // MP4 → WebM in the browser before upload (no-op for non-MP4 files).
-      if (isMp4(file)) {
+      // MP4s honor the form's quality select — compressed to WebM or kept
+      // untouched ('original'). No-op for non-MP4 files.
+      if (isMp4(file) && newQuality !== 'original') {
         setStatus(`(${i + 1}/${list.length}) Converting ${file.name}…`)
       }
       const ready = await prepareForUpload(file, (msg) =>
         setStatus(`(${i + 1}/${list.length}) ${msg}`),
+        { video: newQuality },
       )
 
       // Build a stable Blob pathname: media/Misc/<slug>-<timestamp><ext>
@@ -2920,6 +2950,20 @@ function MiscUploadPanel() {
               ))}
             </div>
           </div>
+        </div>
+
+        <div className="max-w-[260px]">
+          <label className={labelStyle}>Video quality</label>
+          <select
+            value={newQuality}
+            onChange={(e) => setNewQuality(e.target.value as VideoQuality | 'original')}
+            className={`${inputStyle} cursor-pointer`}
+            title="How MP4 videos in the batch upload. Original keeps the exact files you exported — pick it when compression causes stepping or banding. Other formats always upload untouched."
+          >
+            <option value="standard" className="bg-black text-white">Compressed — standard (small file)</option>
+            <option value="hero" className="bg-black text-white">Compressed — high quality</option>
+            <option value="original" className="bg-black text-white">Original — no compression</option>
+          </select>
         </div>
 
         <input

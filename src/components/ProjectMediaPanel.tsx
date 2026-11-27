@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { upload } from '@vercel/blob/client'
 import { downloadAssetsZip } from '@/lib/downloadZip'
-import { prepareForUpload } from '@/lib/convertVideo'
+import { prepareForUpload, type VideoQuality } from '@/lib/convertVideo'
 import { mirrorToMisc } from '@/lib/miscMirror'
 import MediaLibraryPicker from './MediaLibraryPicker'
 
@@ -130,6 +130,17 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
   // user can reuse media without re-uploading (e.g. surface a home video in
   // a new project).
   const [libraryOpen, setLibraryOpen] = useState(false)
+  // Item whose FILE is being swapped from the library (the ⌕ button next
+  // to Replace): same drawer in single-select mode, and the pick swaps
+  // `path`/`name` only — layout (aspect, width, row, bounce, crop focus)
+  // stays with the slot.
+  const [replaceLibIdx, setReplaceLibIdx] = useState<number | null>(null)
+  // How MP4 videos upload (add AND per-item replace): compressed to WebM
+  // at one of two tiers, or passed through untouched. 'original' exists
+  // because compression visibly stepped/banded smooth gradients on some
+  // clips — the file is bigger but exactly what was exported. Non-MP4
+  // files are never touched either way.
+  const [videoQuality, setVideoQuality] = useState<VideoQuality | 'original'>('standard')
 
   // Stable short id for a new row group
   const makeRowId = () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -258,8 +269,9 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
   }
 
   const uploadFile = async (file: File): Promise<ProjectMediaItem | null> => {
-    // MP4 → WebM in the browser before upload (no-op for non-MP4 files).
-    const ready = await prepareForUpload(file, (msg) => setStatus(msg))
+    // MP4s honor the drawer's quality select — compressed to WebM or kept
+    // untouched ('original'). No-op for non-MP4 files.
+    const ready = await prepareForUpload(file, (msg) => setStatus(msg), { video: videoQuality })
     if (ready.size === 0) {
       const m = `✗ ${ready.name} is empty (0 bytes) — skipped`
       console.error(m)
@@ -351,7 +363,10 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     setStatus(null)
     const item = await uploadFile(file)
     if (item) {
-      const next = media.map((m, i) => i === idx ? item : m)
+      // Swap the file, keep the slot: aspect, width, row grouping, bounce
+      // and crop focus describe the layout box, not the file, so a
+      // replacement drops into place instead of resetting its styling.
+      const next = media.map((m, i) => i === idx ? { ...m, name: item.name, path: item.path } : m)
       await persist(next)
       setStatus('✓ Replaced')
     } else {
@@ -359,6 +374,17 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
     }
     setUploadingIdx(null)
     setReplacingIdx(null)
+    setTimeout(() => setStatus(null), 1800)
+  }
+
+  // Replace an item's file with one picked from the library — no upload,
+  // the slot just points at an existing Blob URL. Same slot-keeps-layout
+  // rule as the upload replace above.
+  const handleLibraryReplace = async (idx: number, picks: { name: string; url: string }[]) => {
+    if (!picks.length) return
+    const next = media.map((m, i) => i === idx ? { ...m, name: picks[0].name, path: picks[0].url } : m)
+    await persist(next)
+    setStatus('✓ Replaced from library')
     setTimeout(() => setStatus(null), 1800)
   }
 
@@ -732,8 +758,18 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
                       }}
                       disabled={uploadingIdx === i}
                       className="px-2.5 py-1 rounded text-[7px] uppercase tracking-[0.1em] font-bold text-blue-400/70 border border-blue-400/20 hover:bg-blue-400/10 transition-all disabled:opacity-40"
+                      title="Replace with a new upload"
                     >
                       {uploadingIdx === i ? '…' : 'Replace'}
+                    </button>
+                    <button
+                      onClick={() => setReplaceLibIdx(i)}
+                      disabled={uploadingIdx === i}
+                      className="px-2 py-1 rounded text-[9px] font-bold text-blue-400/70 border border-blue-400/20 hover:bg-blue-400/10 transition-all disabled:opacity-40"
+                      title="Replace from the library — swap in a file that's already uploaded"
+                      aria-label="Replace from library"
+                    >
+                      ⌕
                     </button>
                     <button
                       onClick={() => handleDelete(i)}
@@ -747,8 +783,23 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
               })}
             </div>
 
-            {/* Footer: mirror toggle + Add button */}
+            {/* Footer: upload quality + mirror toggle + Add button */}
             <div className="px-5 py-3 border-t border-white/10 space-y-3">
+              {/* Applies to every MP4 this drawer uploads — "+ Add new" and
+                  the per-item Replace alike. */}
+              <div className="flex items-center gap-2 text-[8px] uppercase tracking-[0.1em]">
+                <span className="text-white/70 flex-shrink-0">Video uploads</span>
+                <select
+                  value={videoQuality}
+                  onChange={(e) => setVideoQuality(e.target.value as VideoQuality | 'original')}
+                  className="flex-1 px-2 py-1 rounded bg-white/5 border border-white/10 text-white/80 outline-none focus:border-white/25 cursor-pointer text-[9px]"
+                  title="How MP4 videos upload. Original keeps the exact file you exported — pick it when compression causes stepping or banding. Other formats always upload untouched."
+                >
+                  <option value="standard" className="bg-zinc-900">Compressed — standard (small file)</option>
+                  <option value="hero" className="bg-zinc-900">Compressed — high quality</option>
+                  <option value="original" className="bg-zinc-900">Original — no compression</option>
+                </select>
+              </div>
               {/* Mirror-to-Misc inline controls. Always visible so the user
                   can see whether the next upload will be mirrored and edit
                   the tags before clicking Add. */}
@@ -821,10 +872,26 @@ export default function ProjectMediaPanel({ slug, client, open, onClose, media, 
               </div>
             </div>
           </motion.aside>
+          {/* One drawer, two jobs: "From library" appends picks, an item's
+              ⌕ button swaps that item's file (single-select, opened on the
+              matching media type — the whole store stays reachable through
+              the drawer's own filters). */}
           <MediaLibraryPicker
-            open={libraryOpen}
-            onClose={() => setLibraryOpen(false)}
-            onSelect={handleLibraryPick}
+            open={libraryOpen || replaceLibIdx !== null}
+            onClose={() => { setLibraryOpen(false); setReplaceLibIdx(null) }}
+            single={replaceLibIdx !== null}
+            initialType={
+              replaceLibIdx !== null
+                ? (isVideo(media[replaceLibIdx]?.path) ? 'video' : 'image')
+                : undefined
+            }
+            confirmLabel={replaceLibIdx !== null ? '⇄ Replace with this file' : undefined}
+            onSelect={(picks) => {
+              if (replaceLibIdx !== null) void handleLibraryReplace(replaceLibIdx, picks)
+              else void handleLibraryPick(picks)
+              setLibraryOpen(false)
+              setReplaceLibIdx(null)
+            }}
           />
         </>
       )}
