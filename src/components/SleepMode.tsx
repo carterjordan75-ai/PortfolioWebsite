@@ -183,30 +183,35 @@ export default function SleepMode() {
           aria-hidden
         >
           {/*
-            The veil is its own childless layer, BEHIND the mark rather
-            than around it.
+            The veil is TWO childless layers: the blur, then the tint.
 
-            It used to carry the backdrop blur and hold the mark inside
-            it, and that nesting is a known Chromium trouble spot: the
-            blur re-renders every frame while the page's videos play, and
-            a composited child inside it — the mark's iframe is always
-            one — gets re-rasterised along with it, flashing its
-            rectangle as faint borders at the frame's edge. Mostly
-            invisible over dark footage; over a bright clip (the Tiffany
-            video) the square showed and flickered. With the mark as a
-            SIBLING it is composited over the finished blur instead of
-            inside the layer producing it, and the pinned transform keeps
-            the veil one stable compositor layer rather than one that is
-            promoted and dropped around the fade.
+            Chromium paints a backdrop-filter element's own background
+            colour a second time across the rectangle of any composited
+            box over it — and the mark's iframe is always one — so a veil
+            that carried `background` and `backdrop-filter` together
+            showed a darker rectangle exactly the mark's frame size,
+            flickering over bright footage (the Tiffany clip). Moving the
+            mark out of the veil did not cure it; splitting the veil did:
+            with no background on the filtered layer there is nothing
+            visible to double (a doubled BLUR changes nothing), and the
+            tint is an ordinary translucent div that composites once.
+            Verified by pixel measurement over a bright moving backdrop:
+            combined layer ≈ 10% darker inside the frame, split layers
+            indistinguishable from a no-blur control.
           */}
           <div
             style={{
               position: 'absolute',
               inset: 0,
-              background: ground,
               backdropFilter: 'blur(18px)',
               WebkitBackdropFilter: 'blur(18px)',
-              transform: 'translateZ(0)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: ground,
             }}
           />
           {/*
