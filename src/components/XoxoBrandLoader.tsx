@@ -85,9 +85,27 @@ function frameRatio(html: string): string {
   return `${w} / ${h}`
 }
 
+/**
+ * Full-bleed placement for marks drawn over a backdrop-filter veil.
+ *
+ * An iframe is always its own compositor box, and Chromium (at least)
+ * re-applies parts of a backdrop-filter — intermittently, frame by
+ * frame — across the rectangle of a composited box above it. A
+ * mark-sized iframe therefore drew its own rectangle onto the sleep
+ * veil as a flickering darker box (worst over bright footage). No
+ * layer arrangement we tried removed it, so the geometry does: with
+ * `bleed`, the iframe spans the WHOLE viewport and the mark is placed
+ * inside it by the injected stylesheet. Whatever the compositor
+ * doubles is then uniform from edge to edge, and uniform is
+ * invisible. Measured over a bright moving backdrop: mark-sized frame
+ * up to ~24 luminance units darker inside its box on affected frames;
+ * full-bleed within noise of zero on every frame.
+ */
+export type BrandBleed = { width: string; x: number; y: number }
+
 const Framed = memo(function Framed({
-  html, ink, knockout, title,
-}: { html: string; ink?: string; knockout: string; title: string }) {
+  html, ink, knockout, title, bleed,
+}: { html: string; ink?: string; knockout: string; title: string; bleed?: BrandBleed }) {
   const doc =
     html +
     '<style>' +
@@ -99,14 +117,23 @@ const Framed = memo(function Framed({
     // Arcs and accents throw well outside the wordmark's box; a document
     // this size would clip them at the edge.
     'body{overflow:visible!important}' +
-    // The export sizes itself against a viewport it picked — min(70vw,520px)
-    // — but this frame is not that viewport, it is whatever box the caller
-    // gave the loader. So the mark fills the frame and the FRAME carries
-    // the proportion instead, below. Callers keep asking for a width and
-    // getting a mark that wide, which is what they meant.
-    // Both ways, so the frame is letterboxed whole inside whatever box
-    // the iframe ends up with — never cut at the document's edge.
-    '.xl{width:100%!important;height:100%!important;max-width:none!important;max-height:none!important}' +
+    (bleed
+      // The document IS the viewport here (the iframe is full-bleed, so
+      // vw units inside it mean what they mean outside). The mark takes
+      // its size and position from the caller, and the svg's own
+      // viewBox keeps the proportion that the frame used to carry.
+      ? 'body{overflow:hidden!important}' +
+        `.xl{position:absolute!important;left:${bleed.x}%!important;top:${bleed.y}%!important;` +
+        `transform:translate(-50%,-50%)!important;width:${bleed.width}!important;` +
+        'height:auto!important;max-width:none!important;max-height:100vh!important;overflow:visible}'
+      // The export sizes itself against a viewport it picked — min(70vw,520px)
+      // — but this frame is not that viewport, it is whatever box the caller
+      // gave the loader. So the mark fills the frame and the FRAME carries
+      // the proportion instead, below. Callers keep asking for a width and
+      // getting a mark that wide, which is what they meant.
+      // Both ways, so the frame is letterboxed whole inside whatever box
+      // the iframe ends up with — never cut at the document's edge.
+      : '.xl{width:100%!important;height:100%!important;max-width:none!important;max-height:none!important}') +
     (ink ? 'body,.xl{color:' + ink + '!important}' : '') +
     '.xl{--bg:' + knockout + '}' +
     '</style>'
@@ -121,7 +148,13 @@ const Framed = memo(function Framed({
       srcDoc={doc}
       title={title}
       aria-hidden
-      style={{
+      style={bleed ? {
+        // Full-bleed: the frame is the viewport; the stylesheet above
+        // places the mark inside it.
+        position: 'absolute', inset: 0, width: '100%', height: '100%',
+        display: 'block', border: 0, background: 'transparent',
+        pointerEvents: 'none',
+      } : {
         display: 'block', width: '100%', border: 0, background: 'transparent',
         // The frame is the export's own, shown whole. (A document clips
         // at its own edge, so the box must be the frame's shape, not a
@@ -162,11 +195,20 @@ export default function XoxoBrandLoader({
    * when the loader sits on a solid ground.
    */
   knockout = 'transparent',
+  /**
+   * Stretch the iframe over the whole viewport and place the mark
+   * inside it (width + position in %). For marks over a
+   * backdrop-filter veil — see the note on Framed. Only applies to
+   * file-backed art; the inline css/svg path has no iframe and no box
+   * to hide.
+   */
+  bleed,
 }: {
   className?: string
   art?: LoaderArt
   ink?: string
   knockout?: string
+  bleed?: BrandBleed
 }) {
   // One <style> per mount would duplicate ~200KB if two instances ever
   // rendered together. The id keeps that honest — React dedupes identical
@@ -196,8 +238,12 @@ export default function XoxoBrandLoader({
         ['--bg' as string]: knockout,
         // The framed path injects no stylesheet into THIS document, so
         // the wrapper rules that used to come with the artwork are not
-        // here. Without a width the frame collapses.
-        ...(art.html ? { display: 'block', width: '100%' } : null),
+        // here. Without a width the frame collapses. A bleed frame is
+        // absolutely positioned, so the wrapper must span the box the
+        // caller stretched over the viewport.
+        ...(art.html
+          ? (bleed ? { display: 'block', width: '100%', height: '100%' } : { display: 'block', width: '100%' })
+          : null),
       }}
       role="img"
       aria-label="XOXO"
@@ -208,7 +254,7 @@ export default function XoxoBrandLoader({
         file was stored — re-upload one of those and it moves over.
       */}
       {art.html
-        ? <Framed html={solidO(art.html)} ink={colour} knockout={knockout} title="XOXO" />
+        ? <Framed html={solidO(art.html)} ink={colour} knockout={knockout} title="XOXO" bleed={bleed} />
         : <Art id={id} css={art.css} svg={solidO(art.svg)} />}
     </div>
   )

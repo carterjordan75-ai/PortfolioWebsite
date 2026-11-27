@@ -158,6 +158,22 @@ export default function SleepMode() {
       }
     : { width: MARK_WIDTH }
 
+  // File-backed marks render full-bleed: the iframe spans the viewport
+  // and the mark is placed INSIDE it, so the compositor's intermittent
+  // re-tinting under the frame (see XoxoBrandLoader's Framed note) has
+  // no edge to draw — a mark-sized frame showed as a flickering darker
+  // rectangle over bright footage. Width/position carry over verbatim:
+  // vw means the same inside a full-viewport frame.
+  const bleed = art?.html
+    ? {
+        width: art.placement
+          ? scaled(`min(${art.placement.size}vw, ${art.placement.size * 10}px)`, 'loader')
+          : MARK_WIDTH,
+        x: art.placement?.x ?? 50,
+        y: art.placement?.y ?? 50,
+      }
+    : undefined
+
   return (
     <AnimatePresence>
       {asleep && art && (
@@ -230,8 +246,11 @@ export default function SleepMode() {
             <style dangerouslySetInnerHTML={{ __html:
               '.xoxo-sleep-mark .xoxo-brand *{animation-iteration-count:infinite!important}' }} />
           )}
-          <div className="xoxo-sleep-mark" style={markStyle}>
-            <XoxoBrandLoader art={art} knockout="transparent" />
+          <div
+            className="xoxo-sleep-mark"
+            style={bleed ? { position: 'absolute', inset: 0 } : markStyle}
+          >
+            <XoxoBrandLoader art={art} knockout="transparent" bleed={bleed} />
           </div>
         </motion.div>
       )}
