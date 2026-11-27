@@ -8,17 +8,16 @@ import { motion, AnimatePresence } from 'framer-motion'
  * Vercel Blob store, lets the user multi-select, and returns the picks as
  * `{ name, url }` pairs the same shape the upload flow produces.
  *
- * Use it from the inline project drawer (ProjectMediaPanel) — clicking
- * "Add from library" opens this panel so the user can pull existing home
- * videos / misc clips / other projects' media into the current project
- * without re-uploading.
+ * Used from the inline project drawer (ProjectMediaPanel) to pull existing
+ * home videos / misc clips / other projects' media into the current project
+ * without re-uploading, and from the Home Page panel both to append clips
+ * and — in `single` mode, scoped to a project folder — to swap the file
+ * behind one home row.
  *
  * Important: items added this way SHARE the Blob URL with their original
- * location. Deleting/replacing them from the new project should NOT delete
- * the Blob (since it's still referenced by the original). ProjectMediaPanel
- * handles that by only cascade-deleting blobs whose pathname lives inside
- * `media/projects/<slug>/` — library picks live in other folders so they're
- * safe.
+ * location, which is why no admin remove/replace flow deletes blobs any
+ * more (the Storage manager, which cross-checks references, is the only
+ * deleter).
  */
 
 type StorageItem = {
@@ -55,10 +54,27 @@ export default function MediaLibraryPicker({
   open,
   onClose,
   onSelect,
+  single = false,
+  confirmLabel,
+  initialSection,
+  initialType,
 }: {
   open: boolean
   onClose: () => void
   onSelect: (items: { name: string; url: string }[]) => void
+  // Single-select mode (replace flows): clicking a tile moves the
+  // selection to it instead of toggling it into a set, and onSelect
+  // always receives exactly one item.
+  single?: boolean
+  // Text for the confirm button; the default advertises the multi-add
+  // flow ("+ Add N to project").
+  confirmLabel?: string
+  // Filters applied each time the drawer opens — e.g. a home-row replace
+  // opens scoped to that video's project folder ("projects/<slug>"),
+  // videos only. Both stay user-changeable; a section that has no files
+  // in the store falls back to "all".
+  initialSection?: string
+  initialType?: 'all' | 'video' | 'image'
 }) {
   const [items, setItems] = useState<StorageItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -72,6 +88,18 @@ export default function MediaLibraryPicker({
   // user knows there's a file they want that no admin state currently
   // points at).
   const [referencedOnly, setReferencedOnly] = useState(true)
+
+  // Each open starts from the caller's filters, not wherever the last
+  // open left off — the same drawer serves "add from anywhere" and
+  // "replace from this project's folder", and a stale filter would make
+  // the second look empty or wrongly wide.
+  useEffect(() => {
+    if (!open) return
+    setSection(initialSection ?? 'all')
+    setTypeFilter(initialType ?? 'all')
+    setFilter('')
+    setSelected(new Set())
+  }, [open, initialSection, initialType])
 
   // Fetch once per open. Reuses the existing /api/storage-list endpoint that
   // the admin Storage panel uses, so any blob in the store is pickable.
@@ -99,6 +127,14 @@ export default function MediaLibraryPicker({
     return ['all', ...Array.from(set).sort()]
   }, [items])
 
+  // A requested section the store has no files under (a project whose
+  // media all lives in shared folders, say) would render an empty grid
+  // over a blank dropdown — widen to "all" instead.
+  useEffect(() => {
+    if (!open || loading || items.length === 0) return
+    if (section !== 'all' && !sectionOptions.includes(section)) setSection('all')
+  }, [open, loading, items.length, section, sectionOptions])
+
   const visible = useMemo(() => {
     const q = filter.toLowerCase().trim()
     return items
@@ -112,6 +148,7 @@ export default function MediaLibraryPicker({
 
   const toggle = (url: string) => {
     setSelected(prev => {
+      if (single) return prev.has(url) ? new Set<string>() : new Set([url])
       const next = new Set(prev)
       if (next.has(url)) next.delete(url); else next.add(url)
       return next
@@ -218,14 +255,16 @@ export default function MediaLibraryPicker({
             <div className="flex items-center gap-2 px-5 py-2 border-b border-white/8 text-[8px] uppercase tracking-[0.1em]">
               <span className="text-white/70 font-bold">{selected.size} selected</span>
               <button onClick={clearSelected} disabled={selected.size === 0} className="text-white/40 hover:text-white disabled:opacity-30">clear</button>
-              <button onClick={selectAllVisible} className="text-white/60 hover:text-white">select visible</button>
+              {!single && (
+                <button onClick={selectAllVisible} className="text-white/60 hover:text-white">select visible</button>
+              )}
               <div className="flex-1" />
               <button
                 onClick={handleAdd}
                 disabled={selected.size === 0}
                 className="px-3 py-1.5 rounded-full text-[8px] font-bold text-white bg-blue-500/85 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                + Add {selected.size} to project
+                {confirmLabel ?? `+ Add ${selected.size} to project`}
               </button>
             </div>
 

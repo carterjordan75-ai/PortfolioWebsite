@@ -384,6 +384,11 @@ function HomePagePanel() {
   // Site-wide library picker for pulling existing media (e.g. a SOFTBOYS
   // clip) into the home page playlist without re-uploading.
   const [libraryOpen, setLibraryOpen] = useState(false)
+  // Row whose FILE is being swapped: clicking a row's thumbnail reopens
+  // the same picker in single-select mode, scoped to that video's project
+  // folder, and the pick replaces `src` only — the slot keeps its title,
+  // blurb, category and button.
+  const [replaceIdx, setReplaceIdx] = useState<number | null>(null)
   // Projects a home video can link through to. Picked from a list rather
   // than typed: a mistyped slug renders a button that 404s, and nothing
   // on this screen would tell you.
@@ -559,6 +564,27 @@ function HomePagePanel() {
     setVideos(next)
   }
 
+  // Where a row's replace-picker should open: the linked project's folder
+  // when the row has a button, else the folder its current file lives in.
+  // Both give "this video's project media library"; the picker's section
+  // dropdown still reaches everything else.
+  const replaceSection = (() => {
+    if (replaceIdx === null) return undefined
+    const v = videos[replaceIdx]
+    if (!v) return undefined
+    if (v.projectSlug) return `projects/${v.projectSlug}`
+    const m = v.src.match(/\/media\/(projects\/[^/]+|[^/]+)\//)
+    return m ? m[1] : undefined
+  })()
+
+  const handleReplacePick = (items: { name: string; url: string }[]) => {
+    if (replaceIdx === null || !items.length) return
+    // Swap the file only. The row is the slot: its title, blurb, category,
+    // year and project button describe what plays there, not the filename,
+    // so they survive the swap (edit them inline if the new clip needs it).
+    persist(videos.map((v, idx) => (idx === replaceIdx ? { ...v, src: items[0].url } : v)))
+  }
+
   const inputBase = 'px-2 py-1 rounded-md text-[10px] bg-white/5 border border-white/10 text-white placeholder-white/20 outline-none focus:border-white/25 transition-colors'
 
   return (
@@ -582,7 +608,21 @@ function HomePagePanel() {
             <div key={`${v.src}-${i}`} className="p-2 rounded-lg border border-white/8 bg-white/3 space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-white/30 text-[9px] font-mono w-5 flex-shrink-0">{String(i + 1).padStart(2, '0')}</span>
-                <video src={v.src} className="w-16 h-9 object-cover rounded flex-shrink-0 bg-black" muted autoPlay loop playsInline />
+                {/* The thumbnail is the replace button: click it to swap
+                    which file plays in this slot, picked from media
+                    already in the library (no re-upload). */}
+                <button
+                  type="button"
+                  onClick={() => setReplaceIdx(i)}
+                  className="group relative w-16 h-9 rounded flex-shrink-0 overflow-hidden bg-black"
+                  title="Replace this video — pick from this project's media library"
+                  aria-label="Replace video"
+                >
+                  <video src={v.src} className="absolute inset-0 w-full h-full object-cover pointer-events-none" muted autoPlay loop playsInline />
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/65 transition-colors">
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[7px] uppercase tracking-[0.08em] font-bold text-white whitespace-nowrap">⇄ Replace</span>
+                  </span>
+                </button>
                 <input
                   type="text"
                   value={v.title || v.label || ''}
@@ -732,12 +772,22 @@ function HomePagePanel() {
         </div>
       )}
 
+      {/* One drawer, two jobs: "From Library" appends clips (multi-select,
+          whole store), a row thumbnail replaces that row's file (single-
+          select, scoped to its project folder). Both open on videos —
+          the home rotation can't play anything else. */}
       <MediaLibraryPicker
-        open={libraryOpen}
-        onClose={() => setLibraryOpen(false)}
+        open={libraryOpen || replaceIdx !== null}
+        onClose={() => { setLibraryOpen(false); setReplaceIdx(null) }}
+        single={replaceIdx !== null}
+        initialType="video"
+        initialSection={replaceSection}
+        confirmLabel={replaceIdx !== null ? '⇄ Replace video' : undefined}
         onSelect={(items) => {
-          handleLibraryPick(items)
+          if (replaceIdx !== null) handleReplacePick(items)
+          else handleLibraryPick(items)
           setLibraryOpen(false)
+          setReplaceIdx(null)
         }}
       />
     </div>
